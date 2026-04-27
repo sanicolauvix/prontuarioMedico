@@ -1,31 +1,31 @@
 # -*- coding: utf-8 -*-
-# Prestanista v1.0 | utils/foto_picker.py
+# SHARED | utils/foto_picker.py -- gerenciado por flet_shared/sync_shared.py
 """
-utils/foto_picker.py  — Padrão definitivo Prestanista — Flet 0.28.2
+utils/foto_picker.py  -- Padrao definitivo Flet -- Flet 0.28.2
 
 COMPORTAMENTO POR PLATAFORMA:
 
-  Windows  →  Botão "Buscar foto"
-               └─ tkinter.filedialog abre explorador de arquivos
-               └─ Seleciona → preview atualiza
+  Windows  ->  Botao "Buscar foto"
+               -> tkinter.filedialog abre explorador de arquivos
+               -> Seleciona -> preview atualiza
 
-  Android  →  Botão "Buscar foto"
-               └─ Bottom sheet com opções:
-                    Câmera   → abre câmera nativa (via image_picker Flutter)
-                    Galeria  → ft.FilePicker nativo (galeria)
+  Android  ->  Botao "Buscar foto"
+               -> Bottom sheet com opcoes:
+                    Camera   -> abre camera nativa (via image_picker Flutter)
+                    Galeria  -> ft.FilePicker nativo (galeria)
                     Cancelar
 
-CÂMERA ANDROID:
-  Flet 0.28.2 não expõe camera nativa pelo FilePicker.
-  Solução: comunicação via arquivo com o Dart (main.dart).
-  Python escreve _camera_request.json → Dart detecta →
-  abre câmera via image_picker → escreve _camera_result.json →
-  Python lê resultado e processa a foto.
+CAMERA ANDROID:
+  Flet 0.28.2 nao expoe camera nativa pelo FilePicker.
+  Solucao: comunicacao via arquivo com o Dart (main.dart).
+  Python escreve _camera_request.json -> Dart detecta ->
+  abre camera via image_picker -> escreve _camera_result.json ->
+  Python le resultado e processa a foto.
 
-DETECÇÃO DE PLATAFORMA:
+DETECCAO DE PLATAFORMA:
   sys.platform == 'android' SEMPRE retorna 'linux' no Flet Android.
   NUNCA usar para detectar plataforma.
-  Usar try/except tkinter — único método confiável.
+  Usar try/except tkinter -- unico metodo confiavel.
 """
 
 import json
@@ -50,33 +50,49 @@ _AMAR  = "#D29922"; _VERM  = "#FF4444"
 
 
 # ─────────────────────────────────────────────
-#  Detecção de plataforma
+#  Deteccao de plataforma
 # ─────────────────────────────────────────────
 
 def _is_android() -> bool:
-    """tkinter só existe no desktop — forma confiável de detectar Android."""
+    """tkinter so existe no desktop -- forma confiavel de detectar Android."""
     try:
         import tkinter  # noqa
         return False
     except ModuleNotFoundError:
         return True
 
+_ASSETS_ROOT = os.path.join(_ROOT, "assets")
+# Dir persistente fora do dir de extracao do Flet (sobrevive ao update do APK).
+# No Android: .../files/app/ -> .../files/user_photos/
+# No desktop: igual ao assets (nao necessario)
+_PERSIST_ROOT = os.path.join(os.path.dirname(_ROOT), "user_photos") if _is_android() \
+                else _ASSETS_ROOT
+
 
 # ─────────────────────────────────────────────
-#  Processamento (cópia do arquivo)
+#  Processamento (copia do arquivo)
 # ─────────────────────────────────────────────
 
 def processar_foto(path_origem: str, pasta_destino: str) -> str | None:
-    """Copia foto para assets/<pasta_destino>/ e retorna caminho relativo."""
+    """Copia foto para assets/<pasta_destino>/ e retorna caminho relativo.
+    No Android tambem salva copia em user_photos/ (persistente apos update)."""
     if not path_origem or not path_origem.strip():
         return None
     try:
-        pasta_abs = os.path.join(_ROOT, "assets", pasta_destino)
+        pasta_abs = os.path.join(_ASSETS_ROOT, pasta_destino)
         os.makedirs(pasta_abs, exist_ok=True)
         nome    = os.path.basename(path_origem.strip())
         destino = os.path.join(pasta_abs, nome)
         if os.path.abspath(path_origem) != os.path.abspath(destino):
             shutil.copy2(path_origem.strip(), destino)
+        # Backup persistente no Android
+        if _is_android() and _PERSIST_ROOT != _ASSETS_ROOT:
+            try:
+                persist_pasta = os.path.join(_PERSIST_ROOT, pasta_destino)
+                os.makedirs(persist_pasta, exist_ok=True)
+                shutil.copy2(path_origem.strip(), os.path.join(persist_pasta, nome))
+            except Exception as bex:
+                log.warning("[FotoPicker] backup persistente falhou: %s", bex)
         path_rel = f"{pasta_destino}/{nome}"
         log.info("[FotoPicker] salva: %s", path_rel)
         return path_rel
@@ -86,18 +102,18 @@ def processar_foto(path_origem: str, pasta_destino: str) -> str | None:
 
 
 # ─────────────────────────────────────────────
-#  Câmera Android via image_picker (Dart)
+#  Camera Android via image_picker (Dart)
 # ─────────────────────────────────────────────
 
 _CAMERA_REQ = os.path.join(_ROOT, "_camera_request.json")
 _CAMERA_RES = os.path.join(_ROOT, "_camera_result.json")
 
 
-_DEBUG_CAM = "/sdcard/prestanista_cam_debug.txt"
+_DEBUG_CAM = "/sdcard/app_cam_debug.txt"
 
 
 def _dbg_cam(msg: str) -> None:
-    """Diagnóstico temporário: escreve em /sdcard acessivel pelo adb."""
+    """Diagnostico temporario: escreve em /sdcard acessivel pelo adb."""
     try:
         with open(_DEBUG_CAM, "a", encoding="utf-8") as f:
             f.write(f"{time.strftime('%H:%M:%S')} {msg}\n")
@@ -115,9 +131,9 @@ def _mostrar_erro_camera(page: ft.Page, motivo: str) -> None:
 
 def _capturar_camera_android(page: ft.Page, callback) -> None:
     """
-    Solicita captura via câmera nativa Android.
-    Escreve _camera_request.json → Dart (main.dart) detecta →
-    abre câmera via image_picker → escreve _camera_result.json.
+    Solicita captura via camera nativa Android.
+    Escreve _camera_request.json -> Dart (main.dart) detecta ->
+    abre camera via image_picker -> escreve _camera_result.json.
     """
     try:
         _dbg_cam(f"_capturar chamado. ROOT={_ROOT}")
@@ -127,13 +143,13 @@ def _capturar_camera_android(page: ft.Page, callback) -> None:
         if os.path.exists(_CAMERA_RES):
             os.remove(_CAMERA_RES)
 
-        # Envia solicitação para o Dart
+        # Envia solicitacao para o Dart
         with open(_CAMERA_REQ, "w", encoding="utf-8") as f:
             json.dump({"action": "take_photo"}, f)
         _dbg_cam("camera_request.json escrito OK")
         log.info("[FotoPicker] camera request enviado")
 
-        # Aguarda resultado em thread separada (não bloqueia UI)
+        # Aguarda resultado em thread separada (nao bloqueia UI)
         def _poll():
             for i in range(180):  # 180 * 0.5s = 90s timeout
                 time.sleep(0.5)
@@ -171,7 +187,7 @@ def _capturar_camera_android(page: ft.Page, callback) -> None:
 
 
 # ─────────────────────────────────────────────
-#  Bottom sheet Android — câmera ou galeria
+#  Bottom sheet Android -- camera ou galeria
 # ─────────────────────────────────────────────
 
 def _mostrar_menu_android(
@@ -180,7 +196,7 @@ def _mostrar_menu_android(
     on_galeria,
     on_camera,
 ) -> None:
-    """Exibe bottom sheet com opções Câmera / Galeria."""
+    """Exibe bottom sheet com opcoes Camera / Galeria."""
     ref = [None]
 
     def _fechar(e=None):
@@ -220,7 +236,7 @@ def _mostrar_menu_android(
                     padding=ft.padding.symmetric(horizontal=24, vertical=14),
                 ),
                 ft.Container(height=1, bgcolor=_BORDA),
-                _item("photo_camera_rounded",  "Câmera",  _clicou_camera),
+                _item("photo_camera_rounded",  "Camera",  _clicou_camera),
                 ft.Container(height=1, bgcolor=_BORDA),
                 _item("photo_library_rounded", "Galeria", _clicou_galeria),
                 ft.Container(height=1, bgcolor=_BORDA),
@@ -255,7 +271,7 @@ def _mostrar_menu_android(
 
 
 # ─────────────────────────────────────────────
-#  API pública — criar_painel_foto
+#  API publica -- criar_painel_foto
 # ─────────────────────────────────────────────
 
 def criar_painel_foto(
@@ -270,8 +286,8 @@ def criar_painel_foto(
     """
     Retorna (painel, preview_widget).
 
-    Windows : Buscar → tkinter filedialog → copia → preview
-    Android : Buscar → bottom sheet (Câmera / Galeria) → copia → preview
+    Windows : Buscar -> tkinter filedialog -> copia -> preview
+    Android : Buscar -> bottom sheet (Camera / Galeria) -> copia -> preview
     """
     if icone_vazio is None:
         icone_vazio = "person_rounded"
@@ -320,7 +336,7 @@ def criar_painel_foto(
                 except Exception as ex:
                     log.exception("[FotoPicker] on_foto: %s", ex)
 
-    #  FilePicker — galeria (Android)
+    #  FilePicker -- galeria (Android)
     # Lazy: registrado so no primeiro clique, nao na criacao da tela
     # page.overlay.append + page.update() na criacao bloqueiam navegacao no Android
     _fp_galeria = [None]
@@ -345,7 +361,7 @@ def criar_painel_foto(
                 pass
         return _fp_galeria[0]
 
-    #  Botão
+    #  Botao
     btn_buscar = ft.Container(
         content=ft.Row([
             ft.Icon("add_photo_alternate_rounded", size=16, color=_AZUL),
@@ -362,7 +378,7 @@ def criar_painel_foto(
 
     def _abrir(e):
         if not _is_android():
-            # Windows — explorador de arquivos via tkinter
+            # Windows -- explorador de arquivos via tkinter
             try:
                 import tkinter as tk
                 from tkinter import filedialog
@@ -380,7 +396,7 @@ def criar_painel_foto(
             except Exception as ex:
                 log.exception("[FotoPicker] filedialog: %s", ex)
         else:
-            # Android — bottom sheet com câmera ou galeria
+            # Android -- bottom sheet com camera ou galeria
             _mostrar_menu_android(
                 page   = page,
                 titulo = titulo_menu,
@@ -402,11 +418,11 @@ def criar_painel_foto(
         ], vertical_alignment=ft.CrossAxisAlignment.CENTER),
     ], spacing=6, tight=True)
 
-    return painel, preview
+    return painel, preview, _atualizar_preview
 
 
 # ─────────────────────────────────────────────
-#  API pública — criar_btn_seletor_foto
+#  API publica -- criar_btn_seletor_foto
 # ─────────────────────────────────────────────
 
 def criar_btn_seletor_foto(
@@ -416,11 +432,11 @@ def criar_btn_seletor_foto(
     label_btn: str = "Buscar",
 ) -> ft.Column:
     """
-    Retorna Column com botão de seleção (sem preview).
-    Usado no catálogo para múltiplas fotos de produto.
+    Retorna Column com botao de selecao (sem preview).
+    Usado no catalogo para multiplas fotos de produto.
 
     Windows : tkinter filedialog
-    Android : bottom sheet (Câmera / Galeria)
+    Android : bottom sheet (Camera / Galeria)
     """
     def _resultado_galeria(e: ft.FilePickerResultEvent) -> None:
         if e.files and len(e.files) > 0:
@@ -461,7 +477,7 @@ def criar_btn_seletor_foto(
 
     def _abrir(e):
         if not _is_android():
-            # Windows — explorador de arquivos via tkinter
+            # Windows -- explorador de arquivos via tkinter
             try:
                 import tkinter as tk
                 from tkinter import filedialog
@@ -482,13 +498,13 @@ def criar_btn_seletor_foto(
             except Exception as ex:
                 log.exception("[FotoPicker] filedialog: %s", ex)
         else:
-            # Android — bottom sheet com câmera ou galeria
+            # Android -- bottom sheet com camera ou galeria
             def _on_camera_result(path_abs):
                 if on_arquivo:
                     try:
                         on_arquivo(path_abs)
                     except Exception as ex:
-                        log.exception("[FotoPicker] seletor câmera: %s", ex)
+                        log.exception("[FotoPicker] seletor camera: %s", ex)
 
             _mostrar_menu_android(
                 page   = page,
@@ -505,3 +521,138 @@ def criar_btn_seletor_foto(
     return ft.Column([
         ft.Row([btn], spacing=8),
     ], spacing=6, tight=True)
+
+
+# ─────────────────────────────────────────────
+#  Edicao de foto (girar/espelhar) via Pillow
+# ─────────────────────────────────────────────
+
+def foto_abs_path(path_rel: str) -> str:
+    """
+    Converte path relativo (ex: 'fotos_clientes/foto.jpg') para absoluto.
+    Prefere a copia persistente (_PERSIST_ROOT) para upload ao Drive.
+    """
+    if not path_rel:
+        return ""
+    persist = os.path.join(_PERSIST_ROOT, path_rel.replace("/", os.sep))
+    if os.path.exists(persist):
+        return persist
+    assets = os.path.join(_ASSETS_ROOT, path_rel.replace("/", os.sep))
+    return assets if os.path.exists(assets) else persist
+
+
+def resolver_foto(
+    path_rel: str,
+    foto_drive_id: str = "",
+    on_baixado=None,
+) -> str:
+    """
+    Resolve o caminho local usavel para exibir a foto.
+
+    1. Verifica em _ASSETS_ROOT e _PERSIST_ROOT.
+    2. Se nao encontrar mas houver foto_drive_id:
+       - Verifica cache em _PERSIST_ROOT/cache_fotos/
+       - Se nao ha cache, baixa em background e chama on_baixado(path) ao concluir.
+    3. Retorna o path local disponivel agora (pode ser '' se ainda nao baixado).
+    """
+    if path_rel:
+        for base in [_ASSETS_ROOT, _PERSIST_ROOT]:
+            candidato = os.path.join(base, path_rel.replace("/", os.sep))
+            if os.path.exists(candidato):
+                return candidato if base == _PERSIST_ROOT else path_rel
+
+    if not foto_drive_id:
+        return ""
+
+    # Verifica cache local
+    nome_cache = os.path.basename(path_rel) if path_rel else f"foto_{foto_drive_id[:8]}.jpg"
+    pasta_cache = os.path.join(_PERSIST_ROOT, "cache_fotos")
+    dest_cache  = os.path.join(pasta_cache, nome_cache)
+    if os.path.exists(dest_cache):
+        return dest_cache
+
+    # Baixa em background
+    if on_baixado:
+        def _dl():
+            try:
+                from utils.drive_sync import baixar_foto
+                ok = baixar_foto(foto_drive_id, dest_cache)
+                if ok and on_baixado:
+                    on_baixado(dest_cache)
+                    log.info("[FotoPicker] cache baixado: %s", dest_cache)
+            except Exception as ex:
+                log.warning("[FotoPicker] download cache: %s", ex)
+        threading.Thread(target=_dl, daemon=True).start()
+
+    return ""
+
+
+def editar_foto(path_rel: str, operacao: str) -> str:
+    """
+    Aplica operacao na foto, salva com novo nome (evita cache Flutter)
+    e atualiza o backup persistente no Android.
+
+    operacoes: 'rotate_cw', 'rotate_ccw', 'flip_h', 'flip_v'
+
+    Retorna novo path_rel ou "" em caso de erro.
+    """
+    import re
+    import time as _time
+    try:
+        from PIL import Image as _Image
+    except ImportError:
+        log.error("[FotoPicker] Pillow nao disponivel -- editar_foto nao suportado")
+        return ""
+    try:
+        path_abs = os.path.join(_ASSETS_ROOT, path_rel)
+        if not os.path.exists(path_abs):
+            log.error("[FotoPicker] editar_foto: arquivo nao existe: %s", path_abs)
+            return ""
+        img = _Image.open(path_abs)
+        # Converte para RGB: necessario para salvar como JPEG (RGBA nao suportado)
+        if img.mode != "RGB":
+            img = img.convert("RGB")
+        if operacao == "rotate_cw":
+            img = img.rotate(-90, expand=True)
+        elif operacao == "rotate_ccw":
+            img = img.rotate(90, expand=True)
+        elif operacao == "flip_h":
+            img = img.transpose(0)   # FLIP_LEFT_RIGHT = 0
+        elif operacao == "flip_v":
+            img = img.transpose(1)   # FLIP_TOP_BOTTOM = 1
+        else:
+            log.warning("[FotoPicker] editar_foto: operacao desconhecida: %s", operacao)
+            return ""
+        # Novo nome: remove sufixo _e\d+ anterior e adiciona timestamp
+        pasta   = path_rel.rsplit("/", 1)[0] if "/" in path_rel else ""
+        nome_b  = os.path.basename(path_rel)
+        stem, ext = os.path.splitext(nome_b)
+        ext = ext if ext else ".jpg"
+        stem_clean  = re.sub(r"_e\d+$", "", stem)
+        novo_nome   = f"{stem_clean}_e{int(_time.time())}{ext}"
+        nova_rel    = f"{pasta}/{novo_nome}" if pasta else novo_nome
+        novo_abs    = os.path.join(_ASSETS_ROOT, nova_rel)
+        os.makedirs(os.path.dirname(novo_abs), exist_ok=True)
+        img.save(novo_abs)
+        # Remove arquivo anterior
+        try:
+            if os.path.abspath(path_abs) != os.path.abspath(novo_abs):
+                os.remove(path_abs)
+        except Exception:
+            pass
+        # Atualiza backup persistente no Android
+        if _is_android() and _PERSIST_ROOT != _ASSETS_ROOT:
+            try:
+                old_bk = os.path.join(_PERSIST_ROOT, path_rel)
+                if os.path.exists(old_bk):
+                    os.remove(old_bk)
+                new_bk = os.path.join(_PERSIST_ROOT, nova_rel)
+                os.makedirs(os.path.dirname(new_bk), exist_ok=True)
+                shutil.copy2(novo_abs, new_bk)
+            except Exception as bex:
+                log.warning("[FotoPicker] editar_foto backup: %s", bex)
+        log.info("[FotoPicker] editada: %s -> %s", path_rel, nova_rel)
+        return nova_rel
+    except Exception as ex:
+        log.exception("[FotoPicker] editar_foto: %s", ex)
+        return ""
