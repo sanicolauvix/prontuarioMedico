@@ -663,7 +663,7 @@ def _tela_principal(page: ft.Page, voltar_fn=None):
                     os.remove(_CREDS_PATH)
             except Exception:
                 pass
-            from prontuario.telas.tela_login import criar_tela_login
+            from prontuario.telas_shared.tela_login import criar_tela_login
 
             def _on_login(token, perfil):
                 try:
