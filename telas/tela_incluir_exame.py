@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 # KOIOS v1.0 | gerado: 2026-03-13 | tela_incluir_exame.py
 """
 tela_incluir_exame.py
@@ -224,9 +225,9 @@ def criar_tela_incluir_exame(page: ft.Page, voltar_fn):
     card_arq = ft.Container(
         visible=False,
         content=ft.Row([
-            ft.Icon(ft.Icons.PICTURE_AS_PDF, size=18, color=VERM),
+            ft.Icon("picture_as_pdf_rounded", size=18, color=VERM),
             nome_txt,
-            ft.IconButton(ft.Icons.CLOSE, icon_size=14, icon_color=SEC,
+            ft.IconButton("close_rounded", icon_size=14, icon_color=SEC,
                           on_click=_limpar),
         ], spacing=10),
         bgcolor=CARD, border_radius=8, padding=10,
@@ -252,12 +253,14 @@ def criar_tela_incluir_exame(page: ft.Page, voltar_fn):
         except Exception as _ex:
             logging.warning(f"[CACHE] limpar_cache_click: {_ex}")
 
-    _btn_limpar_cache = ft.TextButton(
+    _btn_limpar_cache = ft.Container(
         content=ft.Row([
-            ft.Icon(ft.Icons.REFRESH_OUTLINED, size=12, color=AMAR),
+            ft.Icon("refresh_outlined_rounded", size=12, color=AMAR),
             ft.Text("Reprocessar do zero", size=11, color=AMAR),
         ], spacing=4, tight=True),
         visible=False,
+        padding=ft.padding.symmetric(horizontal=8, vertical=8),
+        ink=True,
         on_click=_limpar_cache_click,
     )
 
@@ -269,7 +272,7 @@ def criar_tela_incluir_exame(page: ft.Page, voltar_fn):
     _preview_status = ft.Text("", size=12, color=MUT, italic=True)
     _preview_btn    = ft.OutlinedButton(
         content=ft.Row([
-            ft.Icon(ft.Icons.PICTURE_AS_PDF, size=15, color=VERM),
+            ft.Icon("picture_as_pdf_rounded", size=15, color=VERM),
             ft.Text("Abrir PDF para conferir", size=13, color=TXT),
         ], spacing=6, tight=True),
         style=ft.ButtonStyle(
@@ -306,7 +309,7 @@ def criar_tela_incluir_exame(page: ft.Page, voltar_fn):
     status_detalhe  = ft.Text("", size=12, color=SEC)
     status_pct      = ft.Text("", size=28, color=AZUL,
                                weight=ft.FontWeight.W_700)
-    status_fase_ico = ft.Icon(ft.Icons.HOURGLASS_TOP_ROUNDED,
+    status_fase_ico = ft.Icon("hourglass_top_rounded",
                                size=22, color=AZUL)
     status_pb       = ft.ProgressBar(value=0.0, bgcolor=BD, color=AZUL,
                                       height=6, border_radius=3)
@@ -314,13 +317,13 @@ def criar_tela_incluir_exame(page: ft.Page, voltar_fn):
 
     # Mapa de fases → ícone + label amigável
     _FASES = {
-        "contando":   (ft.Icons.FIND_IN_PAGE_OUTLINED,    "Mapeando páginas",      AZUL),
-        "lendo":      (ft.Icons.MENU_BOOK_OUTLINED,        "Lendo conteúdo",        AZUL),
-        "analisando": (ft.Icons.PSYCHOLOGY_OUTLINED,       "Analisando parâmetros", "#BC8CFF"),
-        "extraindo":  (ft.Icons.SCIENCE_OUTLINED,          "Extraindo resultados",  "#BC8CFF"),
-        "validando":  (ft.Icons.VERIFIED_OUTLINED,         "Validando dados",       VERD),
-        "salvando":   (ft.Icons.SAVE_OUTLINED,             "Salvando rascunho",     VERD),
-        "concluido":  (ft.Icons.CHECK_CIRCLE_OUTLINE,      "Concluído!",            VERD),
+        "contando":   ("find_in_page_outlined_rounded",    "Mapeando páginas",      AZUL),
+        "lendo":      ("menu_book_outlined_rounded",        "Lendo conteúdo",        AZUL),
+        "analisando": ("psychology_outlined_rounded",       "Analisando parâmetros", "#BC8CFF"),
+        "extraindo":  ("science_outlined_rounded",          "Extraindo resultados",  "#BC8CFF"),
+        "validando":  ("verified_outlined_rounded",         "Validando dados",       VERD),
+        "salvando":   ("save_outlined_rounded",             "Salvando rascunho",     VERD),
+        "concluido":  ("check_circle_outline_rounded",      "Concluído!",            VERD),
     }
 
     def _set_status(msg, cor=AZUL, prog=None, detalhe="", fase_key=""):
@@ -378,7 +381,7 @@ def criar_tela_incluir_exame(page: ft.Page, voltar_fn):
             ft.Container(height=8),
             ft.FilledButton(
                 content=ft.Row([
-                    ft.Icon(ft.Icons.FOLDER_OPEN_ROUNDED, size=16),
+                    ft.Icon("folder_open_rounded", size=16),
                     ft.Text("Procurar arquivo", size=13, weight=ft.FontWeight.W_600),
                 ], spacing=6, tight=True),
                 style=ft.ButtonStyle(
@@ -427,7 +430,7 @@ def criar_tela_incluir_exame(page: ft.Page, voltar_fn):
             itens.append(ft.Container(
                 content=ft.Column([
                     ft.Row([
-                        ft.Icon(ft.Icons.WARNING_AMBER_ROUNDED, color=AMAR, size=18),
+                        ft.Icon("warning_amber_rounded", color=AMAR, size=18),
                         ft.Text("PDF já importado", size=13,
                                 weight=ft.FontWeight.W_700, color=TXT),
                     ], spacing=8),
@@ -440,14 +443,15 @@ def criar_tela_incluir_exame(page: ft.Page, voltar_fn):
                             size=12, color=SEC, italic=True),
                     ft.Container(height=8),
                     ft.Row([
-                        ft.TextButton(
-                            "Cancelar",
-                            style=ft.ButtonStyle(color=SEC),
+                        ft.Container(
+                            content=ft.Text("Cancelar", size=13, color=SEC),
+                            padding=ft.padding.symmetric(horizontal=12, vertical=8),
+                            border_radius=8, ink=True,
                             on_click=_cancelar_dup,
                         ),
                         ft.FilledButton(
                             content=ft.Row([
-                                ft.Icon(ft.Icons.REFRESH_OUTLINED, size=14),
+                                ft.Icon("refresh_outlined_rounded", size=14),
                                 ft.Text("Reprocessar", size=12,
                                         weight=ft.FontWeight.W_600),
                             ], spacing=4, tight=True),
@@ -474,7 +478,7 @@ def criar_tela_incluir_exame(page: ft.Page, voltar_fn):
             itens.append(ft.Row([
                 ft.FilledButton(
                     content=ft.Row([
-                        ft.Icon(ft.Icons.SCIENCE_OUTLINED, size=18),
+                        ft.Icon("science_outlined_rounded", size=18),
                         ft.Text("Analisar PDF", size=14, weight=ft.FontWeight.W_600),
                     ], spacing=8, tight=True),
                     style=ft.ButtonStyle(
@@ -506,7 +510,7 @@ def criar_tela_incluir_exame(page: ft.Page, voltar_fn):
                 content=ft.Column([
                     # ── Cabeçalho ──────────────────────────────
                     ft.Row([
-                        ft.Icon(ft.Icons.PICTURE_AS_PDF, size=16, color=VERM),
+                        ft.Icon("picture_as_pdf_rounded", size=16, color=VERM),
                         ft.Text(nome_arq, size=12, color=SEC, expand=True,
                                 no_wrap=True,
                                 overflow=ft.TextOverflow.ELLIPSIS),
@@ -552,13 +556,13 @@ def criar_tela_incluir_exame(page: ft.Page, voltar_fn):
 
                     # ── Etapas visuais ─────────────────────────
                     ft.Row([
-                        _etapa_chip("1 · Mapear",   ft.Icons.FIND_IN_PAGE_OUTLINED),
+                        _etapa_chip("1 · Mapear",   "find_in_page_outlined_rounded"),
                         ft.Container(width=4),
-                        _etapa_chip("2 · Ler",      ft.Icons.MENU_BOOK_OUTLINED),
+                        _etapa_chip("2 · Ler",      "menu_book_outlined_rounded"),
                         ft.Container(width=4),
-                        _etapa_chip("3 · Analisar", ft.Icons.PSYCHOLOGY_OUTLINED),
+                        _etapa_chip("3 · Analisar", "psychology_outlined_rounded"),
                         ft.Container(width=4),
-                        _etapa_chip("4 · Salvar",   ft.Icons.SAVE_OUTLINED),
+                        _etapa_chip("4 · Salvar",   "save_outlined_rounded"),
                     ], spacing=0, wrap=True),
 
                 ], spacing=6),
@@ -577,7 +581,7 @@ def criar_tela_incluir_exame(page: ft.Page, voltar_fn):
     # FASE 3 — CONFERÊNCIA
     # ══════════════════════════════════════════════════════════
     def _tela_conferencia():
-        from ..extratores.processador_exame import construir_painel_conferencia
+        from extratores.processador_exame import construir_painel_conferencia
         dados = dados_extra[0] or {}
 
         def _on_liberar():
@@ -643,71 +647,87 @@ def criar_tela_incluir_exame(page: ft.Page, voltar_fn):
             threading.Thread(target=_processar_reprocessando,
                              args=(caminho_sel[0], eid), daemon=True).start()
 
-        def _cancelar_dup(e):
-            dlg.open = False; page.update()
+        ref_dup = [None]
+
+        def _fechar_dup(e=None):
+            if ref_dup[0] and ref_dup[0] in page.overlay:
+                page.overlay.remove(ref_dup[0])
+            try: page.update()
+            except Exception: pass
+
+        def _cancelar_dup(e=None):
+            _fechar_dup()
             nome_arq = os.path.basename(caminho_sel[0])
             try:
-                registrar_ignorado(nome_arq, motivo="duplicata — cancelado pelo usuário")
+                registrar_ignorado(nome_arq,
+                                   motivo="duplicata — cancelado pelo usuario")
             except Exception:
                 pass
             _voltar_selecao()
 
-        dlg = ft.AlertDialog(
-            modal=True,
-            title=ft.Row([
-                ft.Icon(ft.Icons.WARNING_AMBER_ROUNDED, color=AMAR, size=22),
-                ft.Text("PDF já importado", size=15, weight=ft.FontWeight.W_700, color=TXT),
-            ], spacing=8),
-            content=ft.Column([
-                ft.Text(f"Arquivo: {nome}", size=12, color=SEC),
-                ft.Container(height=6),
-                ft.Container(
-                    content=ft.Column([
-                        ft.Row([
-                            ft.Icon(ft.Icons.CALENDAR_TODAY_OUTLINED, size=13, color=MUT),
-                            ft.Text(f"Importado em: {data}", size=12, color=TXT),
-                        ], spacing=6),
-                        ft.Row([
-                            ft.Icon(ft.Icons.SCIENCE_OUTLINED, size=13, color=MUT),
-                            ft.Text(f"Tipo: {tipo}", size=12, color=TXT),
-                        ], spacing=6),
-                        ft.Row([
-                            ft.Icon(ft.Icons.NUMBERS_OUTLINED, size=13, color=MUT),
-                            ft.Text(f"Parâmetros gravados: {qtd}", size=12, color=TXT),
-                        ], spacing=6),
-                    ], spacing=6),
-                    bgcolor=f"{AZUL}15", border_radius=8,
-                    padding=ft.padding.symmetric(horizontal=12, vertical=10),
-                ),
-                ft.Container(height=6),
-                ft.Text(
-                    "Deseja reprocessar e substituir os dados gravados?",
-                    size=12, color=SEC, italic=True,
-                ),
-            ], tight=True, spacing=4),
-            actions=[
-                ft.TextButton(
-                    "Cancelar",
-                    style=ft.ButtonStyle(color=SEC),
-                    on_click=_cancelar_dup,
-                ),
-                ft.FilledButton(
-                    content=ft.Row([
-                        ft.Icon(ft.Icons.REFRESH_OUTLINED, size=14),
-                        ft.Text("Reprocessar", size=12, weight=ft.FontWeight.W_600),
-                    ], spacing=4, tight=True),
-                    style=ft.ButtonStyle(
-                        bgcolor=AMAR,
-                        shape=ft.RoundedRectangleBorder(radius=7),
-                    ),
-                    on_click=_reprocessar,
-                ),
-            ],
-            actions_alignment=ft.MainAxisAlignment.END,
+        def _reprocessar_dup(e):
+            _fechar_dup()
+            _reprocessar(e)
+
+        btn_cancel_dup = ft.Container(
+            content=ft.Text("Cancelar", size=13, color=SEC),
+            padding=ft.padding.symmetric(horizontal=12, vertical=8),
+            border_radius=8, bgcolor=f"{SEC}22", ink=True,
         )
-        page.dialog = dlg
-        dlg.open    = True
-        page.update()
+        btn_cancel_dup.on_click = _cancelar_dup
+
+        btn_reprocessar = ft.Container(
+            content=ft.Row([
+                ft.Icon("refresh_rounded", size=14, color=AMAR),
+                ft.Text("Reprocessar", size=12, color=AMAR,
+                        weight=ft.FontWeight.W_600),
+            ], spacing=4, tight=True),
+            padding=ft.padding.symmetric(horizontal=12, vertical=8),
+            border_radius=8, bgcolor=f"{AMAR}22", ink=True,
+        )
+        btn_reprocessar.on_click = _reprocessar_dup
+
+        ref_dup[0] = ft.Container(
+            content=ft.Container(
+                content=ft.Column([
+                    ft.Row([
+                        ft.Icon("warning_amber_rounded", color=AMAR, size=20),
+                        ft.Text("PDF ja importado", size=15,
+                                weight=ft.FontWeight.W_700, color=TXT),
+                    ], spacing=8),
+                    ft.Container(height=8),
+                    ft.Text(f"Arquivo: {nome}", size=12, color=SEC),
+                    ft.Container(
+                        content=ft.Column([
+                            ft.Row([ft.Icon("calendar_today_rounded", size=13,
+                                           color=MUT),
+                                   ft.Text(f"Importado em: {data}", size=12,
+                                           color=TXT)], spacing=6),
+                            ft.Row([ft.Icon("science_rounded", size=13, color=MUT),
+                                   ft.Text(f"Tipo: {tipo}", size=12,
+                                           color=TXT)], spacing=6),
+                            ft.Row([ft.Icon("numbers_rounded", size=13, color=MUT),
+                                   ft.Text(f"Parametros: {qtd}", size=12,
+                                           color=TXT)], spacing=6),
+                        ], spacing=6),
+                        bgcolor=f"{AZUL}15", border_radius=8,
+                        padding=ft.padding.symmetric(horizontal=12, vertical=10),
+                    ),
+                    ft.Text("Deseja reprocessar e substituir os dados?",
+                            size=12, color=SEC),
+                    ft.Container(height=8),
+                    ft.Row([btn_cancel_dup, btn_reprocessar], spacing=8,
+                           alignment=ft.MainAxisAlignment.END),
+                ], spacing=6, tight=True),
+                bgcolor=CARD, border_radius=14,
+                padding=ft.padding.all(16), width=320,
+            ),
+            bgcolor="#CC000000", expand=True, alignment=ft.Alignment(0, 0),
+        )
+        ref_dup[0].on_click = _fechar_dup
+        page.overlay.append(ref_dup[0])
+        try: page.update()
+        except Exception: pass
 
     def _processar_reprocessando(caminho, exame_id_antigo):
         """Igual a _processar mas pula a verificação de duplicata."""
@@ -727,8 +747,8 @@ def criar_tela_incluir_exame(page: ft.Page, voltar_fn):
                 logging.error(f"[LOG_ERRO] falha ao gravar log: {_le} | msg={msg}")
 
         try:
-            from ..extratores.extrator_pdf import extrair_pdf_bytes
-            from ..dados.model_prontuario        import buscar_vinculos_parametros, validar_paciente_pdf
+            from extratores.extrator_pdf import extrair_pdf_bytes
+            from dados.model_prontuario        import buscar_vinculos_parametros, validar_paciente_pdf
         except Exception as ex_imp:
             _log_erro(f"IMPORT ERROR: {ex_imp}")
             fase[0] = "selecao"; _rebuild(); return
@@ -824,7 +844,7 @@ def criar_tela_incluir_exame(page: ft.Page, voltar_fn):
                     # ── Ícone + título ──────────────────────────
                     ft.Row([
                         ft.Container(
-                            content=ft.Icon(ft.Icons.EXTENSION_OFF_OUTLINED,
+                            content=ft.Icon("extension_off_outlined_rounded",
                                             size=28, color=AMAR),
                             bgcolor=f"{AMAR}18", border_radius=8,
                             padding=ft.padding.all(10),
@@ -850,17 +870,17 @@ def criar_tela_incluir_exame(page: ft.Page, voltar_fn):
                     ft.Container(
                         content=ft.Column([
                             ft.Row([
-                                ft.Icon(ft.Icons.INSERT_DRIVE_FILE_OUTLINED,
+                                ft.Icon("insert_drive_file_outlined_rounded",
                                         size=13, color=MUT),
                                 ft.Text(f"Arquivo: {nome_arq}", size=12, color=TXT),
                             ], spacing=6),
                             ft.Row([
-                                ft.Icon(ft.Icons.BUSINESS_OUTLINED,
+                                ft.Icon("business_outlined_rounded",
                                         size=13, color=MUT),
                                 ft.Text(f"Laboratório/Equipamento: {lab}", size=12, color=TXT),
                             ], spacing=6),
                             ft.Row([
-                                ft.Icon(ft.Icons.CATEGORY_OUTLINED,
+                                ft.Icon("category_outlined_rounded",
                                         size=13, color=MUT),
                                 ft.Text(f"Tipo detectado: {tipo_det}", size=12, color=TXT),
                             ], spacing=6),
@@ -876,7 +896,7 @@ def criar_tela_incluir_exame(page: ft.Page, voltar_fn):
                     # ── Informativo ──────────────────────────────
                     ft.Container(
                         content=ft.Row([
-                            ft.Icon(ft.Icons.INFO_OUTLINE, size=13, color=SEC),
+                            ft.Icon("info_outline_rounded", size=13, color=SEC),
                             ft.Container(width=6),
                             ft.Text(
                                 "Você pode importar como laudo genérico (sem extração de valores) "
@@ -893,17 +913,19 @@ def criar_tela_incluir_exame(page: ft.Page, voltar_fn):
 
                     # ── Botões ───────────────────────────────────
                     ft.Row([
-                        ft.TextButton(
+                        ft.Container(
                             content=ft.Row([
-                                ft.Icon(ft.Icons.CLOSE, size=14, color=SEC),
+                                ft.Icon("close_rounded", size=14, color=SEC),
                                 ft.Text("Cancelar", size=12, color=SEC),
                             ], spacing=4, tight=True),
+                            padding=ft.padding.symmetric(horizontal=8, vertical=8),
+                            ink=True,
                             on_click=_cancelar_modelo,
                         ),
                         ft.Container(expand=True),
                         ft.FilledButton(
                             content=ft.Row([
-                                ft.Icon(ft.Icons.UPLOAD_FILE_OUTLINED, size=15),
+                                ft.Icon("upload_file_outlined_rounded", size=15),
                                 ft.Text("Importar como laudo",
                                         size=13, weight=ft.FontWeight.W_600),
                             ], spacing=6, tight=True),
@@ -943,8 +965,8 @@ def criar_tela_incluir_exame(page: ft.Page, voltar_fn):
                 logging.error(f"[LOG_ERRO] falha ao gravar log: {_le} | msg={msg}")
 
         try:
-            from ..extratores.extrator_pdf import extrair_pdf_bytes
-            from ..dados.model_prontuario        import verificar_duplicata, buscar_vinculos_parametros, salvar_exame, validar_paciente_pdf, registrar_ignorado, substituir_exame
+            from extratores.extrator_pdf import extrair_pdf_bytes
+            from dados.model_prontuario        import verificar_duplicata, buscar_vinculos_parametros, salvar_exame, validar_paciente_pdf, registrar_ignorado, substituir_exame
         except Exception as ex_imp:
             _log_erro(f"IMPORT ERROR: {ex_imp}")
             fase[0] = "selecao"
@@ -1121,7 +1143,7 @@ def criar_tela_incluir_exame(page: ft.Page, voltar_fn):
 
     def _salvar_sem_drive(dados, exame_id_antigo=None):
         """Grava exame no banco sem upload pro Drive."""
-        from ..dados.model_prontuario import salvar_exame, substituir_exame
+        from dados.model_prontuario import salvar_exame, substituir_exame
         dados["drive_file_id"] = None
         if exame_id_antigo:
             return substituir_exame(exame_id_antigo, dados)
@@ -1129,7 +1151,7 @@ def criar_tela_incluir_exame(page: ft.Page, voltar_fn):
 
     def _liberar():
         """Upload Drive + gravação definitiva. Trata credenciais expiradas."""
-        from ..dados.model_prontuario import salvar_sync_pendente, salvar_exame, substituir_exame
+        from dados.model_prontuario import salvar_sync_pendente, salvar_exame, substituir_exame
         dados = dados_extra[0]
 
         def _log_erro(msg):
@@ -1276,7 +1298,7 @@ def criar_tela_incluir_exame(page: ft.Page, voltar_fn):
             ft.Container(
                 content=ft.Column([
                     ft.Row([
-                        ft.Icon(ft.Icons.CLOUD_OFF, size=32, color=AMAR),
+                        ft.Icon("cloud_off_rounded", size=32, color=AMAR),
                         ft.Text("Google Drive indisponível", size=16,
                                 weight=ft.FontWeight.W_700, color=TXT),
                     ], spacing=12),
@@ -1295,7 +1317,7 @@ def criar_tela_incluir_exame(page: ft.Page, voltar_fn):
                     ft.Container(height=12),
                     ft.FilledButton(
                         content=ft.Row([
-                            ft.Icon(ft.Icons.REFRESH, size=16),
+                            ft.Icon("refresh_rounded", size=16),
                             ft.Text("Limpar credenciais e re-autenticar", size=13,
                                     weight=ft.FontWeight.W_600),
                         ], spacing=8, tight=True),
@@ -1309,7 +1331,7 @@ def criar_tela_incluir_exame(page: ft.Page, voltar_fn):
                     ft.Container(height=6),
                     ft.FilledButton(
                         content=ft.Row([
-                            ft.Icon(ft.Icons.SAVE, size=16),
+                            ft.Icon("save_rounded", size=16),
                             ft.Text("Salvar só no banco (sem Drive)", size=13,
                                     weight=ft.FontWeight.W_600),
                         ], spacing=8, tight=True),
@@ -1321,11 +1343,13 @@ def criar_tela_incluir_exame(page: ft.Page, voltar_fn):
                         on_click=_salvar_local,
                     ),
                     ft.Container(height=6),
-                    ft.TextButton(
+                    ft.Container(
                         content=ft.Row([
-                            ft.Icon(ft.Icons.ARROW_BACK, size=14, color=SEC),
+                            ft.Icon("arrow_back_rounded", size=14, color=SEC),
                             ft.Text("Voltar para conferência", size=12, color=SEC),
                         ], spacing=4, tight=True),
+                        padding=ft.padding.symmetric(horizontal=8, vertical=8),
+                        ink=True,
                         on_click=_voltar_conf,
                     ),
                 ], spacing=4),
@@ -1349,11 +1373,13 @@ def criar_tela_incluir_exame(page: ft.Page, voltar_fn):
     # ══════════════════════════════════════════════════════════
     area.controls.extend(_tela_selecao())
 
-    btn_voltar = ft.TextButton(
+    btn_voltar = ft.Container(
         content=ft.Row([
-            ft.Icon(ft.Icons.ARROW_BACK, size=14, color=SEC),
+            ft.Icon("arrow_back_rounded", size=14, color=SEC),
             ft.Text("Voltar", size=12, color=SEC),
         ], spacing=4, tight=True),
+        padding=ft.padding.symmetric(horizontal=8, vertical=8),
+        ink=True,
         on_click=lambda e: voltar_fn(),
     )
 
@@ -1362,7 +1388,7 @@ def criar_tela_incluir_exame(page: ft.Page, voltar_fn):
             content=ft.Row([
                 btn_voltar,
                 ft.Row([
-                    ft.Icon(ft.Icons.UPLOAD_FILE, size=20, color=AZUL),
+                    ft.Icon("upload_file_rounded", size=20, color=AZUL),
                     ft.Text("Incluir Exame", size=18,
                             weight=ft.FontWeight.W_700, color=TXT),
                 ], spacing=8, tight=True),

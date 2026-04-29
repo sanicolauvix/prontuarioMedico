@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """
 prontuario/backup/drive_backup.py
 Backup / Restore no Google Drive via urllib puro.

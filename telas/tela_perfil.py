@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """prontuario/telas/tela_perfil.py — Perfil do usuário."""
 
 import flet as ft
@@ -44,7 +45,7 @@ def criar_tela_perfil(page: ft.Page, voltar_fn=None):
 
     perfil = {}
     try:
-        from prontuario.dados.model_prontuario import carregar_perfil
+        from dados.model_prontuario import carregar_perfil
         perfil = carregar_perfil() or {}
     except Exception:
         pass
@@ -129,7 +130,7 @@ def criar_tela_perfil(page: ft.Page, voltar_fn=None):
                 "accent_color":       perfil.get("accent_color", "#58A6FF"),
                 "tamanho_fonte":      perfil.get("tamanho_fonte", "medio"),
             }
-            from prontuario.dados.model_prontuario import salvar_perfil
+            from dados.model_prontuario import salvar_perfil
             salvar_perfil(dados)
             txt_status.value = "Perfil salvo!"
             txt_status.color = VERD
@@ -143,23 +144,27 @@ def criar_tela_perfil(page: ft.Page, voltar_fn=None):
     # ── Header ────────────────────────────────────────────────────
     header = ft.Container(
         content=ft.Row([
-            ft.TextButton(
+            ft.Container(
                 content=ft.Row([
-                    ft.Icon(ft.Icons.ARROW_BACK, size=16, color=SEC),
+                    ft.Icon("arrow_back_rounded", size=16, color=SEC),
                     ft.Text("Voltar", size=13, color=SEC),
                 ], spacing=4, tight=True),
+                padding=ft.padding.symmetric(horizontal=8, vertical=8),
+                ink=True,
                 on_click=lambda e: voltar_fn() if voltar_fn else None,
             ),
             ft.Row([
-                ft.Icon(ft.Icons.MANAGE_ACCOUNTS, size=18, color=AZUL),
+                ft.Icon("manage_accounts_rounded", size=18, color=AZUL),
                 ft.Text("Perfil", size=16, weight=ft.FontWeight.W_700, color=TXT),
             ], spacing=8, tight=True),
             ft.Container(expand=True),
-            ft.TextButton(
+            ft.Container(
                 content=ft.Row([
-                    ft.Icon(ft.Icons.SAVE_OUTLINED, size=14, color=AZUL),
+                    ft.Icon("save_outlined_rounded", size=14, color=AZUL),
                     ft.Text("Salvar", size=13, color=AZUL),
                 ], spacing=4, tight=True),
+                padding=ft.padding.symmetric(horizontal=8, vertical=8),
+                ink=True,
                 on_click=_salvar,
             ),
         ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),

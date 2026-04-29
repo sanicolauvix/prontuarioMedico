@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """
 remedios_model_patch.py — Koios
 =================================

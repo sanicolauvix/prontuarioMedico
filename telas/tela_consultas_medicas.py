@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """
 tela_consultas_medicas.py — Koios Prontuário
 Consultas médicas: lista, cadastro, alarme Windows e receitas via IA.
@@ -7,7 +8,7 @@ import logging
 import threading
 import datetime
 import flet as ft
-from ..dados.model_prontuario import (
+from dados.model_prontuario import (
     listar_consultas, salvar_consulta, listar_medicos,
     salvar_receita, listar_receitas,
 )
@@ -21,9 +22,9 @@ AZUL = "#58A6FF";  VERD = "#3FB950";  LAR = "#F0883E"
 AMAR = "#D29922";  VERM = "#DA3633";  ROXO = "#BC8CFF"
 
 CORES_TIPO = {
-    "agendada":  (AZUL, ft.Icons.CALENDAR_TODAY),
-    "realizada": (VERD, ft.Icons.CHECK_CIRCLE_OUTLINE),
-    "cancelada": (MUT,  ft.Icons.CANCEL_OUTLINED),
+    "agendada":  (AZUL, "calendar_today_rounded"),
+    "realizada": (VERD, "check_circle_outline_rounded"),
+    "cancelada": (MUT,  "cancel_outlined_rounded"),
 }
 
 
@@ -57,7 +58,7 @@ def _label_sec(texto, cor=MUT):
 
 
 def _badge(tipo):
-    cor, icone = CORES_TIPO.get(tipo, (SEC, ft.Icons.HELP_OUTLINE))
+    cor, icone = CORES_TIPO.get(tipo, (SEC, "help_outline_rounded"))
     return ft.Container(
         content=ft.Row([
             ft.Icon(icone, size=11, color=cor),
@@ -70,7 +71,7 @@ def _badge(tipo):
 
 
 def _chip_tipo(tipo, selecionado, on_click):
-    cor, icone = CORES_TIPO.get(tipo, (SEC, ft.Icons.HELP_OUTLINE))
+    cor, icone = CORES_TIPO.get(tipo, (SEC, "help_outline_rounded"))
     ativo = tipo == selecionado
     return ft.Container(
         content=ft.Row([
@@ -133,9 +134,9 @@ def _campo_medico(page, medicos, med_id_sel, valor_ini=""):
 
     med_chip = ft.Container(
         content=ft.Row([
-            ft.Icon(ft.Icons.PERSON, size=13, color=AZUL),
+            ft.Icon("person_rounded", size=13, color=AZUL),
             ft.Text("", size=12, color=AZUL, weight=ft.FontWeight.W_600),
-            ft.Icon(ft.Icons.CLOSE_ROUNDED, size=13, color=AZUL),
+            ft.Icon("close_rounded", size=13, color=AZUL),
         ], spacing=6, tight=True),
         bgcolor=f"{AZUL}18", border_radius=16,
         padding=ft.padding.symmetric(horizontal=10, vertical=5),
@@ -144,7 +145,7 @@ def _campo_medico(page, medicos, med_id_sel, valor_ini=""):
 
     tf = ft.TextField(
         hint_text="Buscar médico...",
-        prefix_icon=ft.Icons.SEARCH,
+        prefix_icon="search_rounded",
         bgcolor=CARD, border_color=BD2, focused_border_color=AZUL,
         hint_style=ft.TextStyle(color=MUT),
         text_style=ft.TextStyle(color=TXT),
@@ -204,12 +205,12 @@ def _campo_medico(page, medicos, med_id_sel, valor_ini=""):
                 return sel
             sugestoes.controls.append(ft.Container(
                 content=ft.Row([
-                    ft.Icon(ft.Icons.PERSON, size=13, color=AZUL),
+                    ft.Icon("person_rounded", size=13, color=AZUL),
                     ft.Column([
                         ft.Text(m["nome"], size=13, color=TXT),
                         ft.Text(esp, size=10, color=MUT) if esp else ft.Container(),
                     ], spacing=1, expand=True, tight=True),
-                    ft.Icon(ft.Icons.ADD_CIRCLE_OUTLINE_ROUNDED, size=14, color=AZUL),
+                    ft.Icon("add_circle_outline_rounded", size=14, color=AZUL),
                 ], spacing=8),
                 bgcolor=CARD, border_radius=6,
                 padding=ft.padding.symmetric(horizontal=10, vertical=8),
@@ -258,7 +259,7 @@ def _tela_receita(page, consulta, voltar_fn):
         for r in recs:
             lista_rec.controls.append(ft.Container(
                 content=ft.Row([
-                    ft.Icon(ft.Icons.RECEIPT_LONG, size=20, color=ROXO),
+                    ft.Icon("receipt_long_rounded", size=20, color=ROXO),
                     ft.Column([
                         ft.Text(r.get("nome_arquivo") or "Receita", size=13,
                                 color=TXT, weight=ft.FontWeight.W_600),
@@ -280,7 +281,7 @@ def _tela_receita(page, consulta, voltar_fn):
 
     btn_extrair = ft.FilledButton(
         content=ft.Row([
-            ft.Icon(ft.Icons.AUTO_AWESOME, size=15),
+            ft.Icon("auto_awesome_rounded", size=15),
             ft.Text("Extrair com IA", size=13, weight=ft.FontWeight.W_600),
         ], spacing=6, tight=True),
         style=ft.ButtonStyle(
@@ -451,11 +452,13 @@ def _tela_receita(page, consulta, voltar_fn):
 
     cabecalho = ft.Container(
         content=ft.Row([
-            ft.TextButton(
+            ft.Container(
                 content=ft.Row([
-                    ft.Icon(ft.Icons.ARROW_BACK, size=16),
+                    ft.Icon("arrow_back_rounded", size=16),
                     ft.Text("Voltar", size=13),
                 ], spacing=4, tight=True),
+                padding=ft.padding.symmetric(horizontal=8, vertical=8),
+                ink=True,
                 on_click=lambda e: voltar_fn(),
             ),
             ft.Column([
@@ -480,7 +483,7 @@ def _tela_receita(page, consulta, voltar_fn):
                 ft.Row([
                     ft.OutlinedButton(
                         content=ft.Row([
-                            ft.Icon(ft.Icons.CAMERA_ALT_OUTLINED, size=15, color=ROXO),
+                            ft.Icon("camera_alt_outlined_rounded", size=15, color=ROXO),
                             ft.Text("Foto da receita", size=12, color=ROXO),
                         ], spacing=6, tight=True),
                         style=ft.ButtonStyle(
@@ -495,7 +498,7 @@ def _tela_receita(page, consulta, voltar_fn):
                 txt_instrucoes,
                 ft.FilledButton(
                     content=ft.Row([
-                        ft.Icon(ft.Icons.SAVE_ROUNDED, size=15),
+                        ft.Icon("save_rounded", size=15),
                         ft.Text("Salvar Receita", size=13, weight=ft.FontWeight.W_600),
                     ], spacing=6, tight=True),
                     style=ft.ButtonStyle(
@@ -594,21 +597,23 @@ def _tela_ficha_consulta(page, consulta, voltar_fn, medicos):
 
     cabecalho = ft.Container(
         content=ft.Row([
-            ft.TextButton(
+            ft.Container(
                 content=ft.Row([
-                    ft.Icon(ft.Icons.ARROW_BACK, size=16),
+                    ft.Icon("arrow_back_rounded", size=16),
                     ft.Text("Voltar", size=13),
                 ], spacing=4, tight=True),
+                padding=ft.padding.symmetric(horizontal=8, vertical=8),
+                ink=True,
                 on_click=lambda e: voltar_fn(),
             ),
             ft.Row([
-                ft.Icon(ft.Icons.EVENT_NOTE, size=18, color=AZUL),
+                ft.Icon("event_note_rounded", size=18, color=AZUL),
                 ft.Text(titulo, size=18, weight=ft.FontWeight.W_700, color=TXT),
             ], spacing=8, tight=True),
             ft.Container(expand=True),
             ft.FilledButton(
                 content=ft.Row([
-                    ft.Icon(ft.Icons.SAVE_ROUNDED, size=16),
+                    ft.Icon("save_rounded", size=16),
                     ft.Text("Salvar", size=13, weight=ft.FontWeight.W_600),
                 ], spacing=6, tight=True),
                 style=ft.ButtonStyle(
@@ -643,7 +648,7 @@ def _tela_ficha_consulta(page, consulta, voltar_fn, medicos):
                 ft.Container(height=8),
                 ft.OutlinedButton(
                     content=ft.Row([
-                        ft.Icon(ft.Icons.ALARM_ADD, size=16, color=AMAR),
+                        ft.Icon("alarm_add_rounded", size=16, color=AMAR),
                         ft.Text("Agendar Alarme", size=13, color=AMAR),
                     ], spacing=6, tight=True),
                     style=ft.ButtonStyle(
@@ -673,10 +678,10 @@ def criar_tela_consultas_medicas(page: ft.Page, voltar_fn):
     medicos = listar_medicos(so_ativos=True)
 
     ABAS = [
-        (0, ft.Icons.EVENT_NOTE,         "Consultas",  AZUL),
-        (1, ft.Icons.CALENDAR_TODAY,     "Agendadas",  AZUL),
-        (2, ft.Icons.CHECK_CIRCLE_OUTLINE, "Realizadas", VERD),
-        (3, ft.Icons.CANCEL_OUTLINED,    "Canceladas", MUT),
+        (0, "event_note_rounded",         "Consultas",  AZUL),
+        (1, "calendar_today_rounded",     "Agendadas",  AZUL),
+        (2, "check_circle_outline_rounded", "Realizadas", VERD),
+        (3, "cancel_outlined_rounded",    "Canceladas", MUT),
     ]
     FILTROS = [None, "agendada", "realizada", "cancelada"]
     aba_ativa = [0]
@@ -722,7 +727,7 @@ def criar_tela_consultas_medicas(page: ft.Page, voltar_fn):
         if not consultas:
             lista.controls.append(ft.Container(
                 content=ft.Column([
-                    ft.Icon(ft.Icons.EVENT_BUSY, size=40, color=MUT),
+                    ft.Icon("event_busy_rounded", size=40, color=MUT),
                     ft.Text("Nenhuma consulta cadastrada.", color=SEC, size=13),
                 ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=8),
                 padding=40, alignment=ft.alignment.Alignment(0, 0),
@@ -733,7 +738,7 @@ def criar_tela_consultas_medicas(page: ft.Page, voltar_fn):
 
         for c in consultas:
             cor_tipo, icone_tipo = CORES_TIPO.get(
-                c["tipo"], (SEC, ft.Icons.HELP_OUTLINE))
+                c["tipo"], (SEC, "help_outline_rounded"))
 
             info_data = ""
             try:
@@ -772,28 +777,32 @@ def criar_tela_consultas_medicas(page: ft.Page, voltar_fn):
                         _badge(c["tipo"]),
                     ], spacing=10, vertical_alignment=ft.CrossAxisAlignment.CENTER),
                     ft.Row([
-                        ft.Icon(ft.Icons.CALENDAR_TODAY, size=12, color=MUT),
+                        ft.Icon("calendar_today_rounded", size=12, color=MUT),
                         ft.Text(f"{c['data']}  {c.get('hora') or ''}", size=12, color=SEC),
                         ft.Container(expand=True),
                         ft.Text(info_data, size=11,
                                 color=AMAR if info_data in ("Hoje!", "Amanhã") else MUT),
                     ], spacing=6),
                     ft.Row([
-                        ft.Icon(ft.Icons.LOCATION_ON_OUTLINED, size=12, color=MUT),
+                        ft.Icon("location_on_outlined_rounded", size=12, color=MUT),
                         ft.Text(c.get("local") or "Local não informado",
                                 size=11, color=SEC, expand=True),
-                        ft.TextButton(
+                        ft.Container(
                             content=ft.Row([
-                                ft.Icon(ft.Icons.RECEIPT_LONG, size=13, color=ROXO),
+                                ft.Icon("receipt_long_rounded", size=13, color=ROXO),
                                 ft.Text("Receitas", size=11, color=ROXO),
                             ], spacing=4, tight=True),
+                            padding=ft.padding.symmetric(horizontal=8, vertical=8),
+                            ink=True,
                             on_click=_make_rec(c),
                         ),
-                        ft.TextButton(
+                        ft.Container(
                             content=ft.Row([
-                                ft.Icon(ft.Icons.EDIT_ROUNDED, size=13, color=MUT),
+                                ft.Icon("edit_rounded", size=13, color=MUT),
                                 ft.Text("Editar", size=11, color=MUT),
                             ], spacing=4, tight=True),
+                            padding=ft.padding.symmetric(horizontal=8, vertical=8),
+                            ink=True,
                             on_click=_make_ficha(c),
                         ),
                     ], spacing=4),
@@ -837,22 +846,24 @@ def criar_tela_consultas_medicas(page: ft.Page, voltar_fn):
     def _mostrar_principal():
         cabecalho = ft.Container(
             content=ft.Row([
-                ft.TextButton(
+                ft.Container(
                     content=ft.Row([
-                        ft.Icon(ft.Icons.ARROW_BACK, size=16),
+                        ft.Icon("arrow_back_rounded", size=16),
                         ft.Text("Voltar", size=13),
                     ], spacing=4, tight=True),
+                    padding=ft.padding.symmetric(horizontal=8, vertical=8),
+                    ink=True,
                     on_click=lambda e: voltar_fn(),
                 ),
                 ft.Row([
-                    ft.Icon(ft.Icons.EVENT_NOTE, size=20, color=AZUL),
+                    ft.Icon("event_note_rounded", size=20, color=AZUL),
                     ft.Text("Consultas", size=18,
                             weight=ft.FontWeight.W_700, color=TXT),
                 ], spacing=8, tight=True),
                 ft.Container(expand=True),
                 ft.FilledButton(
                     content=ft.Row([
-                        ft.Icon(ft.Icons.ADD_ROUNDED, size=16),
+                        ft.Icon("add_rounded", size=16),
                         ft.Text("Nova", size=13),
                     ], spacing=6, tight=True),
                     style=ft.ButtonStyle(

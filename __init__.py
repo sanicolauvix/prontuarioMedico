@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """Pacote prontuario — reorganizado em subpastas."""
 import os, sys
 

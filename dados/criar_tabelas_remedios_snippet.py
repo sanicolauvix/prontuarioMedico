@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """
 criar_tabelas_remedios_snippet.sql
 ===================================

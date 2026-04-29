@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """
 tela_incluir_exame_padrao.py — Koios Prontuário
 Tela exclusiva para incluir exame padrão a partir de uma pendência.
@@ -49,8 +50,8 @@ def _tf(label, value="", hint=None, expand=False, width=None, read_only=False):
 def criar_tela_incluir_exame_padrao(page: ft.Page,
                                      parametro: str,
                                      voltar_fn=None):
-    from ..dados.model_prontuario import DB_PATH
-    from ..dados.limpeza import vincular_manualmente, executar_limpeza
+    from dados.model_prontuario import DB_PATH
+    from dados.limpeza import vincular_manualmente, executar_limpeza
 
     # Separar nome e valor numérico
     match = re.match(r'^(.*?)\s+([\d]+[,.][\d]+|[\d]+)\s*$', parametro.strip())
@@ -188,11 +189,13 @@ def criar_tela_incluir_exame_padrao(page: ft.Page,
     return ft.Column([
         # Cabeçalho
         ft.Row([
-            ft.TextButton(
+            ft.Container(
                 content=ft.Row([
-                    ft.Icon(ft.Icons.ARROW_BACK, size=14, color=SEC),
+                    ft.Icon("arrow_back_rounded", size=14, color=SEC),
                     ft.Text("Voltar", size=12, color=SEC),
                 ], spacing=4, tight=True),
+                padding=ft.padding.symmetric(horizontal=8, vertical=8),
+                ink=True,
                 on_click=lambda e: voltar_fn() if voltar_fn else None,
             ),
             ft.Container(expand=True),
@@ -225,15 +228,16 @@ def criar_tela_incluir_exame_padrao(page: ft.Page,
         ft.Container(height=8),
 
         ft.Row([
-            ft.TextButton(
-                "Cancelar",
-                style=ft.ButtonStyle(color=SEC),
+            ft.Container(
+                content=ft.Text("Cancelar", size=13, color=SEC),
+                padding=ft.padding.symmetric(horizontal=12, vertical=8),
+                border_radius=8, ink=True,
                 on_click=lambda e: voltar_fn() if voltar_fn else None,
             ),
             ft.Container(expand=True),
             ft.FilledButton(
                 content=ft.Row([
-                    ft.Icon(ft.Icons.SAVE_OUTLINED, size=16),
+                    ft.Icon("save_outlined_rounded", size=16),
                     ft.Text("Confirmar", size=13, weight=ft.FontWeight.W_600),
                 ], spacing=6, tight=True),
                 style=ft.ButtonStyle(

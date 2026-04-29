@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """
 tela_parecer.py - Exibe o parecer clínico gerado pela IA
 """
@@ -18,10 +19,10 @@ NIVEL_COR = {
     "sem_risco": "#484F58",
 }
 NIVEL_ICON = {
-    "alto":      ft.Icons.WARNING_ROUNDED,
-    "moderado":  ft.Icons.INFO_ROUNDED,
-    "baixo":     ft.Icons.CHECK_CIRCLE_ROUNDED,
-    "sem_risco": ft.Icons.REMOVE_CIRCLE_OUTLINE_ROUNDED,
+    "alto":      "warning_rounded",
+    "moderado":  "info_rounded",
+    "baixo":     "check_circle_rounded",
+    "sem_risco": "remove_circle_outline_rounded",
 }
 TENDENCIA_ICON = {
     "subindo":      ("↑", "#F0883E"),
@@ -95,7 +96,7 @@ def _secao_tendencias(tendencias: list) -> ft.Control:
                                 border_radius=4,
                                 padding=ft.padding.symmetric(horizontal=6, vertical=2),
                             ),
-                            ft.Icon(ft.Icons.WARNING_AMBER, size=13,
+                            ft.Icon("warning_amber_rounded", size=13,
                                     color="#F0883E") if alerta else ft.Container(),
                         ], spacing=6),
                         ft.Text(t.get("descricao",""), size=12, color=COR_SUBTITULO),
@@ -114,7 +115,7 @@ def _secao_tendencias(tendencias: list) -> ft.Control:
         )
 
     return _card(ft.Column([
-        _secao_titulo(ft.Icons.SHOW_CHART_ROUNDED, "Tendências Temporais", "#58A6FF"),
+        _secao_titulo("show_chart_rounded", "Tendências Temporais", "#58A6FF"),
         ft.Container(height=8),
         ft.Column(itens, spacing=6),
     ], spacing=0))
@@ -161,7 +162,7 @@ def _secao_correlacoes(correlacoes: list) -> ft.Control:
         )
 
     return _card(ft.Column([
-        _secao_titulo(ft.Icons.HUB_ROUNDED, "Correlações entre Exames", "#BC8CFF"),
+        _secao_titulo("hub_rounded", "Correlações entre Exames", "#BC8CFF"),
         ft.Container(height=8),
         ft.Column(itens, spacing=6),
     ], spacing=0))
@@ -175,7 +176,7 @@ def _secao_riscos(riscos: list) -> ft.Control:
     for r in riscos:
         nivel = r.get("nivel", "baixo")
         cor   = NIVEL_COR.get(nivel, "#484F58")
-        icone = NIVEL_ICON.get(nivel, ft.Icons.INFO_ROUNDED)
+        icone = NIVEL_ICON.get(nivel, "info_rounded")
 
         itens.append(
             ft.Container(
@@ -217,7 +218,7 @@ def _secao_riscos(riscos: list) -> ft.Control:
         )
 
     return _card(ft.Column([
-        _secao_titulo(ft.Icons.MONITOR_HEART_ROUNDED, "Riscos Identificados", "#F0883E"),
+        _secao_titulo("monitor_heart_rounded", "Riscos Identificados", "#F0883E"),
         ft.Container(height=8),
         ft.Column(itens, spacing=6),
     ], spacing=0))
@@ -243,7 +244,7 @@ def _secao_recomendacoes(recomendacoes: list) -> ft.Control:
     ]
 
     return _card(ft.Column([
-        _secao_titulo(ft.Icons.LIGHTBULB_ROUNDED, "Recomendações", "#3FB950"),
+        _secao_titulo("lightbulb_rounded", "Recomendações", "#3FB950"),
         ft.Container(height=8),
         ft.Column(itens, spacing=8),
     ], spacing=0))
@@ -255,7 +256,7 @@ def _secao_resumo(resumo: str) -> ft.Control:
 
     return _card(
         ft.Column([
-            _secao_titulo(ft.Icons.SUMMARIZE_ROUNDED, "Síntese Geral", "#E6EDF3"),
+            _secao_titulo("summarize_rounded", "Síntese Geral", "#E6EDF3"),
             ft.Container(height=8),
             ft.Text(resumo, size=13, color=COR_TITULO, selectable=True),
         ], spacing=0),
@@ -266,7 +267,7 @@ def _secao_resumo(resumo: str) -> ft.Control:
 def _aviso_legal() -> ft.Container:
     return ft.Container(
         content=ft.Row([
-            ft.Icon(ft.Icons.INFO_OUTLINE, size=14, color="#484F58"),
+            ft.Icon("info_outline_rounded", size=14, color="#484F58"),
             ft.Text(
                 "Este parecer é auxiliar e educacional. "
                 "Consulte seu médico para avaliação e conduta clínica.",
@@ -290,7 +291,7 @@ def _aviso_legal() -> ft.Container:
 def criar_tela_parecer(page: ft.Page,
                        exames_selecionados: list[dict],
                        voltar_fn):
-    from ..utils.parecer_medico import gerar_parecer, idade_atual, sexo_extenso, nome_paciente
+    from utils.parecer_medico import gerar_parecer, idade_atual, sexo_extenso, nome_paciente
 
     conteudo   = ft.Column(spacing=10, scroll=ft.ScrollMode.AUTO, expand=True)
     prog_ring  = ft.ProgressRing(width=32, height=32, stroke_width=3,
@@ -301,11 +302,13 @@ def criar_tela_parecer(page: ft.Page,
     idade        = idade_atual()
     sexo         = "Masculino" if sexo_extenso() == "masculino" else "Feminino"
 
-    btn_voltar = ft.TextButton(
+    btn_voltar = ft.Container(
         content=ft.Row([
-            ft.Icon(ft.Icons.ARROW_BACK, size=16),
+            ft.Icon("arrow_back_rounded", size=16),
             ft.Text("Voltar", size=13),
         ], spacing=4, tight=True),
+        padding=ft.padding.symmetric(horizontal=8, vertical=8),
+        ink=True,
         on_click=voltar_fn,
     )
 
@@ -333,7 +336,7 @@ def criar_tela_parecer(page: ft.Page,
         if "erro" in resultado:
             area_resultado.controls.append(
                 _card(ft.Column([
-                    ft.Icon(ft.Icons.ERROR_ROUNDED, size=32, color="#FF4444"),
+                    ft.Icon("error_rounded", size=32, color="#FF4444"),
                     ft.Text(f"Erro ao gerar parecer:\n{resultado['erro']}",
                             size=13, color="#FF4444", text_align=ft.TextAlign.CENTER),
                 ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=8))

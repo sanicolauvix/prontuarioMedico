@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """
 tela_remedios.py — Koios Prontuário
 Controle completo de medicamentos.
@@ -10,7 +11,7 @@ import flet as ft
 import threading
 import webbrowser
 from datetime import date, datetime, timedelta
-from ..dados.model_prontuario import (
+from dados.model_prontuario import (
     listar_remedios, salvar_remedio,
     remedios_estoque_baixo, listar_medicos,
     salvar_horarios_remedio, listar_horarios_remedio,
@@ -23,7 +24,7 @@ from ..dados.model_prontuario import (
     gerar_mensagem_orcamento, link_whatsapp,
     analisar_resposta_orcamento_ia,
 )
-from ..utils.foto_picker import (
+from utils.foto_picker import (
     criar_btn_seletor_foto, processar_foto, _is_android,
 )
 
@@ -121,7 +122,7 @@ def _build_aba_hoje(page):
         if not tomadas:
             lista.controls.append(ft.Container(
                 content=ft.Column([
-                    ft.Icon(ft.Icons.CHECK_CIRCLE_OUTLINE, size=48, color=VERD),
+                    ft.Icon("check_circle_outline_rounded", size=48, color=VERD),
                     ft.Text("Nenhum remédio programado para hoje!",
                             color=SEC, size=14, text_align=ft.TextAlign.CENTER),
                     ft.Text("Cadastre remédios com horários na aba Remédios.",
@@ -143,7 +144,7 @@ def _build_aba_hoje(page):
         lista.controls.append(ft.Container(
             content=ft.Column([
                 ft.Row([
-                    ft.Icon(ft.Icons.TODAY, size=16, color=AZUL),
+                    ft.Icon("today_rounded", size=16, color=AZUL),
                     ft.Text(f"Hoje — {date.today().strftime('%d/%m/%Y')}",
                             size=13, color=AZUL, weight=ft.FontWeight.W_600, expand=True),
                     ft.Text(f"{tomou}/{total}", size=15, color=cor_pct,
@@ -167,7 +168,7 @@ def _build_aba_hoje(page):
                 hora_atual = t["hora"]
                 lista.controls.append(ft.Container(
                     content=ft.Row([
-                        ft.Icon(ft.Icons.ACCESS_TIME, size=14, color=AMAR),
+                        ft.Icon("access_time_rounded", size=14, color=AMAR),
                         ft.Text(hora_atual, size=14, color=AMAR,
                                 weight=ft.FontWeight.W_700),
                     ], spacing=6),
@@ -175,11 +176,11 @@ def _build_aba_hoje(page):
 
             status = t["status"]
             if status == "tomou":
-                cor = VERD; icone = ft.Icons.CHECK_CIRCLE; opa = 0.55
+                cor = VERD; icone = "check_circle_rounded"; opa = 0.55
             elif status == "nao_tomou":
-                cor = VERM; icone = ft.Icons.CANCEL; opa = 0.55
+                cor = VERM; icone = "cancel_rounded"; opa = 0.55
             else:
-                cor = AMAR; icone = ft.Icons.CIRCLE_OUTLINED; opa = 1.0
+                cor = AMAR; icone = "circle_outlined_rounded"; opa = 1.0
 
             rid, hora = t["remedio_id"], t["hora"]
 
@@ -196,19 +197,21 @@ def _build_aba_hoje(page):
             botoes = ft.Row(spacing=4)
             if status == "pendente":
                 botoes.controls = [
-                    ft.IconButton(ft.Icons.CHECK, icon_color=VERD, icon_size=22,
+                    ft.IconButton("check_rounded", icon_color=VERD, icon_size=22,
                         on_click=_mk_tomou(),
                         style=ft.ButtonStyle(bgcolor="#0D1C12",
                             shape=ft.RoundedRectangleBorder(radius=8))),
-                    ft.IconButton(ft.Icons.CLOSE, icon_color=VERM, icon_size=22,
+                    ft.IconButton("close_rounded", icon_color=VERM, icon_size=22,
                         on_click=_mk_nao(),
                         style=ft.ButtonStyle(bgcolor="#1C1014",
                             shape=ft.RoundedRectangleBorder(radius=8))),
                 ]
             else:
                 botoes.controls = [
-                    ft.TextButton(content=ft.Text("Desfazer", size=10, color=MUT),
-                                  on_click=_mk_desfazer())]
+                    ft.Container(content=ft.Text("Desfazer", size=10, color=MUT),
+                                  padding=ft.padding.symmetric(horizontal=8, vertical=8),
+                        ink=True,
+                        on_click=_mk_desfazer())]
 
             est = t.get("estoque_atual", 0) or 0
             mn  = t.get("estoque_minimo", 5) or 5
@@ -320,7 +323,7 @@ def _build_ficha_remedio(page, remedio, voltar_fn):
             especialidade = m.get("especialidade") or ""
             sug_med.controls.append(ft.Container(
                 content=ft.Row([
-                    ft.Icon(ft.Icons.PERSON, size=14, color=ROXO),
+                    ft.Icon("person_rounded", size=14, color=ROXO),
                     ft.Column([
                         ft.Text(m["nome"], size=13, color=TXT),
                         ft.Text(especialidade, size=10, color=MUT) if especialidade else ft.Container(),
@@ -421,7 +424,7 @@ def _build_ficha_remedio(page, remedio, voltar_fn):
             # frequência por refeição/evento — sem horário
             bloco_horarios.controls.append(ft.Container(
                 content=ft.Row([
-                    ft.Icon(ft.Icons.INFO_OUTLINE, size=14, color=SEC),
+                    ft.Icon("info_outline_rounded", size=14, color=SEC),
                     ft.Text("Esta frequência não requer horário fixo.", size=12, color=SEC),
                 ], spacing=8),
                 padding=ft.padding.only(top=2, bottom=2)))
@@ -448,7 +451,7 @@ def _build_ficha_remedio(page, remedio, voltar_fn):
             bloco_horarios.controls.append(
                 ft.Container(
                     content=ft.Row([
-                        ft.Icon(ft.Icons.EDIT_NOTE, size=13, color=MUT),
+                        ft.Icon("edit_note_rounded", size=13, color=MUT),
                         ft.Text("Editar manualmente:", size=11, color=MUT),
                     ], spacing=6),
                     padding=ft.padding.only(top=4)))
@@ -488,7 +491,7 @@ def _build_ficha_remedio(page, remedio, voltar_fn):
                 _aplicar_freq(lbl)
             sug_freq.controls.append(ft.Container(
                 content=ft.Row([
-                    ft.Icon(ft.Icons.SCHEDULE if iv > 0 else ft.Icons.RESTAURANT, size=14,
+                    ft.Icon("schedule_rounded" if iv > 0 else "restaurant_rounded", size=14,
                             color=cor),
                     ft.Text(label, size=13, color=cor),
                 ], spacing=8),
@@ -535,11 +538,11 @@ def _build_ficha_remedio(page, remedio, voltar_fn):
         except Exception: pass
 
     ctrl_est = ft.Row([
-        ft.IconButton(ft.Icons.REMOVE, icon_color=VERM, icon_size=18,
+        ft.IconButton("remove_rounded", icon_color=VERM, icon_size=18,
             on_click=lambda e: _ajustar(-1),
             style=ft.ButtonStyle(bgcolor="#1C1014", shape=ft.RoundedRectangleBorder(radius=8))),
         f_est,
-        ft.IconButton(ft.Icons.ADD, icon_color=VERD, icon_size=18,
+        ft.IconButton("add_rounded", icon_color=VERD, icon_size=18,
             on_click=lambda e: _ajustar(+1),
             style=ft.ButtonStyle(bgcolor="#0D1C12", shape=ft.RoundedRectangleBorder(radius=8))),
         ft.Container(width=8), f_min,
@@ -578,7 +581,7 @@ def _build_ficha_remedio(page, remedio, voltar_fn):
                     clip_behavior=ft.ClipBehavior.ANTI_ALIAS,
                     border=ft.border.all(1, BD)),
                 ft.Container(
-                    content=ft.Icon(ft.Icons.CLOSE, size=14, color=TXT),
+                    content=ft.Icon("close_rounded", size=14, color=TXT),
                     bgcolor="#CC000000", border_radius=ft.border_radius.only(
                         top_right=8, bottom_left=8),
                     padding=2,
@@ -704,7 +707,7 @@ def _build_ficha_remedio(page, remedio, voltar_fn):
             ft.Row([f_cqtd, f_cval, dd_farm], spacing=6),
             ft.Row([
                 ft.FilledButton(content=ft.Row([
-                    ft.Icon(ft.Icons.SHOPPING_CART, size=14),
+                    ft.Icon("shopping_cart_rounded", size=14),
                     ft.Text("Registrar", size=12)], spacing=4, tight=True),
                     style=ft.ButtonStyle(bgcolor=AMAR,
                         shape=ft.RoundedRectangleBorder(radius=8),
@@ -758,21 +761,23 @@ def _build_ficha_remedio(page, remedio, voltar_fn):
 
     cabecalho = ft.Container(
         content=ft.Row([
-            ft.TextButton(
+            ft.Container(
                 content=ft.Row([
-                    ft.Icon(ft.Icons.ARROW_BACK, size=16),
+                    ft.Icon("arrow_back_rounded", size=16),
                     ft.Text("Voltar", size=13),
                 ], spacing=4, tight=True),
+                padding=ft.padding.symmetric(horizontal=8, vertical=8),
+                ink=True,
                 on_click=lambda e: voltar_fn(),
             ),
             ft.Row([
-                ft.Icon(ft.Icons.MEDICATION, size=18, color=AMAR),
+                ft.Icon("medication_rounded", size=18, color=AMAR),
                 ft.Text(titulo, size=16, weight=ft.FontWeight.W_700, color=TXT),
             ], spacing=8, tight=True),
             ft.Container(expand=True),
             ft.FilledButton(
                 content=ft.Row([
-                    ft.Icon(ft.Icons.SAVE, size=16),
+                    ft.Icon("save_rounded", size=16),
                     ft.Text("Salvar", size=13),
                 ], spacing=6, tight=True),
                 style=ft.ButtonStyle(
@@ -866,14 +871,14 @@ def _lista_remedios(page, abrir_ficha_fn):
             nomes = ", ".join(r["nome"] for r in baixos[:3])
             mais  = f" +{len(baixos)-3}" if len(baixos) > 3 else ""
             lista.controls.append(_card_border(VERM, ft.Row([
-                ft.Icon(ft.Icons.WARNING, size=16, color=VERM),
+                ft.Icon("warning_rounded", size=16, color=VERM),
                 ft.Text(f"Estoque baixo: {nomes}{mais}", size=12, color=VERM, expand=True),
             ], spacing=8)))
 
         if not remedios:
             lista.controls.append(ft.Container(
                 content=ft.Column([
-                    ft.Icon(ft.Icons.MEDICATION, size=40, color=MUT),
+                    ft.Icon("medication_rounded", size=40, color=MUT),
                     ft.Text("Nenhum remédio cadastrado.", color=SEC, size=13),
                 ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=8),
                 padding=40))
@@ -893,7 +898,7 @@ def _lista_remedios(page, abrir_ficha_fn):
                 content=ft.Column([
                     ft.Row([
                         ft.Container(
-                            content=ft.Icon(ft.Icons.MEDICATION, size=22, color=cor),
+                            content=ft.Icon("medication_rounded", size=22, color=cor),
                             bgcolor=f"{cor}1A", border_radius=10, width=44, height=44,
                             alignment=ft.alignment.Alignment(0, 0)),
                         ft.Column([
@@ -909,7 +914,7 @@ def _lista_remedios(page, abrir_ficha_fn):
                             ft.Text(str(est), size=16, color=cor, weight=ft.FontWeight.W_700),
                             ft.Text("unid.", size=9, color=MUT),
                         ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=0),
-                        ft.Icon(ft.Icons.CHEVRON_RIGHT, size=16, color=MUT),
+                        ft.Icon("chevron_right_rounded", size=16, color=MUT),
                     ], spacing=10, vertical_alignment=ft.CrossAxisAlignment.CENTER),
                     ft.Container(
                         content=ft.ProgressBar(
@@ -941,7 +946,7 @@ def _lista_remedios(page, abrir_ficha_fn):
                 ft.Container(expand=True),
                 ft.FilledButton(
                     content=ft.Row([
-                        ft.Icon(ft.Icons.ADD, size=16),
+                        ft.Icon("add_rounded", size=16),
                         ft.Text("Novo Remédio", size=13),
                     ], spacing=6, tight=True),
                     style=ft.ButtonStyle(
@@ -977,7 +982,7 @@ def _conteudo_farmacias(page):
                         return _fn
                     orcamento_row.controls.append(ft.Container(
                         content=ft.Row([
-                            ft.Icon(ft.Icons.SEND, size=14, color=VERD),
+                            ft.Icon("send_rounded", size=14, color=VERD),
                             ft.Text(f["nome"], size=12, color=TXT, expand=True),
                             ft.Text("WhatsApp", size=10, color=VERD),
                         ], spacing=8),
@@ -1063,7 +1068,7 @@ def _conteudo_farmacias(page):
             ft.Row([
                 ft.FilledButton(
                     content=ft.Row([
-                        ft.Icon(ft.Icons.PSYCHOLOGY, size=14),
+                        ft.Icon("psychology_rounded", size=14),
                         ft.Text("Analisar com IA", size=12),
                     ], spacing=4, tight=True),
                     style=ft.ButtonStyle(
@@ -1084,7 +1089,7 @@ def _conteudo_farmacias(page):
         if not farmacias:
             lista.controls.append(ft.Container(
                 content=ft.Column([
-                    ft.Icon(ft.Icons.STOREFRONT, size=40, color=MUT),
+                    ft.Icon("storefront_rounded", size=40, color=MUT),
                     ft.Text("Nenhuma farmácia cadastrada.", color=SEC, size=13),
                 ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=8),
                 padding=30))
@@ -1099,7 +1104,7 @@ def _conteudo_farmacias(page):
             lista.controls.append(ft.Container(
                 content=ft.Row([
                     ft.Container(
-                        content=ft.Icon(ft.Icons.STOREFRONT, size=20,
+                        content=ft.Icon("storefront_rounded", size=20,
                             color=AZUL if f.get("preferida") else SEC),
                         bgcolor=f"{AZUL}1A" if f.get("preferida") else f"{SEC}1A",
                         border_radius=10, width=40, height=40,
@@ -1112,7 +1117,7 @@ def _conteudo_farmacias(page):
                         ft.Text(" · ".join(canais) if canais else "", size=10, color=MUT),
                         ft.Text(f.get("endereco") or "", size=10, color=SEC),
                     ], spacing=1, expand=True),
-                    ft.Icon(ft.Icons.CHEVRON_RIGHT, size=16, color=MUT),
+                    ft.Icon("chevron_right_rounded", size=16, color=MUT),
                 ], spacing=10, vertical_alignment=ft.CrossAxisAlignment.CENTER),
                 bgcolor=CARD, border_radius=10, ink=True,
                 padding=ft.padding.symmetric(horizontal=14, vertical=10),
@@ -1155,17 +1160,19 @@ def _conteudo_farmacias(page):
             bgcolor=BG, expand=True,
             content=ft.Column([
                 ft.Row([
-                    ft.TextButton(
+                    ft.Container(
                         content=ft.Row([
-                            ft.Icon(ft.Icons.ARROW_BACK, size=16),
+                            ft.Icon("arrow_back_rounded", size=16),
                             ft.Text("Voltar", size=13),
                         ], spacing=4, tight=True),
+                        padding=ft.padding.symmetric(horizontal=8, vertical=8),
+                        ink=True,
                         on_click=lambda e: _carregar()),
                     ft.Text("Nova Farmácia" if is_nova else "Editar Farmácia",
                             size=16, weight=ft.FontWeight.W_700, color=TXT, expand=True),
                     ft.FilledButton(
                         content=ft.Row([
-                            ft.Icon(ft.Icons.SAVE, size=16),
+                            ft.Icon("save_rounded", size=16),
                             ft.Text("Salvar", size=13),
                         ], spacing=6, tight=True),
                         style=ft.ButtonStyle(
@@ -1189,7 +1196,7 @@ def _conteudo_farmacias(page):
                 ft.Container(expand=True),
                 ft.FilledButton(
                     content=ft.Row([
-                        ft.Icon(ft.Icons.ADD, size=16),
+                        ft.Icon("add_rounded", size=16),
                         ft.Text("Nova Farmácia", size=13),
                     ], spacing=6, tight=True),
                     style=ft.ButtonStyle(
@@ -1226,9 +1233,9 @@ def criar_tela_remedios(page: ft.Page, voltar_fn):
     area       = ft.Column(spacing=8, scroll=ft.ScrollMode.AUTO, expand=True)
 
     ABAS = [
-        (0, ft.Icons.TODAY,       "Hoje",      AZUL),
-        (1, ft.Icons.MEDICATION,  "Remédios",  AMAR),
-        (2, ft.Icons.STOREFRONT,  "Farmácias", VERD),
+        (0, "today_rounded",       "Hoje",      AZUL),
+        (1, "medication_rounded",  "Remédios",  AMAR),
+        (2, "storefront_rounded",  "Farmácias", VERD),
     ]
 
     def _ir_ficha(remedio):
@@ -1293,15 +1300,17 @@ def criar_tela_remedios(page: ft.Page, voltar_fn):
 
     cabecalho = ft.Container(
         content=ft.Row([
-            ft.TextButton(
+            ft.Container(
                 content=ft.Row([
-                    ft.Icon(ft.Icons.ARROW_BACK, size=16),
+                    ft.Icon("arrow_back_rounded", size=16),
                     ft.Text("Voltar", size=13),
                 ], spacing=4, tight=True),
+                padding=ft.padding.symmetric(horizontal=8, vertical=8),
+                ink=True,
                 on_click=lambda e: voltar_fn(),
             ),
             ft.Row([
-                ft.Icon(ft.Icons.MEDICATION, size=20, color=AMAR),
+                ft.Icon("medication_rounded", size=20, color=AMAR),
                 ft.Text("Remédios", size=18,
                         weight=ft.FontWeight.W_700, color=TXT),
             ], spacing=8, tight=True),

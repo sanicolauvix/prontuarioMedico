@@ -1,0 +1,36 @@
+# Controle de versao
+.git
+.gitignore
+
+# Cache Python
+__pycache__
+*.pyc
+*.pyo
+
+# Logs e temporarios
+logs
+temp
+
+# Banco de dados de desenvolvimento (Android usa caminho proprio)
+dados/prontuario.db
+dados/prontuario.db-shm
+dados/prontuario.db-wal
+
+# Documentos internos
+docs
+
+# Scripts de build
+build_*.ps1
+requirements.txt
+
+# Credenciais -- NUNCA incluir no APK
+mycreds.json
+client_secrets.json
+client_secrets_android.json
+
+# Assets que nao precisam ir no APK
+assets/fotos
+assets/fotos_perfil
+
+# Build anterior
+build

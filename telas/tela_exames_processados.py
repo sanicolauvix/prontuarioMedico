@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """
 tela_exames_processados.py
 Tela de exames processados com 3 abas:
@@ -8,7 +9,7 @@ Tela de exames processados com 3 abas:
 import flet as ft
 import sqlite3
 import webbrowser
-from ..dados.model_prontuario import DB_PATH
+from dados.model_prontuario import DB_PATH
 
 BG   = "#0D1117";  CARD = "#161B22";  BD  = "#21262D";  BD2 = "#30363D"
 TXT  = "#E6EDF3";  SEC  = "#8B949E";  MUT = "#484F58"
@@ -189,8 +190,8 @@ def _chip_tipo(tipo):
 def _card_exame(ex, on_click_fn, on_pdf_fn):
     tipo    = ex.get("tipo", "")
     cor     = {"numerico": AZUL, "laudo": LAR, "mapa": VERD, "imagem": ROXO}.get(tipo, MUT)
-    icone   = {"numerico": ft.Icons.ANALYTICS, "laudo": ft.Icons.ARTICLE,
-               "mapa": ft.Icons.MONITOR_HEART, "imagem": ft.Icons.PHOTO}.get(tipo, ft.Icons.DESCRIPTION)
+    icone   = {"numerico": "analytics_rounded", "laudo": "article_rounded",
+               "mapa": "monitor_heart_rounded", "imagem": "photo_rounded"}.get(tipo, "description_rounded")
     tipo_ex = (ex.get("tipo_exame") or "")[:48]
     arquivo = (ex.get("arquivo_origem") or "").split("/")[-1].split("\\")[-1]
     titulo  = tipo_ex or arquivo or f"Exame #{ex['id']}"
@@ -215,7 +216,7 @@ def _card_exame(ex, on_click_fn, on_pdf_fn):
                         _chip_tipo(tipo),
                     ], spacing=6),
                     ft.Row([
-                        ft.Icon(ft.Icons.CALENDAR_TODAY_OUTLINED, size=10, color=MUT),
+                        ft.Icon("calendar_today_outlined_rounded", size=10, color=MUT),
                         ft.Text(data, size=10, color=SEC),
                         ft.Text("·", size=10, color=MUT) if lab else ft.Container(),
                         ft.Text(lab, size=10, color=ROXO),
@@ -229,14 +230,16 @@ def _card_exame(ex, on_click_fn, on_pdf_fn):
             ], spacing=8, vertical_alignment=ft.CrossAxisAlignment.CENTER),
             ft.Row([
                 ft.Row([
-                    ft.Icon(ft.Icons.PERSON_OUTLINE, size=10, color=MUT),
+                    ft.Icon("person_outline_rounded", size=10, color=MUT),
                     ft.Text(medico[:40], size=10, color=SEC),
                 ], spacing=3, expand=True) if medico else ft.Container(expand=True),
-                ft.TextButton(
+                ft.Container(
                     content=ft.Row([
-                        ft.Icon(ft.Icons.PICTURE_AS_PDF, size=11, color=VERM),
+                        ft.Icon("picture_as_pdf_rounded", size=11, color=VERM),
                         ft.Text("PDF", size=10, color=SEC),
                     ], spacing=3, tight=True),
+                    padding=ft.padding.symmetric(horizontal=8, vertical=8),
+                    ink=True,
                     on_click=on_pdf_fn),
             ], spacing=4),
         ], spacing=5),
@@ -253,7 +256,7 @@ def _card_exame(ex, on_click_fn, on_pdf_fn):
 def _campo_busca(label, hint, on_change):
     return ft.TextField(
         label=label, hint_text=hint,
-        prefix_icon=ft.Icons.SEARCH,
+        prefix_icon="search_rounded",
         bgcolor=CARD, border_color=BD, focused_border_color=AZUL,
         label_style=ft.TextStyle(color=SEC),
         hint_style=ft.TextStyle(color=MUT),
@@ -358,28 +361,46 @@ def criar_tela_exames_processados(page: ft.Page, voltar_fn):
         else:
             itens.append(ft.Text("Sem resultados disponíveis.", size=12, color=MUT))
 
-        dlg = ft.AlertDialog(
-            modal=True,
-            title=ft.Row([
-                ft.Icon(ft.Icons.ANALYTICS_OUTLINED, size=16, color=AZUL),
-                ft.Text(titulo[:50], size=13, color=TXT, weight=ft.FontWeight.W_600),
-            ], spacing=8),
-            content=ft.Container(
-                content=ft.Column(itens, spacing=0, scroll=ft.ScrollMode.AUTO),
-                width=460, height=320),
-            actions=[ft.TextButton("Fechar", on_click=lambda e: _fechar_dlg(dlg))],
-            actions_alignment=ft.MainAxisAlignment.END,
-            bgcolor=CARD,
-        )
-        page.overlay.append(dlg)
-        dlg.open = True
-        page.update()
+        ref = [None]
 
-    def _fechar_dlg(dlg):
-        dlg.open = False
-        if dlg in page.overlay:
-            page.overlay.remove(dlg)
-        page.update()
+        def _fechar_dlg(e=None):
+            if ref[0] and ref[0] in page.overlay:
+                page.overlay.remove(ref[0])
+            try: page.update()
+            except Exception: pass
+
+        btn_fechar = ft.Container(
+            content=ft.Text("Fechar", size=13, color=SEC),
+            padding=ft.padding.symmetric(horizontal=12, vertical=8),
+            border_radius=8, bgcolor=f"{SEC}22", ink=True,
+        )
+        btn_fechar.on_click = _fechar_dlg
+
+        ref[0] = ft.Container(
+            content=ft.Container(
+                content=ft.Column([
+                    ft.Row([
+                        ft.Icon("analytics_rounded", size=16, color=AZUL),
+                        ft.Text(titulo[:50], size=13, color=TXT,
+                                weight=ft.FontWeight.W_600, expand=True),
+                    ], spacing=8),
+                    ft.Divider(color=BD, height=1),
+                    ft.Container(
+                        content=ft.Column(itens, spacing=0,
+                                          scroll=ft.ScrollMode.AUTO),
+                        height=280,
+                    ),
+                    ft.Row([btn_fechar], alignment=ft.MainAxisAlignment.END),
+                ], spacing=8, tight=True),
+                bgcolor=CARD, border_radius=14,
+                padding=ft.padding.all(16), width=340,
+            ),
+            bgcolor="#CC000000", expand=True, alignment=ft.Alignment(0, 0),
+        )
+        ref[0].on_click = _fechar_dlg
+        page.overlay.append(ref[0])
+        try: page.update()
+        except Exception: pass
 
     def _abrir_pdf(drive_id):
         if drive_id:
@@ -420,7 +441,7 @@ def criar_tela_exames_processados(page: ft.Page, voltar_fn):
         if not exames:
             corpo_exames.controls.append(ft.Container(
                 content=ft.Column([
-                    ft.Icon(ft.Icons.SEARCH_OFF, size=40, color=MUT),
+                    ft.Icon("search_off_rounded", size=40, color=MUT),
                     ft.Text("Nenhum exame encontrado.", color=SEC, size=13),
                 ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=8),
                 padding=40))
@@ -458,7 +479,7 @@ def criar_tela_exames_processados(page: ft.Page, voltar_fn):
             lista_medicos_col.controls.append(
                 ft.Container(
                     content=ft.Column([
-                        ft.Icon(ft.Icons.PERSON_SEARCH, size=36, color=MUT),
+                        ft.Icon("person_search_rounded", size=36, color=MUT),
                         ft.Text("Nenhum médico encontrado.", color=SEC, size=12),
                     ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=6),
                     padding=24))
@@ -471,7 +492,7 @@ def criar_tela_exames_processados(page: ft.Page, voltar_fn):
                     return ft.Container(
                         content=ft.Row([
                             ft.Container(
-                                content=ft.Icon(ft.Icons.PERSON_OUTLINE, size=16, color=AZUL),
+                                content=ft.Icon("person_outline_rounded", size=16, color=AZUL),
                                 bgcolor=f"{AZUL}18", border_radius=6,
                                 width=32, height=32,
                                 alignment=ft.alignment.Alignment(0, 0)),
@@ -481,7 +502,7 @@ def criar_tela_exames_processados(page: ft.Page, voltar_fn):
                                 ft.Text(med["especialidade"] or "sem especialidade",
                                         size=10, color=SEC),
                             ], spacing=1, expand=True),
-                            ft.Icon(ft.Icons.CHEVRON_RIGHT, size=14, color=MUT),
+                            ft.Icon("chevron_right_rounded", size=14, color=MUT),
                         ], spacing=8, vertical_alignment=ft.CrossAxisAlignment.CENTER),
                         bgcolor=CARD, border_radius=8,
                         padding=ft.padding.symmetric(horizontal=12, vertical=8),
@@ -500,7 +521,7 @@ def criar_tela_exames_processados(page: ft.Page, voltar_fn):
 
         exames_medico_col.controls.append(ft.Container(
             content=ft.Row([
-                ft.Icon(ft.Icons.ASSIGNMENT_OUTLINED, size=14, color=AZUL),
+                ft.Icon("assignment_outlined_rounded", size=14, color=AZUL),
                 ft.Text(f"{len(exames)} exame(s) de {medico['nome']}",
                         size=12, color=AZUL, weight=ft.FontWeight.W_600),
             ], spacing=6),
@@ -561,7 +582,7 @@ def criar_tela_exames_processados(page: ft.Page, voltar_fn):
                         ft.Container(width=8),
                         ft.Text(c, size=12, color=TXT,
                                 weight=ft.FontWeight.W_500, expand=True),
-                        ft.Icon(ft.Icons.CHEVRON_RIGHT, size=14, color=MUT),
+                        ft.Icon("chevron_right_rounded", size=14, color=MUT),
                     ], spacing=0, vertical_alignment=ft.CrossAxisAlignment.CENTER),
                     bgcolor=CARD, border_radius=8,
                     padding=ft.padding.symmetric(vertical=4, horizontal=6),
@@ -583,11 +604,13 @@ def criar_tela_exames_processados(page: ft.Page, voltar_fn):
         # Header com botão voltar
         result_col.controls.append(ft.Container(
             content=ft.Row([
-                ft.TextButton(
+                ft.Container(
                     content=ft.Row([
-                        ft.Icon(ft.Icons.ARROW_BACK, size=13, color=SEC),
+                        ft.Icon("arrow_back_rounded", size=13, color=SEC),
                         ft.Text("Categorias", size=11, color=SEC),
                     ], spacing=4, tight=True),
+                    padding=ft.padding.symmetric(horizontal=8, vertical=8),
+                    ink=True,
                     on_click=lambda e: _voltar_categorias()),
                 ft.Container(
                     content=ft.Row([
@@ -605,7 +628,7 @@ def criar_tela_exames_processados(page: ft.Page, voltar_fn):
             result_col.controls.append(
                 ft.Container(
                     content=ft.Column([
-                        ft.Icon(ft.Icons.SCIENCE_OUTLINED, size=36, color=MUT),
+                        ft.Icon("science_outlined_rounded", size=36, color=MUT),
                         ft.Text("Nenhum resultado nesta categoria.", color=SEC, size=12),
                     ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=6),
                     padding=24))
@@ -683,9 +706,9 @@ def criar_tela_exames_processados(page: ft.Page, voltar_fn):
             on_click=lambda e, n=nome: _trocar_aba(n),
             ink=True)
 
-    aba_exames_tab  = _tab(ft.Icons.DESCRIPTION_OUTLINED, "Exames", "exames", _btn_exames)
-    aba_medico_tab  = _tab(ft.Icons.PERSON_OUTLINED,      "Médico", "medico", _btn_medico)
-    aba_classif_tab = _tab(ft.Icons.CATEGORY_OUTLINED,    "Classificação", "classificacao", _btn_classif)
+    aba_exames_tab  = _tab("description_outlined_rounded", "Exames", "exames", _btn_exames)
+    aba_medico_tab  = _tab("person_outlined_rounded",      "Médico", "medico", _btn_medico)
+    aba_classif_tab = _tab("category_outlined_rounded",    "Classificação", "classificacao", _btn_classif)
 
     conteudo_area = ft.Container(expand=True)
 
@@ -736,14 +759,16 @@ def criar_tela_exames_processados(page: ft.Page, voltar_fn):
 
     header = ft.Container(
         content=ft.Row([
-            ft.TextButton(
+            ft.Container(
                 content=ft.Row([
-                    ft.Icon(ft.Icons.ARROW_BACK, size=14, color=SEC),
+                    ft.Icon("arrow_back_rounded", size=14, color=SEC),
                     ft.Text("Voltar", size=12, color=SEC),
                 ], spacing=4, tight=True),
+                padding=ft.padding.symmetric(horizontal=8, vertical=8),
+                ink=True,
                 on_click=lambda e: voltar_fn()),
             ft.Row([
-                ft.Icon(ft.Icons.DESCRIPTION, size=18, color=AMAR),
+                ft.Icon("description_rounded", size=18, color=AMAR),
                 ft.Text("Exames Processados", size=16,
                         weight=ft.FontWeight.W_700, color=TXT),
             ], spacing=6, tight=True, expand=True),

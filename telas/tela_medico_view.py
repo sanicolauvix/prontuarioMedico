@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """
 tela_medico_view.py
 Painel do médico — acesso somente leitura ao prontuário.
@@ -7,7 +8,7 @@ Abas: Exames | Remédios | Rotinas | Receitas | Procedimentos | Diagnósticos
 import flet as ft
 import sqlite3
 import logging
-from ..dados.model_prontuario import (
+from dados.model_prontuario import (
     DB_PATH, carregar_perfil,
     listar_remedios, listar_receitas, salvar_receita,
     listar_rotina, listar_medicos,
@@ -49,7 +50,7 @@ def _label_sec(txt):
 def _card_vazio(msg):
     return ft.Container(
         content=ft.Column([
-            ft.Icon(ft.Icons.INBOX_ROUNDED, size=32, color=MUT),
+            ft.Icon("inbox_rounded", size=32, color=MUT),
             ft.Text(msg, size=12, color=MUT),
         ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=8),
         padding=40, alignment=ft.alignment.center,
@@ -63,7 +64,7 @@ def _card_vazio(msg):
 def _conteudo_exames(ir_consulta_fn) -> list:
     return [ft.Container(
         content=ft.Column([
-            ft.Icon(ft.Icons.SCIENCE_ROUNDED, size=44, color=ROXO),
+            ft.Icon("science_rounded", size=44, color=ROXO),
             ft.Text("Consulta de Exames", size=16, color=TXT,
                     weight=ft.FontWeight.W_700),
             ft.Text(
@@ -73,7 +74,7 @@ def _conteudo_exames(ir_consulta_fn) -> list:
             ft.Container(height=8),
             ft.FilledButton(
                 content=ft.Row([
-                    ft.Icon(ft.Icons.OPEN_IN_NEW_ROUNDED, size=16),
+                    ft.Icon("open_in_new_rounded", size=16),
                     ft.Text("Abrir Consulta de Exames", size=13,
                             weight=ft.FontWeight.W_600),
                 ], spacing=6, tight=True),
@@ -124,10 +125,10 @@ def _conteudo_remedios(page: ft.Page, medico_id: int, nome_medico: str) -> list:
                         ft.Text(m.get("dosagem") or "", size=11, color=SEC),
                     ]),
                     ft.Row([
-                        ft.Icon(ft.Icons.SCHEDULE, size=12, color=MUT),
+                        ft.Icon("schedule_rounded", size=12, color=MUT),
                         ft.Text(m.get("frequencia") or "—", size=11, color=MUT),
                         ft.Container(width=8),
-                        ft.Icon(ft.Icons.PERSON, size=12, color=AZUL),
+                        ft.Icon("person_rounded", size=12, color=AZUL),
                         ft.Text(m.get("medico") or "—", size=11, color=AZUL),
                     ], spacing=4),
                     ft.Row([
@@ -223,7 +224,7 @@ def _conteudo_remedios(page: ft.Page, medico_id: int, nome_medico: str) -> list:
                 lista_receitas_col.controls.append(ft.Container(
                     content=ft.Column([
                         ft.Row([
-                            ft.Icon(ft.Icons.RECEIPT_LONG_ROUNDED,
+                            ft.Icon("receipt_long_rounded",
                                     size=14, color=LAR),
                             ft.Column([
                                 ft.Text(r.get("nome_arquivo") or "Receita",
@@ -242,7 +243,7 @@ def _conteudo_remedios(page: ft.Page, medico_id: int, nome_medico: str) -> list:
                             f_anot,
                             ft.Column([
                                 ft.IconButton(
-                                    icon=ft.Icons.SAVE_ROUNDED,
+                                    icon="save_rounded",
                                     icon_size=16, icon_color=AZUL,
                                     on_click=_salvar_anot,
                                 ),
@@ -297,7 +298,7 @@ def _conteudo_remedios(page: ft.Page, medico_id: int, nome_medico: str) -> list:
             ft.Row([
                 ft.FilledButton(
                     content=ft.Row([
-                        ft.Icon(ft.Icons.ADD_ROUNDED, size=16),
+                        ft.Icon("add_rounded", size=16),
                         ft.Text("Registrar Receita", size=13,
                                 weight=ft.FontWeight.W_600),
                     ], spacing=6, tight=True),
@@ -339,7 +340,7 @@ def _conteudo_remedios(page: ft.Page, medico_id: int, nome_medico: str) -> list:
 def _conteudo_dieta(ir_dieta_fn) -> list:
     return [ft.Container(
         content=ft.Column([
-            ft.Icon(ft.Icons.TODAY_ROUNDED, size=44, color=VERD),
+            ft.Icon("today_rounded", size=44, color=VERD),
             ft.Text("Dieta e Rotinas", size=16, color=TXT,
                     weight=ft.FontWeight.W_700),
             ft.Text("Rotina diária, dieta e suplementos do paciente.",
@@ -347,7 +348,7 @@ def _conteudo_dieta(ir_dieta_fn) -> list:
             ft.Container(height=8),
             ft.FilledButton(
                 content=ft.Row([
-                    ft.Icon(ft.Icons.OPEN_IN_NEW_ROUNDED, size=16),
+                    ft.Icon("open_in_new_rounded", size=16),
                     ft.Text("Abrir Dieta e Rotinas", size=13,
                             weight=ft.FontWeight.W_600),
                 ], spacing=6, tight=True),
@@ -380,7 +381,7 @@ def _conteudo_receitas(page: ft.Page, medico_id: int, nome_medico: str) -> list:
             for r in receitas:
                 lista_col.controls.append(ft.Container(
                     content=ft.Row([
-                        ft.Icon(ft.Icons.RECEIPT_LONG_ROUNDED,
+                        ft.Icon("receipt_long_rounded",
                                 size=16, color=AZUL),
                         ft.Column([
                             ft.Text(r.get("nome_arquivo") or "Receita",
@@ -472,7 +473,7 @@ def _conteudo_receitas(page: ft.Page, medico_id: int, nome_medico: str) -> list:
             ft.Row([
                 ft.FilledButton(
                     content=ft.Row([
-                        ft.Icon(ft.Icons.ADD_ROUNDED, size=16),
+                        ft.Icon("add_rounded", size=16),
                         ft.Text("Registrar Receita", size=13,
                                 weight=ft.FontWeight.W_600),
                     ], spacing=6, tight=True),
@@ -512,7 +513,7 @@ def _conteudo_receitas(page: ft.Page, medico_id: int, nome_medico: str) -> list:
 def _conteudo_em_breve(titulo: str) -> list:
     return [ft.Container(
         content=ft.Column([
-            ft.Icon(ft.Icons.CONSTRUCTION_ROUNDED, size=40, color=MUT),
+            ft.Icon("construction_rounded", size=40, color=MUT),
             ft.Text(titulo, size=15, color=TXT, weight=ft.FontWeight.W_700),
             ft.Text("Esta seção será implantada em breve.",
                     size=12, color=MUT),
@@ -536,11 +537,11 @@ def criar_tela_medico(page: ft.Page, on_logout):
     sexo_txt   = "Masculino" if perfil.get("sexo") == "M" else "Feminino"
 
     ABAS = [
-        (0, ft.Icons.SCIENCE_ROUNDED,       "Exames",        ROXO),
-        (1, ft.Icons.MEDICATION_ROUNDED,    "Remédios",      AZUL),
-        (2, ft.Icons.TODAY_ROUNDED,         "Dieta/Rotinas", VERD),
-        (3, ft.Icons.MEDICAL_SERVICES,      "Procedimentos", AMAR),
-        (4, ft.Icons.MONITOR_HEART_ROUNDED, "Diagnósticos",  CORAL),
+        (0, "science_rounded",       "Exames",        ROXO),
+        (1, "medication_rounded",    "Remédios",      AZUL),
+        (2, "today_rounded",         "Dieta/Rotinas", VERD),
+        (3, "medical_services_rounded",      "Procedimentos", AMAR),
+        (4, "monitor_heart_rounded", "Diagnósticos",  CORAL),
     ]
     aba_ativa     = [0]
     barra_abas    = ft.Row(spacing=0)
@@ -624,7 +625,7 @@ def criar_tela_medico(page: ft.Page, on_logout):
     foto_placeholder = ft.Container(
         width=48, height=48,
         bgcolor=BD2, border_radius=24,
-        content=ft.Icon(ft.Icons.PERSON_ROUNDED, size=24, color=MUT),
+        content=ft.Icon("person_rounded", size=24, color=MUT),
         alignment=ft.alignment.center,
         tooltip="Foto do paciente (em breve)",
     )
@@ -641,7 +642,7 @@ def criar_tela_medico(page: ft.Page, on_logout):
                     ft.Text(sexo_txt, size=10, color=MUT),
                     ft.Container(
                         content=ft.Row([
-                            ft.Icon(ft.Icons.VISIBILITY_ROUNDED,
+                            ft.Icon("visibility_rounded",
                                     size=10, color=MUT),
                             ft.Text("Somente leitura", size=9, color=MUT),
                         ], spacing=3, tight=True),
@@ -652,12 +653,14 @@ def criar_tela_medico(page: ft.Page, on_logout):
             ], spacing=2, expand=True),
             ft.Column([
                 ft.Text(f"Dr(a). {nome}", size=11, color=SEC),
-                ft.TextButton(
+                ft.Container(
                     content=ft.Row([
-                        ft.Icon(ft.Icons.LOGOUT_ROUNDED,
+                        ft.Icon("logout_rounded",
                                 size=13, color=VERM),
                         ft.Text("Sair", size=11, color=VERM),
                     ], spacing=4, tight=True),
+                    padding=ft.padding.symmetric(horizontal=8, vertical=8),
+                    ink=True,
                     on_click=lambda e: on_logout(),
                 ),
             ], spacing=0,

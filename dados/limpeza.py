@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """
 limpeza.py - 2ª etapa de processamento
 Compara resultados importados com tabela padrão de exames.

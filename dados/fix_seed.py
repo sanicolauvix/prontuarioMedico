@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """
 fix_seed.py — Alimenta banco prontuario.db existente com dados iniciais.
 

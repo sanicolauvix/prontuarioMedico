@@ -1,0 +1,21 @@
+# requirements_apk.txt -- dependencias para o APK Android
+# NAO incluir: fastapi, uvicorn, websockets, cookiecutter, starlette
+# NAO incluir: cffi (versao 2.0.0 nao existe para ARM64 -- cryptography puxa automaticamente)
+# NAO incluir: google-api-python-client (+92 MB, proibido)
+# NAO incluir: google-auth-oauthlib / requests-oauthlib -- Android usa urllib puro
+
+# flet precisa estar aqui para que serious_python instale do pypi.flet.dev (Android-compativel)
+flet==0.28.2
+
+# auth Google
+google-auth
+google-auth-httplib2
+requests
+
+# utils
+repath
+anthropic
+httpx
+
+# extracao de PDF (precisa --source-packages no flet build -- extensoes C)
+pdfplumber

@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """
 extrator_receita.py
 Extrai medicamentos de receitas médicas em PDF usando a API do Claude.

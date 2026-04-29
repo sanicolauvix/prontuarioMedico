@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 # KOIOS v1.0 | gerado: 2026-03-12 21:46 | processador_exame.py
 """
 processador_exame.py — Koios Prontuário
@@ -64,7 +65,7 @@ def executar_processamento(
         import time as _time
         _time.sleep(0.15)   # aguarda UI montar antes dos primeiros callbacks
         from .extrator_pdf import extrair_pdf_bytes
-        from ..dados.model_prontuario        import salvar_rascunho, registrar_log, DB_PATH
+        from dados.model_prontuario        import salvar_rascunho, registrar_log, DB_PATH
 
         nome = Path(caminho).name
         _watchdog_ativo = [False]   # inicializado aqui — seguro no except
@@ -233,7 +234,7 @@ def executar_processamento(
             _watchdog_ativo[0] = False   # para o watchdog em caso de erro
             logging.exception(f"[PROCESSAR] ✗ ERRO: {ex}")
             try:
-                from ..dados.model_prontuario import registrar_log
+                from dados.model_prontuario import registrar_log
                 registrar_log(Path(caminho).name, "erro", str(ex))
             except Exception:
                 pass
@@ -273,7 +274,7 @@ def construir_painel_conferencia(
     import flet as ft
 
     if icone_confirmar is None:
-        icone_confirmar = ft.Icons.CLOUD_UPLOAD_OUTLINED
+        icone_confirmar = "cloud_upload_outlined_rounded"
 
     results     = dados.get("resultados", [])
     pendencias  = list(pendencias_init)   # cópia local mutável
@@ -304,7 +305,7 @@ def construir_painel_conferencia(
     aviso_pend = ft.Container(
         visible=tem_pend[0],
         content=ft.Row([
-            ft.Icon(ft.Icons.LOCK_OUTLINED, size=14, color=VERM),
+            ft.Icon("lock_outlined_rounded", size=14, color=VERM),
             ft.Text(
                 f"{len(lista_pend)} pendência(s) — resolva antes de enviar",
                 size=11, color=VERM, weight=ft.FontWeight.W_600, expand=True,
@@ -352,7 +353,7 @@ def construir_painel_conferencia(
         return ft.Container(
             content=ft.Row([
                 ft.Icon(
-                    ft.Icons.CHECK_CIRCLE if cor == VERD else ft.Icons.WARNING_ROUNDED,
+                    "check_circle_rounded" if cor == VERD else "warning_rounded",
                     size=14, color=cor,
                 ),
                 ft.Text(r.get("parametro", ""), size=12, color=TXT,
@@ -577,7 +578,7 @@ def construir_painel_conferencia(
                 ft.Row([f_unidade, f_valor_form], spacing=8),
                 ft.Row([f_categoria], spacing=0),
                 ft.Row([
-                    ft.Icon(ft.Icons.INFO_OUTLINE, size=12, color=MUT),
+                    ft.Icon("info_outline_rounded", size=12, color=MUT),
                     ref_hint,
                 ], spacing=4) if ref_raw else ft.Container(height=0),
                 ft.Row([
@@ -592,14 +593,15 @@ def construir_painel_conferencia(
                 ft.Row([
                     msg_form,
                     ft.Container(expand=True),
-                    ft.TextButton(
-                        "Cancelar",
-                        style=ft.ButtonStyle(color=SEC),
+                    ft.Container(
+                        content=ft.Text("Cancelar", size=13, color=SEC),
+                        padding=ft.padding.symmetric(horizontal=12, vertical=8),
+                        border_radius=8, ink=True,
                         on_click=_fechar_form,
                     ),
                     ft.FilledButton(
                         content=ft.Row([
-                            ft.Icon(ft.Icons.SAVE_OUTLINED, size=14),
+                            ft.Icon("save_outlined_rounded", size=14),
                             ft.Text("Salvar padrão", size=12,
                                     weight=ft.FontWeight.W_600),
                         ], spacing=4, tight=True),
@@ -670,7 +672,7 @@ def construir_painel_conferencia(
                 return ft.Container(
                     content=ft.Row([
                         ft.Container(width=18),
-                        ft.Icon(ft.Icons.SUBDIRECTORY_ARROW_RIGHT, size=12, color=MUT),
+                        ft.Icon("subdirectory_arrow_right_rounded", size=12, color=MUT),
                         ft.Text(s.get("parametro",""), size=11, color=MUT, width=110,
                                 no_wrap=True, overflow=ft.TextOverflow.ELLIPSIS),
                         ft.TextField(
@@ -702,12 +704,12 @@ def construir_painel_conferencia(
         card = ft.Container(
             content=ft.Column([
                 ft.Row([
-                    ft.Icon(ft.Icons.WARNING_ROUNDED, size=14, color=AMAR),
+                    ft.Icon("warning_rounded", size=14, color=AMAR),
                     ft.Text(param, size=12, color=TXT, weight=ft.FontWeight.W_600,
                             expand=True, no_wrap=True,
                             overflow=ft.TextOverflow.ELLIPSIS),
                     ft.IconButton(
-                        icon=ft.Icons.PICTURE_AS_PDF_OUTLINED,
+                        icon="picture_as_pdf_outlined_rounded",
                         icon_color=VERM,
                         icon_size=18,
                         tooltip="Abrir PDF para consultar referências",
@@ -715,7 +717,7 @@ def construir_painel_conferencia(
                     ),
                     ft.FilledButton(
                         content=ft.Row([
-                            ft.Icon(ft.Icons.ADD_OUTLINED, size=14),
+                            ft.Icon("add_outlined_rounded", size=14),
                             ft.Text("Incluir padrão", size=12,
                                     weight=ft.FontWeight.W_600),
                         ], spacing=4, tight=True),
@@ -748,7 +750,7 @@ def construir_painel_conferencia(
     # ── Montar controles do painel ─────────────────────────────────────────────
     controles = [
         ft.Row([
-            ft.Icon(ft.Icons.ASSIGNMENT_TURNED_IN, size=18, color=AZUL),
+            ft.Icon("assignment_turned_in_rounded", size=18, color=AZUL),
             ft.Text("Conferência dos dados extraídos", size=15,
                     weight=ft.FontWeight.W_700, color=TXT),
         ], spacing=8),
@@ -816,7 +818,7 @@ def construir_painel_conferencia(
                 content=ft.Row([
                     ft.Row([
                         ft.Icon(
-                            ft.Icons.WARNING_ROUNDED if is_pend else ft.Icons.CHECK_CIRCLE_OUTLINE,
+                            "warning_rounded" if is_pend else "check_circle_outline_rounded",
                             size=11,
                             color=VERM if is_pend else VERD,
                         ),
@@ -850,7 +852,7 @@ def construir_painel_conferencia(
                     content=ft.Row([
                         ft.Row([
                             ft.Container(width=14),
-                            ft.Icon(ft.Icons.SUBDIRECTORY_ARROW_RIGHT, size=10, color=MUT),
+                            ft.Icon("subdirectory_arrow_right_rounded", size=10, color=MUT),
                             ft.Text(sub.get("parametro", ""), size=10, color=MUT,
                                     width=130, no_wrap=True, overflow=ft.TextOverflow.ELLIPSIS),
                         ], spacing=3, width=160),
@@ -912,7 +914,7 @@ def construir_painel_conferencia(
 
         btn_preview = ft.Container(
             content=ft.Row([
-                ft.Icon(ft.Icons.TABLE_ROWS_OUTLINED, size=14, color=AZUL),
+                ft.Icon("table_rows_outlined_rounded", size=14, color=AZUL),
                 _prev_label,
                 ft.Container(expand=True),
                 _prev_chevron,
@@ -942,7 +944,7 @@ def construir_painel_conferencia(
         ft.Row([
             ft.FilledButton(
                 content=ft.Row([
-                    ft.Icon(ft.Icons.CLOSE, size=16),
+                    ft.Icon("close_rounded", size=16),
                     ft.Text("Cancelar", size=13, weight=ft.FontWeight.W_600),
                 ], spacing=6, tight=True),
                 style=ft.ButtonStyle(

@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """
 tela_pendencias.py — Koios Prontuário
 2 abas: Parâmetros (nao_identificado) e PDFs Incompatíveis
@@ -36,8 +37,8 @@ def _borda_esq(cor):
 # ══════════════════════════════════════════════════════════════
 
 def _aba_parametros(page, voltar_fn):
-    from ..dados.limpeza import buscar_nao_identificados, ignorar_parametro, executar_limpeza
-    from ..dados.model_prontuario import DB_PATH
+    from dados.limpeza import buscar_nao_identificados, ignorar_parametro, executar_limpeza
+    from dados.model_prontuario import DB_PATH
 
     lista    = ft.Column(spacing=6)
     txt_info = ft.Text("", size=12, color=SEC)
@@ -96,7 +97,7 @@ def _aba_parametros(page, voltar_fn):
             txt_info.value = ""
             lista.controls.append(ft.Container(
                 content=ft.Column([
-                    ft.Icon(ft.Icons.CHECK_CIRCLE_OUTLINE, size=44, color=VERD),
+                    ft.Icon("check_circle_outline_rounded", size=44, color=VERD),
                     ft.Text("Nenhuma pendência!", size=15, color=VERD,
                             weight=ft.FontWeight.W_600),
                     ft.Text("Todos os parâmetros identificados.", size=12, color=SEC),
@@ -138,11 +139,14 @@ def _aba_parametros(page, voltar_fn):
             conf = ft.Container(
                 visible=False,
                 content=ft.Row([
-                    ft.Icon(ft.Icons.WARNING_AMBER_OUTLINED, size=14, color=SALM),
+                    ft.Icon("warning_amber_outlined_rounded", size=14, color=SALM),
                     ft.Text("Confirmar ignorar?", size=12, color=SALM, expand=True),
-                    ft.TextButton("Cancelar",
-                        style=ft.ButtonStyle(color=SEC),
-                        on_click=None),
+                    ft.Container(
+                        content=ft.Text("Cancelar", size=13, color=SEC),
+                        padding=ft.padding.symmetric(horizontal=12, vertical=8),
+                        border_radius=8, ink=True,
+                        on_click=None,
+                    ),
                     ft.FilledButton("Ignorar",
                         style=ft.ButtonStyle(
                             bgcolor=SALM,
@@ -161,7 +165,7 @@ def _aba_parametros(page, voltar_fn):
             lista.controls.append(ft.Container(
                 content=ft.Column([
                     ft.Row([
-                        ft.Icon(ft.Icons.HELP_OUTLINE_ROUNDED, size=14, color=LAR),
+                        ft.Icon("help_outline_rounded", size=14, color=LAR),
                         ft.Text(param, size=13, color=TXT,
                                 weight=ft.FontWeight.W_600, expand=True),
                         ft.Container(
@@ -173,7 +177,7 @@ def _aba_parametros(page, voltar_fn):
                     ], spacing=8, vertical_alignment=ft.CrossAxisAlignment.CENTER),
                     ft.Row([
                         ft.OutlinedButton(
-                            content=ft.Row([ft.Icon(ft.Icons.PICTURE_AS_PDF_OUTLINED, size=14),
+                            content=ft.Row([ft.Icon("picture_as_pdf_outlined_rounded", size=14),
                                             ft.Text("Visualizar", size=12)], spacing=4, tight=True),
                             style=ft.ButtonStyle(color=AZUL, side=ft.BorderSide(1, AZUL),
                                 shape=ft.RoundedRectangleBorder(radius=7),
@@ -181,7 +185,7 @@ def _aba_parametros(page, voltar_fn):
                             on_click=_faz_visualizar(param),
                         ),
                         ft.OutlinedButton(
-                            content=ft.Row([ft.Icon(ft.Icons.BLOCK_OUTLINED, size=14),
+                            content=ft.Row([ft.Icon("block_outlined_rounded", size=14),
                                             ft.Text("Ignorar", size=12)], spacing=4, tight=True),
                             style=ft.ButtonStyle(color=SALM, side=ft.BorderSide(1, SALM),
                                 shape=ft.RoundedRectangleBorder(radius=7),
@@ -189,7 +193,7 @@ def _aba_parametros(page, voltar_fn):
                             on_click=_faz_mostrar_conf(param, conf_ref),
                         ),
                         ft.FilledButton(
-                            content=ft.Row([ft.Icon(ft.Icons.ADD_OUTLINED, size=14),
+                            content=ft.Row([ft.Icon("add_outlined_rounded", size=14),
                                             ft.Text("Incluir", size=12,
                                                     weight=ft.FontWeight.W_600)], spacing=4, tight=True),
                             style=ft.ButtonStyle(bgcolor=VERD,
@@ -215,7 +219,7 @@ def _aba_parametros(page, voltar_fn):
             ft.Container(expand=True),
             ft.FilledButton(
                 content=ft.Row([
-                    ft.Icon(ft.Icons.REFRESH, size=16, color=TXT),
+                    ft.Icon("refresh_rounded", size=16, color=TXT),
                     ft.Text("Reprocessar", size=13, weight=ft.FontWeight.W_600, color=TXT),
                 ], spacing=6, tight=True),
                 style=ft.ButtonStyle(
@@ -235,7 +239,7 @@ def _aba_parametros(page, voltar_fn):
 # ══════════════════════════════════════════════════════════════
 
 def _aba_incompativeis(page, voltar_fn):
-    from ..dados.model_prontuario import DB_PATH
+    from dados.model_prontuario import DB_PATH
 
     lista = ft.Column(spacing=6)
     txt_info = ft.Text("", size=12, color=SEC)
@@ -281,7 +285,7 @@ def _aba_incompativeis(page, voltar_fn):
             txt_info.value = ""
             lista.controls.append(ft.Container(
                 content=ft.Column([
-                    ft.Icon(ft.Icons.CHECK_CIRCLE_OUTLINE, size=44, color=VERD),
+                    ft.Icon("check_circle_outline_rounded", size=44, color=VERD),
                     ft.Text("Nenhum PDF incompatível!", size=15, color=VERD,
                             weight=ft.FontWeight.W_600),
                 ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=8),
@@ -318,11 +322,14 @@ def _aba_incompativeis(page, voltar_fn):
             conf = ft.Container(
                 visible=False,
                 content=ft.Row([
-                    ft.Icon(ft.Icons.WARNING_AMBER_OUTLINED, size=14, color=VERM),
+                    ft.Icon("warning_amber_outlined_rounded", size=14, color=VERM),
                     ft.Text("Confirmar exclusão?", size=12, color=VERM, expand=True),
-                    ft.TextButton("Cancelar",
-                        style=ft.ButtonStyle(color=SEC),
-                        on_click=None),
+                    ft.Container(
+                        content=ft.Text("Cancelar", size=13, color=SEC),
+                        padding=ft.padding.symmetric(horizontal=12, vertical=8),
+                        border_radius=8, ink=True,
+                        on_click=None,
+                    ),
                     ft.FilledButton("Excluir",
                         style=ft.ButtonStyle(
                             bgcolor=VERM,
@@ -341,7 +348,7 @@ def _aba_incompativeis(page, voltar_fn):
             lista.controls.append(ft.Container(
                 content=ft.Column([
                     ft.Row([
-                        ft.Icon(ft.Icons.PICTURE_AS_PDF, size=14, color=SALM),
+                        ft.Icon("picture_as_pdf_rounded", size=14, color=SALM),
                         ft.Text(nome or "sem nome", size=13, color=TXT,
                                 weight=ft.FontWeight.W_600, expand=True),
                         ft.Text(f"{tam or '?'} KB", size=10, color=MUT),
@@ -350,7 +357,7 @@ def _aba_incompativeis(page, voltar_fn):
                     ft.Text(str(data or "")[:16], size=10, color=MUT),
                     ft.Row([
                         ft.OutlinedButton(
-                            content=ft.Row([ft.Icon(ft.Icons.OPEN_IN_NEW, size=14),
+                            content=ft.Row([ft.Icon("open_in_new_rounded", size=14),
                                             ft.Text("Visualizar", size=12)], spacing=4, tight=True),
                             style=ft.ButtonStyle(color=AZUL, side=ft.BorderSide(1, AZUL),
                                 shape=ft.RoundedRectangleBorder(radius=7),
@@ -358,7 +365,7 @@ def _aba_incompativeis(page, voltar_fn):
                             on_click=_faz_visualizar(drive_id),
                         ),
                         ft.OutlinedButton(
-                            content=ft.Row([ft.Icon(ft.Icons.DELETE_OUTLINE, size=14),
+                            content=ft.Row([ft.Icon("delete_outline_rounded", size=14),
                                             ft.Text("Excluir", size=12)], spacing=4, tight=True),
                             style=ft.ButtonStyle(color=VERM, side=ft.BorderSide(1, VERM),
                                 shape=ft.RoundedRectangleBorder(radius=7),
@@ -387,7 +394,7 @@ def _aba_incompativeis(page, voltar_fn):
 # ══════════════════════════════════════════════════════════════
 
 def _aba_conferencia(page, voltar_fn):
-    from ..dados.model_prontuario import DB_PATH
+    from dados.model_prontuario import DB_PATH
     import webbrowser
 
     lista = ft.Column(spacing=12)
@@ -414,7 +421,7 @@ def _aba_conferencia(page, voltar_fn):
         _recarregar()
 
     def _ignorar_param(parametro):
-        from ..dados.limpeza import ignorar_parametro
+        from dados.limpeza import ignorar_parametro
         ignorar_parametro(parametro)
         _snack(f"Ignorado.", SEC)
         _recarregar()
@@ -441,10 +448,14 @@ def _aba_conferencia(page, voltar_fn):
         conf = ft.Container(
             visible=False,
             content=ft.Row([
-                ft.Icon(ft.Icons.WARNING_AMBER_OUTLINED, size=14, color=cor),
+                ft.Icon("warning_amber_outlined_rounded", size=14, color=cor),
                 ft.Text(msg, size=12, color=cor, expand=True),
-                ft.TextButton("Cancelar", style=ft.ButtonStyle(color=SEC),
-                              on_click=lambda e, c=[None]: None),
+                ft.Container(
+                    content=ft.Text("Cancelar", size=13, color=SEC),
+                    padding=ft.padding.symmetric(horizontal=12, vertical=8),
+                    border_radius=8, ink=True,
+                    on_click=lambda e,
+                ),
                 ft.FilledButton("Confirmar",
                     style=ft.ButtonStyle(bgcolor=cor,
                         shape=ft.RoundedRectangleBorder(radius=7),
@@ -505,7 +516,7 @@ def _aba_conferencia(page, voltar_fn):
         if total == 0:
             lista.controls.append(ft.Container(
                 content=ft.Column([
-                    ft.Icon(ft.Icons.VERIFIED_OUTLINED, size=48, color=VERD),
+                    ft.Icon("verified_outlined_rounded", size=48, color=VERD),
                     ft.Text("Tudo em ordem!", size=15, color=VERD,
                             weight=ft.FontWeight.W_700),
                     ft.Text("Nenhum problema encontrado.", size=12, color=SEC),
@@ -525,7 +536,7 @@ def _aba_conferencia(page, voltar_fn):
             cards1.controls.append(ft.Container(
                 content=ft.Column([
                     ft.Row([
-                        ft.Icon(ft.Icons.DESCRIPTION_OUTLINED, size=14, color=AMAR),
+                        ft.Icon("description_outlined_rounded", size=14, color=AMAR),
                         ft.Text(item["tipo_exame"] or "Sem tipo", size=13,
                                 color=TXT, weight=ft.FontWeight.W_600, expand=True),
                         ft.Text(str(item["data_exame"] or "")[:10], size=11, color=MUT),
@@ -534,7 +545,7 @@ def _aba_conferencia(page, voltar_fn):
                             size=11, color=SEC),
                     ft.Row([
                         ft.OutlinedButton(
-                            content=ft.Row([ft.Icon(ft.Icons.OPEN_IN_NEW, size=14),
+                            content=ft.Row([ft.Icon("open_in_new_rounded", size=14),
                                             ft.Text("Ver PDF", size=12)],
                                            spacing=4, tight=True),
                             style=ft.ButtonStyle(color=AZUL, side=ft.BorderSide(1, AZUL),
@@ -545,7 +556,7 @@ def _aba_conferencia(page, voltar_fn):
                             visible=bool(item.get("drive_file_id")),
                         ),
                         ft.OutlinedButton(
-                            content=ft.Row([ft.Icon(ft.Icons.DELETE_OUTLINE, size=14),
+                            content=ft.Row([ft.Icon("delete_outline_rounded", size=14),
                                             ft.Text("Excluir", size=12)],
                                            spacing=4, tight=True),
                             style=ft.ButtonStyle(color=VERM, side=ft.BorderSide(1, VERM),
@@ -564,7 +575,7 @@ def _aba_conferencia(page, voltar_fn):
             ))
 
         lista.controls.append(_bloco_secao(
-            ft.Icons.DESCRIPTION_OUTLINED, "Exames sem resultados",
+            "description_outlined_rounded", "Exames sem resultados",
             len(sem_res), AMAR, cards1))
 
         # ── Seção 2: Não vinculados ───────────────────────────
@@ -577,7 +588,7 @@ def _aba_conferencia(page, voltar_fn):
             cards2.controls.append(ft.Container(
                 content=ft.Column([
                     ft.Row([
-                        ft.Icon(ft.Icons.LINK_OFF, size=14, color=LAR),
+                        ft.Icon("link_off_rounded", size=14, color=LAR),
                         ft.Text(item["parametro"], size=13, color=TXT,
                                 weight=ft.FontWeight.W_600, expand=True),
                         ft.Container(
@@ -590,7 +601,7 @@ def _aba_conferencia(page, voltar_fn):
                             size=11, color=SEC),
                     ft.Row([
                         ft.OutlinedButton(
-                            content=ft.Row([ft.Icon(ft.Icons.BLOCK_OUTLINED, size=14),
+                            content=ft.Row([ft.Icon("block_outlined_rounded", size=14),
                                             ft.Text("Ignorar", size=12)],
                                            spacing=4, tight=True),
                             style=ft.ButtonStyle(color=SALM, side=ft.BorderSide(1, SALM),
@@ -599,7 +610,7 @@ def _aba_conferencia(page, voltar_fn):
                             on_click=lambda e, m=mostrar: m(),
                         ),
                         ft.FilledButton(
-                            content=ft.Row([ft.Icon(ft.Icons.ADD_OUTLINED, size=14),
+                            content=ft.Row([ft.Icon("add_outlined_rounded", size=14),
                                             ft.Text("Incluir Padrão", size=12,
                                                     weight=ft.FontWeight.W_600)],
                                            spacing=4, tight=True),
@@ -619,7 +630,7 @@ def _aba_conferencia(page, voltar_fn):
             ))
 
         lista.controls.append(_bloco_secao(
-            ft.Icons.LINK_OFF, "Resultados não vinculados",
+            "link_off_rounded", "Resultados não vinculados",
             len(nao_vinc), LAR, cards2))
 
         # ── Seção 3: Sem referências ──────────────────────────
@@ -629,7 +640,7 @@ def _aba_conferencia(page, voltar_fn):
             cards3.controls.append(ft.Container(
                 content=ft.Column([
                     ft.Row([
-                        ft.Icon(ft.Icons.RULE_OUTLINED, size=14, color=AZUL),
+                        ft.Icon("rule_outlined_rounded", size=14, color=AZUL),
                         ft.Text(item["nome_oficial"], size=13, color=TXT,
                                 weight=ft.FontWeight.W_600, expand=True),
                         ft.Container(
@@ -641,7 +652,7 @@ def _aba_conferencia(page, voltar_fn):
                     ft.Text(f"{item['categoria'] or 'Sem categoria'} · {item['unidade'] or 'sem unidade'}",
                             size=11, color=SEC),
                     ft.FilledButton(
-                        content=ft.Row([ft.Icon(ft.Icons.EDIT_OUTLINED, size=14),
+                        content=ft.Row([ft.Icon("edit_outlined_rounded", size=14),
                                         ft.Text("Adicionar Referências", size=12,
                                                 weight=ft.FontWeight.W_600)],
                                        spacing=4, tight=True),
@@ -659,7 +670,7 @@ def _aba_conferencia(page, voltar_fn):
             ))
 
         lista.controls.append(_bloco_secao(
-            ft.Icons.RULE_OUTLINED, "Exames padrão sem referências",
+            "rule_outlined_rounded", "Exames padrão sem referências",
             len(sem_ref), AZUL, cards3))
 
         page.update()
@@ -667,11 +678,12 @@ def _aba_conferencia(page, voltar_fn):
     carregar()
     return ft.Column([
         ft.Row([txt_status, ft.Container(expand=True),
-                ft.TextButton(
-                    content=ft.Row([ft.Icon(ft.Icons.REFRESH, size=13),
+                ft.Container(
+                    content=ft.Row([ft.Icon("refresh_rounded", size=13),
                                     ft.Text("Atualizar", size=12)],
                                    spacing=4, tight=True),
-                    style=ft.ButtonStyle(color=SEC),
+                    padding=ft.padding.symmetric(horizontal=8, vertical=8),
+                    ink=True,
                     on_click=lambda e: _recarregar(),
                 )], vertical_alignment=ft.CrossAxisAlignment.CENTER),
         lista,
@@ -705,7 +717,7 @@ def _bloco_secao(icone, titulo, n, cor, conteudo_col):
 # ══════════════════════════════════════════════════════════════
 
 def criar_tela_pendencias(page: ft.Page, voltar_fn=None):
-    from ..dados.limpeza import executar_limpeza
+    from dados.limpeza import executar_limpeza
 
     aba_ativa = [0]
     conteudo  = ft.Column(spacing=0, expand=True)
@@ -757,11 +769,13 @@ def criar_tela_pendencias(page: ft.Page, voltar_fn=None):
     return ft.Column([
         # Cabeçalho
         ft.Row([
-            ft.TextButton(
+            ft.Container(
                 content=ft.Row([
-                    ft.Icon(ft.Icons.ARROW_BACK, size=14, color=SEC),
+                    ft.Icon("arrow_back_rounded", size=14, color=SEC),
                     ft.Text("Voltar", size=12, color=SEC),
                 ], spacing=4, tight=True),
+                padding=ft.padding.symmetric(horizontal=8, vertical=8),
+                ink=True,
                 on_click=lambda e: voltar_fn() if voltar_fn else None,
             ),
             ft.Container(expand=True),

@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """
 tela_medicos.py — Koios Prontuário
 Cadastro, listagem e histórico de médicos.
@@ -6,7 +7,7 @@ Padrão visual: idêntico a tela_exames.py (header + barra de abas + área de co
 import logging
 import threading
 import flet as ft
-from ..dados.model_prontuario import (
+from dados.model_prontuario import (
     listar_medicos, salvar_medico, listar_especialidades, exames_do_medico,
 )
 
@@ -43,7 +44,7 @@ def _tela_ficha_medico(page: ft.Page, medico, voltar_fn):
     )
     icone_sem_foto = ft.Container(
         content=ft.Column([
-            ft.Icon(ft.Icons.PERSON, size=30, color=MUT),
+            ft.Icon("person_rounded", size=30, color=MUT),
             ft.Text("Foto", size=9, color=MUT),
         ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=2),
         width=72, height=72, border_radius=36,
@@ -114,7 +115,7 @@ def _tela_ficha_medico(page: ft.Page, medico, voltar_fn):
             img_preview,
             icone_sem_foto,
             ft.Container(
-                content=ft.Icon(ft.Icons.EDIT, size=14, color="#FFFFFF"),
+                content=ft.Icon("edit_rounded", size=14, color="#FFFFFF"),
                 width=22, height=22, border_radius=11,
                 bgcolor="#00000088",
                 alignment=ft.alignment.Alignment(0, 0),
@@ -171,9 +172,9 @@ def _tela_ficha_medico(page: ft.Page, medico, voltar_fn):
     # chip exibido quando uma especialidade já está selecionada
     esp_chip = ft.Container(
         content=ft.Row([
-            ft.Icon(ft.Icons.LOCAL_HOSPITAL_ROUNDED, size=13, color=ROXO),
+            ft.Icon("local_hospital_rounded", size=13, color=ROXO),
             ft.Text("", size=12, color=ROXO, weight=ft.FontWeight.W_600),
-            ft.Icon(ft.Icons.CLOSE_ROUNDED, size=13, color=ROXO),
+            ft.Icon("close_rounded", size=13, color=ROXO),
         ], spacing=6, tight=True),
         bgcolor=f"{ROXO}18", border_radius=16,
         padding=ft.padding.symmetric(horizontal=10, vertical=5),
@@ -182,7 +183,7 @@ def _tela_ficha_medico(page: ft.Page, medico, voltar_fn):
 
     f_esp_txt = ft.TextField(
         hint_text="Buscar especialidade...",
-        prefix_icon=ft.Icons.SEARCH,
+        prefix_icon="search_rounded",
         bgcolor=CARD, border_color=BD2, focused_border_color=ROXO,
         hint_style=ft.TextStyle(color=MUT),
         text_style=ft.TextStyle(color=TXT),
@@ -244,12 +245,12 @@ def _tela_ficha_medico(page: ft.Page, medico, voltar_fn):
                 return sel
             sugestoes_col.controls.append(ft.Container(
                 content=ft.Row([
-                    ft.Icon(ft.Icons.LOCAL_HOSPITAL_ROUNDED, size=13, color=ROXO),
+                    ft.Icon("local_hospital_rounded", size=13, color=ROXO),
                     ft.Column([
                         ft.Text(esp["nome"], size=13, color=TXT),
                         ft.Text(desc, size=10, color=MUT) if desc else ft.Container(),
                     ], spacing=1, expand=True, tight=True),
-                    ft.Icon(ft.Icons.ADD_CIRCLE_OUTLINE_ROUNDED, size=14, color=ROXO),
+                    ft.Icon("add_circle_outline_rounded", size=14, color=ROXO),
                 ], spacing=8),
                 bgcolor=CARD, border_radius=6,
                 padding=ft.padding.symmetric(horizontal=10, vertical=8),
@@ -285,7 +286,7 @@ def _tela_ficha_medico(page: ft.Page, medico, voltar_fn):
         if exames:
             linhas_ex = [
                 ft.Row([
-                    ft.Icon(ft.Icons.SCIENCE, size=12, color=AZUL),
+                    ft.Icon("science_rounded", size=12, color=AZUL),
                     ft.Text(
                         f"{ex['data_exame'] or '?'} — "
                         f"{ex['tipo_exame'] or ex['laboratorio'] or '?'}",
@@ -331,21 +332,23 @@ def _tela_ficha_medico(page: ft.Page, medico, voltar_fn):
 
     cabecalho = ft.Container(
         content=ft.Row([
-            ft.TextButton(
+            ft.Container(
                 content=ft.Row([
-                    ft.Icon(ft.Icons.ARROW_BACK, size=16),
+                    ft.Icon("arrow_back_rounded", size=16),
                     ft.Text("Voltar", size=13),
                 ], spacing=4, tight=True),
+                padding=ft.padding.symmetric(horizontal=8, vertical=8),
+                ink=True,
                 on_click=lambda e: voltar_fn(),
             ),
             ft.Row([
-                ft.Icon(ft.Icons.PERSON, size=18, color=ROXO),
+                ft.Icon("person_rounded", size=18, color=ROXO),
                 ft.Text(titulo, size=18, weight=ft.FontWeight.W_700, color=TXT),
             ], spacing=8, tight=True),
             ft.Container(expand=True),
             ft.FilledButton(
                 content=ft.Row([
-                    ft.Icon(ft.Icons.SAVE_ROUNDED, size=16),
+                    ft.Icon("save_rounded", size=16),
                     ft.Text("Salvar", size=13, weight=ft.FontWeight.W_600),
                 ], spacing=6, tight=True),
                 style=ft.ButtonStyle(
@@ -420,8 +423,8 @@ def criar_tela_medicos(page: ft.Page, voltar_fn):
     especialidades = listar_especialidades()   # compartilhado por todas as abas
 
     ABAS = [
-        (0, ft.Icons.PEOPLE,              "Médicos",        ROXO),
-        (1, ft.Icons.LOCAL_HOSPITAL_ROUNDED, "Especialidades", AZUL),
+        (0, "people_rounded",              "Médicos",        ROXO),
+        (1, "local_hospital_rounded", "Especialidades", AZUL),
     ]
     aba_ativa = [0]
 
@@ -459,7 +462,7 @@ def criar_tela_medicos(page: ft.Page, voltar_fn):
     lista    = ft.Column(spacing=8)
     txt_busca = ft.TextField(
         hint_text="Buscar médico...",
-        prefix_icon=ft.Icons.SEARCH,
+        prefix_icon="search_rounded",
         bgcolor=CARD, border_color=BD2, focused_border_color=ROXO,
         hint_style=ft.TextStyle(color=MUT),
         text_style=ft.TextStyle(color=TXT),
@@ -491,7 +494,7 @@ def criar_tela_medicos(page: ft.Page, voltar_fn):
             avatar = ft.Image(
                 src=foto, width=50, height=50, fit="cover", border_radius=12,
             ) if foto else ft.Container(
-                content=ft.Icon(ft.Icons.PERSON, size=26, color=ROXO),
+                content=ft.Icon("person_rounded", size=26, color=ROXO),
                 bgcolor=f"{ROXO}22", border_radius=12,
                 width=50, height=50,
                 alignment=ft.alignment.Alignment(0, 0),
@@ -515,7 +518,7 @@ def criar_tela_medicos(page: ft.Page, voltar_fn):
                     ], spacing=2, expand=True),
                     ft.Container(width=8, height=8, bgcolor=cor_status,
                                  border_radius=4),
-                    ft.Icon(ft.Icons.CHEVRON_RIGHT, size=16, color=MUT),
+                    ft.Icon("chevron_right_rounded", size=16, color=MUT),
                 ], spacing=12, vertical_alignment=ft.CrossAxisAlignment.CENTER),
                 bgcolor=CARD, border_radius=10,
                 padding=ft.padding.symmetric(horizontal=14, vertical=12),
@@ -536,7 +539,7 @@ def criar_tela_medicos(page: ft.Page, voltar_fn):
                 txt_busca,
                 ft.FilledButton(
                     content=ft.Row([
-                        ft.Icon(ft.Icons.ADD_ROUNDED, size=16),
+                        ft.Icon("add_rounded", size=16),
                         ft.Text("Novo", size=13),
                     ], spacing=6, tight=True),
                     style=ft.ButtonStyle(
@@ -557,9 +560,9 @@ def criar_tela_medicos(page: ft.Page, voltar_fn):
         # ── chip da especialidade selecionada ─────────────────
         esp_chip = ft.Container(
             content=ft.Row([
-                ft.Icon(ft.Icons.LOCAL_HOSPITAL_ROUNDED, size=13, color=AZUL),
+                ft.Icon("local_hospital_rounded", size=13, color=AZUL),
                 ft.Text("", size=12, color=AZUL, weight=ft.FontWeight.W_600),
-                ft.Icon(ft.Icons.CLOSE_ROUNDED, size=13, color=AZUL),
+                ft.Icon("close_rounded", size=13, color=AZUL),
             ], spacing=6, tight=True),
             bgcolor=f"{AZUL}18", border_radius=16,
             padding=ft.padding.symmetric(horizontal=10, vertical=5),
@@ -595,7 +598,7 @@ def criar_tela_medicos(page: ft.Page, voltar_fn):
                         src=foto, width=40, height=40,
                         fit="cover", border_radius=8,
                     ) if foto else ft.Container(
-                        content=ft.Icon(ft.Icons.PERSON, size=20, color=ROXO),
+                        content=ft.Icon("person_rounded", size=20, color=ROXO),
                         bgcolor=f"{ROXO}22", border_radius=8,
                         width=40, height=40,
                         alignment=ft.alignment.Alignment(0, 0),
@@ -617,7 +620,7 @@ def criar_tela_medicos(page: ft.Page, voltar_fn):
                                 width=8, height=8,
                                 bgcolor=VERD if m.get("ativo", 1) else MUT,
                                 border_radius=4),
-                            ft.Icon(ft.Icons.CHEVRON_RIGHT, size=14, color=MUT),
+                            ft.Icon("chevron_right_rounded", size=14, color=MUT),
                         ], spacing=10,
                         vertical_alignment=ft.CrossAxisAlignment.CENTER),
                         bgcolor=CARD, border_radius=8,
@@ -634,7 +637,7 @@ def criar_tela_medicos(page: ft.Page, voltar_fn):
         # ── campo de busca de especialidade ───────────────────
         tf_esp = ft.TextField(
             hint_text="Buscar especialidade...",
-            prefix_icon=ft.Icons.SEARCH,
+            prefix_icon="search_rounded",
             bgcolor=CARD, border_color=BD2, focused_border_color=AZUL,
             hint_style=ft.TextStyle(color=MUT),
             text_style=ft.TextStyle(color=TXT),
@@ -695,9 +698,9 @@ def criar_tela_medicos(page: ft.Page, voltar_fn):
 
             for op in opcoes:
                 cor_item = MUT if op["id"] == "__sem__" else AZUL
-                icone_item = (ft.Icons.PERSON_OFF_ROUNDED
+                icone_item = ("person_off_rounded"
                               if op["id"] == "__sem__"
-                              else ft.Icons.LOCAL_HOSPITAL_ROUNDED)
+                              else "local_hospital_rounded")
                 desc = op.get("descricao") or ""
                 def make_sel(o=op):
                     def sel(e):
@@ -710,7 +713,7 @@ def criar_tela_medicos(page: ft.Page, voltar_fn):
                             ft.Text(op["nome"], size=13, color=TXT),
                             ft.Text(desc, size=10, color=MUT) if desc else ft.Container(),
                         ], spacing=1, expand=True, tight=True),
-                        ft.Icon(ft.Icons.CHEVRON_RIGHT, size=14, color=cor_item),
+                        ft.Icon("chevron_right_rounded", size=14, color=cor_item),
                     ], spacing=8),
                     bgcolor=CARD, border_radius=6,
                     padding=ft.padding.symmetric(horizontal=10, vertical=8),
@@ -730,7 +733,7 @@ def criar_tela_medicos(page: ft.Page, voltar_fn):
         # atalho rápido "sem especialidade" sempre visível
         btn_sem = ft.Container(
             content=ft.Row([
-                ft.Icon(ft.Icons.PERSON_OFF_ROUNDED, size=13, color=MUT),
+                ft.Icon("person_off_rounded", size=13, color=MUT),
                 ft.Text("Sem especialidade informada", size=12, color=MUT),
                 ft.Container(expand=True),
                 ft.Text(
@@ -783,15 +786,17 @@ def criar_tela_medicos(page: ft.Page, voltar_fn):
     def _mostrar_principal():
         cabecalho = ft.Container(
             content=ft.Row([
-                ft.TextButton(
+                ft.Container(
                     content=ft.Row([
-                        ft.Icon(ft.Icons.ARROW_BACK, size=16),
+                        ft.Icon("arrow_back_rounded", size=16),
                         ft.Text("Voltar", size=13),
                     ], spacing=4, tight=True),
+                    padding=ft.padding.symmetric(horizontal=8, vertical=8),
+                    ink=True,
                     on_click=lambda e: voltar_fn(),
                 ),
                 ft.Row([
-                    ft.Icon(ft.Icons.PEOPLE, size=20, color=ROXO),
+                    ft.Icon("people_rounded", size=20, color=ROXO),
                     ft.Text("Médicos", size=18,
                             weight=ft.FontWeight.W_700, color=TXT),
                 ], spacing=8, tight=True),

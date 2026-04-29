@@ -1,106 +1,87 @@
-"""
-koios/prontuario/app.py
-Módulo 01 — Prontuário Médico
-Exporta: criar_tela_prontuario(page, voltar_fn)
-"""
-
+# -*- coding: utf-8 -*-
+# Prontuario Medico | app.py -- hub principal
 import flet as ft
 import threading
 import logging
 import os
 import sys
 
-# Garante que koios/ está no path
 _HERE = os.path.dirname(os.path.abspath(__file__))
-_KOIOS_ROOT = os.path.dirname(_HERE)
-if _KOIOS_ROOT not in sys.path:
-    sys.path.insert(0, _KOIOS_ROOT)
+if _HERE not in sys.path:
+    sys.path.insert(0, _HERE)
 
-from .dados.model_prontuario import criar_tabelas, DB_PATH
+from dados.model_prontuario import criar_tabelas, DB_PATH
+
+log = logging.getLogger(__name__)
+
+BG   = "#0D1117"; CARD = "#161B22"; BD  = "#21262D"
+TXT  = "#E6EDF3"; SEC  = "#8B949E"; MUT = "#484F58"
+ROXO = "#BC8CFF"; AZUL = "#58A6FF"; VERD = "#3FB950"
+AMAR = "#D29922"; VERM = "#F85149"
 
 
 # ══════════════════════════════════════════════════════════════
-# NAVEGAÇÃO INTERNA DO MÓDULO
+# NAVEGACAO INTERNA
 # ══════════════════════════════════════════════════════════════
 
 def _navegar(page: ft.Page, tela_fn, *args, **kwargs):
     import traceback
     nome = getattr(tela_fn, "__name__", str(tela_fn))
-    logging.info(f"[PRON] navegar → {nome}")
+    log.info("[PRON] navegar -> %s", nome)
     try:
         nova_tela = tela_fn(page, *args, **kwargs)
         page.controls.clear()
         page.controls.append(nova_tela)
-        page.update()
+        try: page.update()
+        except Exception: pass
     except Exception as ex:
         erro_txt = traceback.format_exc()
-        logging.exception(f"[PRON] ERRO ao navegar para {nome}: {ex}")
-        print(f"[ERRO NAVEGAR] {nome}: {erro_txt}")
+        log.exception("[PRON] ERRO ao navegar para %s: %s", nome, ex)
+        btn_v = ft.Container(
+            content=ft.Text("Voltar", size=13, color=SEC),
+            padding=ft.padding.symmetric(horizontal=16, vertical=10),
+            border_radius=8, bgcolor=f"{SEC}22", ink=True,
+        )
+        btn_v.on_click = lambda e: args[0]() if args and callable(args[0]) else None
         page.controls.clear()
         page.controls.append(ft.Container(
             content=ft.Column([
-                ft.Icon(ft.Icons.ERROR, size=40, color="#DA3633"),
-                ft.Text(f"Erro: {nome}", size=14,
-                        color="#E6EDF3", weight=ft.FontWeight.W_600),
+                ft.Icon("error_outline_rounded", size=40, color="#DA3633"),
+                ft.Text(f"Erro: {nome}", size=14, color=TXT,
+                        weight=ft.FontWeight.W_600),
                 ft.Text(str(ex), size=12, color="#F0883E"),
                 ft.Container(
-                    content=ft.Text(erro_txt, size=10,
-                                    color="#8B949E", selectable=True),
-                    bgcolor="#161B22", border_radius=8, padding=12,
+                    content=ft.Text(erro_txt[-600:], size=10, color=SEC,
+                                    selectable=True),
+                    bgcolor=CARD, border_radius=8, padding=12,
                 ),
-                ft.TextButton("Voltar", on_click=lambda e: (
-                    args[0]() if args and callable(args[0]) else None
-                )),
+                btn_v,
             ], spacing=10, scroll=ft.ScrollMode.AUTO),
-            bgcolor="#0D1117", expand=True, padding=20,
+            bgcolor=BG, expand=True, padding=20,
         ))
-        page.update()
-
-
-def _btn_nav(label, icon, destino_fn, page, *args, **kwargs):
-    return ft.TextButton(
-        content=ft.Row([
-            ft.Icon(icon, size=16, color="#8B949E"),
-            ft.Text(label, size=13, color="#8B949E"),
-        ], spacing=6, tight=True),
-        on_click=lambda e: _navegar(page, destino_fn, *args, **kwargs),
-    )
+        try: page.update()
+        except Exception: pass
 
 
 # ══════════════════════════════════════════════════════════════
-# TELA PRINCIPAL DO PRONTUÁRIO
+# TELA PRINCIPAL
 # ══════════════════════════════════════════════════════════════
 
 def _tela_principal(page: ft.Page, voltar_fn=None):
-    """Hub principal do Prontuário — dashboard visual com Claudia."""
     from datetime import datetime, date, timedelta
     import sqlite3 as _sq
-    from prontuario.dados.model_prontuario import (
+    from dados.model_prontuario import (
         carregar_perfil, listar_remedios, listar_consultas,
-        listar_tomadas_hoje, resumo_adesao, DB_PATH,
+        listar_tomadas_hoje, resumo_adesao,
     )
-
-    BG   = "#0D1117"
-    CARD = "#161B22"
-    BD   = "#21262D"
-    TXT  = "#E6EDF3"
-    SEC  = "#8B949E"
-    MUT  = "#484F58"
-    ROXO = "#BC8CFF"
-    AZUL = "#58A6FF"
-    VERD = "#3FB950"
-    AMAR = "#D29922"
-    VERM = "#F85149"
 
     aba_ativa = [0]
     _montado  = [False]
 
     def _atualizar_ui():
         if _montado[0]:
-            try:
-                page.update()
-            except Exception:
-                pass
+            try: page.update()
+            except Exception: pass
 
     def _voltar_hub(*_):
         _navegar(page, _tela_principal, voltar_fn)
@@ -111,11 +92,12 @@ def _tela_principal(page: ft.Page, voltar_fn=None):
     def _lazy_fn(modulo, funcao):
         def _handler():
             import importlib
-            mod = importlib.import_module(f"prontuario.telas.{modulo}")
+            caminho = modulo if "." in modulo else f"telas.{modulo}"
+            mod = importlib.import_module(caminho)
             _ir(getattr(mod, funcao))
         return _handler
 
-    # ── Nome e saudação ─────────────────────────────────────────
+    # ── Nome e saudacao ──────────────────────────────────────
     _nome = [""]
     try:
         p = carregar_perfil()
@@ -126,7 +108,6 @@ def _tela_principal(page: ft.Page, voltar_fn=None):
     hora = datetime.now().hour
     _saudacao = "Bom dia" if hora < 12 else ("Boa tarde" if hora < 18 else "Boa noite")
 
-    # ── Helpers ─────────────────────────────────────────────────
     def _secao_titulo(titulo, icone, cor):
         return ft.Row([
             ft.Icon(icone, size=12, color=cor),
@@ -134,7 +115,7 @@ def _tela_principal(page: ft.Page, voltar_fn=None):
         ], spacing=6)
 
     def _chip(label, cor, icone, fn):
-        return ft.Container(
+        c = ft.Container(
             content=ft.Row([
                 ft.Icon(icone, size=13, color=cor),
                 ft.Text(label, size=12, color=cor, weight=ft.FontWeight.W_500),
@@ -143,13 +124,14 @@ def _tela_principal(page: ft.Page, voltar_fn=None):
             border=ft.border.all(1, cor + "55"),
             border_radius=20,
             padding=ft.padding.symmetric(horizontal=12, vertical=6),
-            on_click=lambda e: fn(),
             ink=True,
         )
+        c.on_click = lambda e: fn()
+        return c
 
-    # ══════════════════════════════════════════════════════════════
+    # ══════════════════════════════════════════════════════════
     # CLAUDIA AVATAR
-    # ══════════════════════════════════════════════════════════════
+    # ══════════════════════════════════════════════════════════
     nome_display = f", {_nome[0]}" if _nome[0] else ""
 
     claudia_avatar = ft.Stack([
@@ -182,23 +164,23 @@ def _tela_principal(page: ft.Page, voltar_fn=None):
                         weight=ft.FontWeight.W_700, color=TXT),
                 ft.Row([
                     ft.Container(width=7, height=7, border_radius=4, bgcolor=VERD),
-                    ft.Text("Claudia disponível", size=11, color=VERD),
+                    ft.Text("Claudia disponivel", size=11, color=VERD),
                 ], spacing=5, tight=True),
                 ft.Text("Toque para conversar", size=10, color=MUT),
             ], spacing=3, tight=True, expand=True),
-            ft.Icon(ft.Icons.CHEVRON_RIGHT, size=18, color=ROXO),
+            ft.Icon("chevron_right_rounded", size=18, color=ROXO),
         ], spacing=14),
         bgcolor=CARD,
         border=ft.border.all(1, "#BC8CFF33"),
         border_radius=14,
         padding=ft.padding.symmetric(horizontal=16, vertical=14),
-        on_click=lambda e: _lazy_fn("tela_parecer", "criar_tela_parecer")(),
         ink=True,
     )
+    card_claudia.on_click = lambda e: _lazy_fn("tela_parecer", "criar_tela_parecer")()
 
-    # ══════════════════════════════════════════════════════════════
-    # SCORE DE SAÚDE
-    # ══════════════════════════════════════════════════════════════
+    # ══════════════════════════════════════════════════════════
+    # SCORE DE SAUDE
+    # ══════════════════════════════════════════════════════════
     barra_score   = ft.ProgressBar(value=0, color=AZUL, bgcolor=BD, height=8)
     txt_score_num = ft.Text("--", size=22, weight=ft.FontWeight.W_900, color=AZUL)
     txt_score_rot = ft.Text("/100", size=12, color=SEC)
@@ -209,8 +191,9 @@ def _tela_principal(page: ft.Page, voltar_fn=None):
     card_score = ft.Container(
         content=ft.Column([
             ft.Row([
-                ft.Icon(ft.Icons.FAVORITE, size=14, color=VERM),
-                ft.Text("SCORE DE SAÚDE", size=10, weight=ft.FontWeight.W_700, color=SEC),
+                ft.Icon("favorite_rounded", size=14, color=VERM),
+                ft.Text("SCORE DE SAUDE", size=10, weight=ft.FontWeight.W_700,
+                        color=SEC),
                 ft.Container(expand=True),
                 txt_tendencia,
             ], spacing=6),
@@ -231,17 +214,17 @@ def _tela_principal(page: ft.Page, voltar_fn=None):
         padding=ft.padding.symmetric(horizontal=16, vertical=14),
     )
 
-    # ══════════════════════════════════════════════════════════════
+    # ══════════════════════════════════════════════════════════
     # ALERTAS DO DIA
-    # ══════════════════════════════════════════════════════════════
+    # ══════════════════════════════════════════════════════════
     chips_hoje = ft.Row(spacing=8, wrap=True)
 
-    # ══════════════════════════════════════════════════════════════
+    # ══════════════════════════════════════════════════════════
     # MINI STATS
-    # ══════════════════════════════════════════════════════════════
+    # ══════════════════════════════════════════════════════════
     txt_stat_remedios = ft.Text("--", size=18, weight=ft.FontWeight.W_700, color=AMAR)
     txt_stat_consulta = ft.Text("--", size=12, weight=ft.FontWeight.W_700, color=AZUL,
-                                 text_align=ft.TextAlign.CENTER)
+                                text_align=ft.TextAlign.CENTER)
     txt_stat_exames   = ft.Text("--", size=18, weight=ft.FontWeight.W_700, color=ROXO)
 
     def _mini_stat(val_ctrl, label, cor, icone):
@@ -262,20 +245,20 @@ def _tela_principal(page: ft.Page, voltar_fn=None):
         )
 
     mini_stats = ft.Row([
-        _mini_stat(txt_stat_remedios, "Remédios",        AMAR, ft.Icons.MEDICATION),
-        _mini_stat(txt_stat_consulta, "Próx.\nConsulta", AZUL, ft.Icons.EVENT_NOTE),
-        _mini_stat(txt_stat_exames,   "Exames/mês",      ROXO, ft.Icons.BIOTECH),
+        _mini_stat(txt_stat_remedios, "Remedios",       AMAR, "medication_rounded"),
+        _mini_stat(txt_stat_consulta, "Prox.\nConsulta", AZUL, "event_note_rounded"),
+        _mini_stat(txt_stat_exames,   "Exames/mes",     ROXO, "biotech_rounded"),
     ], spacing=8)
 
-    # ══════════════════════════════════════════════════════════════
+    # ══════════════════════════════════════════════════════════
     # SYNC BAR
-    # ══════════════════════════════════════════════════════════════
-    ico_sync = ft.Icon(ft.Icons.CLOUD_DONE_ROUNDED, size=14, color=MUT)
-    txt_sync = ft.Text("Sincronização não configurada", size=11, color=MUT)
+    # ══════════════════════════════════════════════════════════
+    ico_sync = ft.Icon("cloud_done_rounded", size=14, color=MUT)
+    txt_sync = ft.Text("Sincronizacao nao configurada", size=11, color=MUT)
 
     def _on_backup_status(topic, msg):
         txt = (msg.get("msg", "") if isinstance(msg, dict) else str(msg))
-        txt_sync.value = (txt[:60] if txt else "Backup automático ativo")
+        txt_sync.value = (txt[:60] if txt else "Backup automatico ativo")
         txt_sync.color = VERD
         ico_sync.color = VERD
         _atualizar_ui()
@@ -293,14 +276,14 @@ def _tela_principal(page: ft.Page, voltar_fn=None):
         border=ft.Border(top=ft.BorderSide(1, BD)),
     )
 
-    # ══════════════════════════════════════════════════════════════
-    # ABAS E NAVEGAÇÃO
-    # ══════════════════════════════════════════════════════════════
+    # ══════════════════════════════════════════════════════════
+    # ABAS E NAVEGACAO
+    # ══════════════════════════════════════════════════════════
     ABAS = [
-        ("Início",  ft.Icons.HOME_ROUNDED,     AZUL),
-        ("Exames",  ft.Icons.FOLDER_OPEN,       ROXO),
-        ("Clínico", ft.Icons.HEALTH_AND_SAFETY, VERD),
-        ("Mais",    ft.Icons.GRID_VIEW_ROUNDED, SEC),
+        ("Inicio",  "home_rounded",             AZUL),
+        ("Exames",  "folder_open_rounded",      ROXO),
+        ("Clinico", "health_and_safety_rounded", VERD),
+        ("Mais",    "grid_view_rounded",         SEC),
     ]
     barra_abas_row = ft.Row(spacing=0)
     area_conteudo  = ft.ListView(spacing=12, padding=ft.padding.all(16), expand=True)
@@ -309,7 +292,7 @@ def _tela_principal(page: ft.Page, voltar_fn=None):
         barra_abas_row.controls.clear()
         for i, (label, icone, cor) in enumerate(ABAS):
             ativa = aba_ativa[0] == i
-            barra_abas_row.controls.append(ft.Container(
+            tab = ft.Container(
                 content=ft.Column([
                     ft.Icon(icone, size=20, color=cor if ativa else MUT),
                     ft.Text(label, size=9,
@@ -322,26 +305,27 @@ def _tela_principal(page: ft.Page, voltar_fn=None):
                 border=ft.Border(top=ft.BorderSide(2, cor if ativa else "transparent")),
                 padding=ft.padding.symmetric(vertical=8),
                 alignment=ft.alignment.Alignment(0, 0),
-                on_click=lambda e, idx=i: _trocar_aba(idx),
                 ink=True,
-            ))
+            )
+            tab.on_click = lambda e, idx=i: _trocar_aba(idx)
+            barra_abas_row.controls.append(tab)
 
-    # ── ABA 0: Início ────────────────────────────────────────────
+    # ── ABA 0: Inicio ────────────────────────────────────────
     def _conteudo_inicio():
         return [
             card_claudia,
-            _secao_titulo("SCORE DE SAÚDE", ft.Icons.FAVORITE, VERM),
+            _secao_titulo("SCORE DE SAUDE", "favorite_rounded", VERM),
             card_score,
-            _secao_titulo("HOJE", ft.Icons.TODAY, AMAR),
+            _secao_titulo("HOJE", "today_rounded", AMAR),
             chips_hoje,
-            _secao_titulo("RESUMO", ft.Icons.INSIGHTS, ROXO),
+            _secao_titulo("RESUMO", "insights_rounded", ROXO),
             mini_stats,
         ]
 
-    # ── ABA 2: Clínico ───────────────────────────────────────────
+    # ── ABA 2: Clinico ───────────────────────────────────────
     def _conteudo_clinico():
         def _btn_item(icone, label, desc, cor, fn):
-            return ft.Container(
+            c = ft.Container(
                 content=ft.Row([
                     ft.Container(
                         content=ft.Icon(icone, size=15, color=cor),
@@ -350,31 +334,35 @@ def _tela_principal(page: ft.Page, voltar_fn=None):
                         alignment=ft.alignment.Alignment(0, 0),
                     ),
                     ft.Column([
-                        ft.Text(label, size=13, color=TXT, weight=ft.FontWeight.W_500),
+                        ft.Text(label, size=13, color=TXT,
+                                weight=ft.FontWeight.W_500),
                         ft.Text(desc, size=10, color=SEC),
                     ], spacing=0, tight=True, expand=True),
-                    ft.Icon(ft.Icons.CHEVRON_RIGHT, size=16, color=MUT),
+                    ft.Icon("chevron_right_rounded", size=16, color=MUT),
                 ], spacing=12),
                 bgcolor=CARD,
                 padding=ft.padding.symmetric(horizontal=16, vertical=11),
                 border=ft.Border(bottom=ft.BorderSide(1, BD)),
-                on_click=lambda e: fn(),
                 ink=True,
             )
+            c.on_click = lambda e: fn()
+            return c
+
         return [
             ft.Container(
                 content=ft.Column([
-                    _btn_item(ft.Icons.EVENT_NOTE, "Consultas",
-                              "Histórico de consultas", VERD,
-                              _lazy_fn("tela_consultas_medicas", "criar_tela_consultas_medicas")),
-                    _btn_item(ft.Icons.MEDICATION, "Medicamentos",
-                              "Remédios e horários", AMAR,
+                    _btn_item("event_note_rounded", "Consultas",
+                              "Historico de consultas", VERD,
+                              _lazy_fn("tela_consultas_medicas",
+                                       "criar_tela_consultas_medicas")),
+                    _btn_item("medication_rounded", "Medicamentos",
+                              "Remedios e horarios", AMAR,
                               _lazy_fn("tela_remedios", "criar_tela_remedios")),
-                    _btn_item(ft.Icons.RESTAURANT_MENU, "Dieta & Diário",
-                              "Alimentação e saúde", VERD,
+                    _btn_item("restaurant_menu_rounded", "Dieta & Diario",
+                              "Alimentacao e saude", VERD,
                               _lazy_fn("tela_dieta", "criar_tela_dieta")),
-                    _btn_item(ft.Icons.PSYCHOLOGY, "Parecer IA",
-                              "Análise com Claude", ROXO,
+                    _btn_item("psychology_rounded", "Parecer IA",
+                              "Analise com Claude", ROXO,
                               _lazy_fn("tela_parecer", "criar_tela_parecer")),
                 ], spacing=0),
                 bgcolor=CARD,
@@ -384,10 +372,10 @@ def _tela_principal(page: ft.Page, voltar_fn=None):
             ),
         ]
 
-    # ── ABA 3: Mais ──────────────────────────────────────────────
+    # ── ABA 3: Mais ──────────────────────────────────────────
     def _conteudo_mais():
         def _item(icon, label, desc, cor, fn):
-            return ft.Container(
+            c = ft.Container(
                 content=ft.Row([
                     ft.Container(
                         content=ft.Icon(icon, size=15, color=cor),
@@ -396,24 +384,27 @@ def _tela_principal(page: ft.Page, voltar_fn=None):
                         alignment=ft.alignment.Alignment(0, 0),
                     ),
                     ft.Column([
-                        ft.Text(label, size=13, color=TXT, weight=ft.FontWeight.W_500),
+                        ft.Text(label, size=13, color=TXT,
+                                weight=ft.FontWeight.W_500),
                         ft.Text(desc, size=10, color=SEC),
                     ], spacing=0, tight=True, expand=True),
-                    ft.Icon(ft.Icons.CHEVRON_RIGHT, size=16, color=MUT),
+                    ft.Icon("chevron_right_rounded", size=16, color=MUT),
                 ], spacing=12),
                 bgcolor=CARD,
                 padding=ft.padding.symmetric(horizontal=16, vertical=11),
                 border=ft.Border(bottom=ft.BorderSide(1, BD)),
-                on_click=lambda e: fn(),
                 ink=True,
             )
+            c.on_click = lambda e: fn()
+            return c
 
         def _group(titulo, cor, icone, items):
             return ft.Column([
                 ft.Container(
                     content=ft.Row([
                         ft.Icon(icone, size=12, color=cor),
-                        ft.Text(titulo, size=10, weight=ft.FontWeight.W_700, color=cor),
+                        ft.Text(titulo, size=10, weight=ft.FontWeight.W_700,
+                                color=cor),
                     ], spacing=6),
                     padding=ft.padding.only(bottom=6, top=4),
                 ),
@@ -428,36 +419,45 @@ def _tela_principal(page: ft.Page, voltar_fn=None):
 
         def _nav_perfil():
             try:
-                from tela_perfil import criar_tela_perfil
+                from telas.tela_perfil import criar_tela_perfil
                 _ir(criar_tela_perfil)
             except ImportError:
                 _lazy_fn("tela_perfil", "criar_tela_perfil")()
 
         return [
-            _group("EXAMES", AZUL, ft.Icons.FOLDER_OPEN, [
-                _item(ft.Icons.UPLOAD_FILE, "Incluir Exame", "Importar PDF", AZUL,
+            _group("EXAMES", AZUL, "folder_open_rounded", [
+                _item("upload_file_rounded", "Incluir Exame", "Importar PDF", AZUL,
                       lambda: _navegar(page, _tela_incluir_exame, _voltar_hub)),
-                _item(ft.Icons.ANALYTICS, "Histórico", "Gráficos e evolução", VERD,
+                _item("analytics_rounded", "Historico",
+                      "Graficos e evolucao", VERD,
                       _lazy_fn("tela_exames", "criar_tela_consulta")),
-                _item(ft.Icons.DESCRIPTION, "Processados", "Exames importados", AMAR,
-                      _lazy_fn("tela_exames_processados", "criar_tela_exames_processados")),
-                _item(ft.Icons.SCIENCE, "Exames Padrão", "Referências e cadastro", ROXO,
+                _item("description_rounded", "Processados",
+                      "Exames importados", AMAR,
+                      _lazy_fn("tela_exames_processados",
+                               "criar_tela_exames_processados")),
+                _item("science_rounded", "Exames Padrao",
+                      "Referencias e cadastro", ROXO,
                       _lazy_fn("tela_exames_padrao", "criar_tela_exames_padrao")),
-                _item(ft.Icons.LOCAL_HOSPITAL, "Especialidades", "Áreas médicas", AMAR,
-                      _lazy_fn("tela_especialidades", "criar_tela_especialidades")),
-                _item(ft.Icons.BIOTECH, "Laboratórios", "Labs e extratores", VERM,
+                _item("local_hospital_rounded", "Especialidades",
+                      "Areas medicas", AMAR,
+                      _lazy_fn("tela_especialidades",
+                               "criar_tela_especialidades")),
+                _item("biotech_rounded", "Laboratorios",
+                      "Labs e extratores", VERM,
                       _lazy_fn("tela_laboratorios", "criar_tela_laboratorios")),
             ]),
-            _group("MÉDICOS", ROXO, ft.Icons.PEOPLE, [
-                _item(ft.Icons.PEOPLE, "Médicos", "Cadastro e histórico", ROXO,
+            _group("MEDICOS", ROXO, "people_rounded", [
+                _item("people_rounded", "Medicos",
+                      "Cadastro e historico", ROXO,
                       _lazy_fn("tela_medicos", "criar_tela_medicos")),
-                _item(ft.Icons.LINK, "Links Médico", "Tokens de acesso", AZUL,
+                _item("link_rounded", "Links Medico",
+                      "Tokens de acesso", AZUL,
                       _lazy_fn("tela_links_medico", "criar_tela_links_medico")),
             ]),
-            _group("CONFIGURAÇÕES", SEC, ft.Icons.SETTINGS, [
-                _item(ft.Icons.SETTINGS, "Configurações",
+            _group("CONFIGURACOES", SEC, "settings_rounded", [
+                _item("settings_rounded", "Configuracoes",
                       "Perfil, Backup e Drive", SEC,
-                      _lazy_fn("tela_config", "criar_tela_config")),
+                      _lazy_fn("telas_sistema.tela_config", "criar_tela_config")),
             ]),
         ]
 
@@ -465,14 +465,11 @@ def _tela_principal(page: ft.Page, voltar_fn=None):
         area_conteudo.controls.clear()
         idx = aba_ativa[0]
         if idx == 0:
-            for c in _conteudo_inicio():
-                area_conteudo.controls.append(c)
+            area_conteudo.controls.extend(_conteudo_inicio())
         elif idx == 2:
-            for c in _conteudo_clinico():
-                area_conteudo.controls.append(c)
+            area_conteudo.controls.extend(_conteudo_clinico())
         elif idx == 3:
-            for c in _conteudo_mais():
-                area_conteudo.controls.append(c)
+            area_conteudo.controls.extend(_conteudo_mais())
 
     def _trocar_aba(idx):
         if idx == 1:
@@ -483,15 +480,14 @@ def _tela_principal(page: ft.Page, voltar_fn=None):
         _rebuild_conteudo()
         _atualizar_ui()
 
-    # ══════════════════════════════════════════════════════════════
+    # ══════════════════════════════════════════════════════════
     # CARREGAR DADOS EM BACKGROUND
-    # ══════════════════════════════════════════════════════════════
+    # ══════════════════════════════════════════════════════════
 
     def _carregar_tudo_sync():
-        """Carrega dados sincrono — já estamos em thread de background (_iniciar)."""
         remedios_ativos = []
 
-        # ── Score de Saúde ───────────────────────────────────────
+        # Score de Saude
         try:
             conn = _sq.connect(DB_PATH, timeout=30)
             try:
@@ -508,8 +504,8 @@ def _tela_principal(page: ft.Page, voltar_fn=None):
                 try:
                     v = float(str(valor_str).replace(",", "."))
                     ref = str(ref_str).strip()
-                    if " - " in ref or " – " in ref:
-                        partes = ref.replace(" – ", " - ").split(" - ")
+                    if " - " in ref or " - " in ref:
+                        partes = ref.replace(" - ", " - ").split(" - ")
                         lo, hi = float(partes[0]), float(partes[1])
                         dentro += 1 if lo <= v <= hi else 0
                     elif ref.startswith("<"):
@@ -527,7 +523,8 @@ def _tela_principal(page: ft.Page, voltar_fn=None):
         try:
             remedios_ativos = listar_remedios(so_ativos=True)
             if remedios_ativos:
-                perc_list = [resumo_adesao(r["id"])["percentual"] for r in remedios_ativos]
+                perc_list = [resumo_adesao(r["id"])["percentual"]
+                             for r in remedios_ativos]
                 score_ad = round(sum(perc_list) / len(perc_list), 1)
             else:
                 score_ad = 100.0
@@ -552,7 +549,7 @@ def _tela_principal(page: ft.Page, voltar_fn=None):
         elif score_final >= 60:
             nota, cor_s = "Regular", AMAR
         else:
-            nota, cor_s = "Atenção", VERM
+            nota, cor_s = "Atencao", VERM
 
         barra_score.value   = score_final / 100
         barra_score.color   = cor_s
@@ -560,15 +557,13 @@ def _tela_principal(page: ft.Page, voltar_fn=None):
         txt_score_num.color = cor_s
         txt_nota.value      = nota
         txt_nota.color      = cor_s
-        txt_detalhes.value  = f"Exames {score_ex:.0f}%  ·  Remédios {score_ad:.0f}%"
+        txt_detalhes.value  = f"Exames {score_ex:.0f}%  .  Remedios {score_ad:.0f}%"
 
-        # ── Mini stats ───────────────────────────────────────────
+        # Mini stats
         try:
             agendadas = sorted(
-                [
-                    c for c in listar_consultas(tipo="agendada")
-                    if (c["data"] or "") >= date.today().isoformat()
-                ],
+                [c for c in listar_consultas(tipo="agendada")
+                 if (c["data"] or "") >= date.today().isoformat()],
                 key=lambda x: x["data"],
             )
             proxima = agendadas[0]["data"] if agendadas else None
@@ -578,7 +573,8 @@ def _tela_principal(page: ft.Page, voltar_fn=None):
             try:
                 mes = date.today().strftime("%Y-%m")
                 n_ex = conn.execute(
-                    "SELECT COUNT(*) FROM exames WHERE strftime('%Y-%m', data_exame) = ?",
+                    "SELECT COUNT(*) FROM exames "
+                    "WHERE strftime('%Y-%m', data_exame) = ?",
                     (mes,),
                 ).fetchone()[0]
             finally:
@@ -588,17 +584,15 @@ def _tela_principal(page: ft.Page, voltar_fn=None):
             txt_stat_consulta.value = d_txt
             txt_stat_exames.value   = str(n_ex)
         except Exception as ex:
-            logging.exception("[HUB] Erro stats: %s", ex)
+            log.exception("[HUB] Erro stats: %s", ex)
 
-        # ── Chips de hoje ────────────────────────────────────────
+        # Chips de hoje
         try:
             tomadas   = listar_tomadas_hoje()
             pendentes = [t for t in tomadas if t["status"] == "pendente"]
             hoje_str  = date.today().isoformat()
-            cons_hoje = [
-                c for c in listar_consultas(tipo="agendada")
-                if c["data"] == hoje_str
-            ]
+            cons_hoje = [c for c in listar_consultas(tipo="agendada")
+                         if c["data"] == hoje_str]
             pend = len(pendentes)
             cons = len(cons_hoje)
         except Exception:
@@ -607,53 +601,113 @@ def _tela_principal(page: ft.Page, voltar_fn=None):
         chips_hoje.controls.clear()
         if pend > 0:
             chips_hoje.controls.append(
-                _chip(f"{pend} remédio(s)", AMAR, ft.Icons.MEDICATION,
+                _chip(f"{pend} remedio(s)", AMAR, "medication_rounded",
                       _lazy_fn("tela_remedios", "criar_tela_remedios"))
             )
         if cons > 0:
             chips_hoje.controls.append(
-                _chip(f"{cons} consulta(s)", AZUL, ft.Icons.EVENT_NOTE,
-                      _lazy_fn("tela_consultas_medicas", "criar_tela_consultas_medicas"))
+                _chip(f"{cons} consulta(s)", AZUL, "event_note_rounded",
+                      _lazy_fn("tela_consultas_medicas",
+                               "criar_tela_consultas_medicas"))
             )
         if not pend and not cons:
             chips_hoje.controls.append(
-                _chip("Dia tranquilo", VERD, ft.Icons.CHECK_CIRCLE, lambda: None)
+                _chip("Dia tranquilo", VERD, "check_circle_rounded", lambda: None)
             )
 
-        # ── Sync bar — estado inicial (creds existem = autenticado) ─
+        # Sync bar estado inicial
         try:
             from shared.auth import _CREDS_PATH as _auth_cp
             if os.path.exists(_auth_cp):
                 ico_sync.color = VERD
-                txt_sync.value = "Backup automático ativo"
+                txt_sync.value = "Backup automatico ativo"
                 txt_sync.color = VERD
         except Exception:
             pass
 
-    # ══════════════════════════════════════════════════════════════
+    # ══════════════════════════════════════════════════════════
+    # OVERLAY DE CONFIRMACAO (padrao sem modal nativo)
+    # ══════════════════════════════════════════════════════════
+
+    def _mostrar_confirmar(titulo, msg, fn_sim):
+        ref = [None]
+
+        def _fechar(e=None):
+            if ref[0] and ref[0] in page.overlay:
+                page.overlay.remove(ref[0])
+            try: page.update()
+            except Exception: pass
+
+        def _confirmar(e):
+            _fechar()
+            fn_sim()
+
+        btn_cancel = ft.Container(
+            content=ft.Text("Cancelar", size=13, color=SEC),
+            padding=ft.padding.symmetric(horizontal=16, vertical=10),
+            border_radius=8, bgcolor=f"{SEC}22", ink=True,
+        )
+        btn_cancel.on_click = _fechar
+
+        btn_ok = ft.Container(
+            content=ft.Text("Confirmar", size=13, color=VERM,
+                            weight=ft.FontWeight.W_600),
+            padding=ft.padding.symmetric(horizontal=16, vertical=10),
+            border_radius=8, bgcolor=f"{VERM}22", ink=True,
+        )
+        btn_ok.on_click = _confirmar
+
+        ref[0] = ft.Container(
+            content=ft.Container(
+                content=ft.Column([
+                    ft.Text(titulo, size=15, color=TXT,
+                            weight=ft.FontWeight.W_700, text_align="center"),
+                    ft.Container(height=8),
+                    ft.Text(msg, size=13, color=SEC, text_align="center"),
+                    ft.Container(height=20),
+                    ft.Row([btn_cancel, btn_ok], spacing=8,
+                           alignment=ft.MainAxisAlignment.CENTER),
+                ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, tight=True),
+                bgcolor=CARD, border_radius=14,
+                padding=ft.padding.all(24), width=300,
+            ),
+            bgcolor="#CC000000", expand=True,
+            alignment=ft.Alignment(0, 0),
+        )
+        ref[0].on_click = _fechar
+        page.overlay.append(ref[0])
+        try: page.update()
+        except Exception: pass
+
+    # ══════════════════════════════════════════════════════════
     # HEADER
-    # ══════════════════════════════════════════════════════════════
+    # ══════════════════════════════════════════════════════════
+
     btn_voltar = ft.Container()
     if voltar_fn:
-        btn_voltar = ft.TextButton(
+        btn_v = ft.Container(
             content=ft.Row([
-                ft.Icon(ft.Icons.ARROW_BACK, size=16, color=SEC),
+                ft.Icon("arrow_back_rounded", size=16, color=SEC),
                 ft.Text("Voltar", size=13, color=SEC),
             ], spacing=4, tight=True),
-            on_click=lambda _: voltar_fn(),
+            padding=ft.padding.symmetric(horizontal=8, vertical=8),
+            border_radius=8, ink=True,
         )
+        btn_v.on_click = lambda e: voltar_fn()
+        btn_voltar = btn_v
 
     def _nav_perfil(e=None):
-        from prontuario.telas.tela_perfil import criar_tela_perfil
-        _ir(criar_tela_perfil)
+        try:
+            from telas.tela_perfil import criar_tela_perfil
+            _ir(criar_tela_perfil)
+        except ImportError:
+            _lazy_fn("tela_perfil", "criar_tela_perfil")()
 
     def _deslogar():
-        def _confirmar(e2):
-            dlg.open = False
-            page.update()
+        def _fazer_deslogar():
             try:
-                from prontuario.backup import backup_watcher as _bw
-                if _bw._instancia:
+                from backup import backup_watcher as _bw
+                if getattr(_bw, "_instancia", None):
                     _bw._instancia.parar()
             except Exception:
                 pass
@@ -663,69 +717,62 @@ def _tela_principal(page: ft.Page, voltar_fn=None):
                     os.remove(_CREDS_PATH)
             except Exception:
                 pass
-            from prontuario.telas_shared.tela_login import criar_tela_login
-
-            def _on_login(token, perfil):
-                try:
-                    from prontuario.backup.backup_watcher import BackupWatcher
-                    watcher = BackupWatcher()
-                    watcher.iniciar(
-                        callback_ui=lambda msg: page.pubsub.send_all_on_topic(
-                            "_backup_status", {"msg": msg}
-                        )
-                    )
-                except Exception:
-                    pass
-                tela = _tela_principal(page, None)
-                page.pubsub.send_all({"tipo": "nav", "tela": tela})
-
             try:
+                from telas_shared.tela_login import criar_tela_login
+
+                def _on_login():
+                    try:
+                        from backup.backup_watcher import BackupWatcher
+                        watcher = BackupWatcher()
+                        watcher.iniciar(
+                            callback_ui=lambda m: page.pubsub.send_all_on_topic(
+                                "_backup_status", {"msg": m}
+                            )
+                        )
+                    except Exception:
+                        pass
+                    _navegar(page, _tela_principal, None)
+
                 tela_login = criar_tela_login(page, on_login_sucesso=_on_login)
                 page.controls.clear()
                 page.controls.append(tela_login)
-                page.update()
+                try: page.update()
+                except Exception: pass
             except Exception as ex:
-                logging.exception("[HUB] Erro ao deslogar: %s", ex)
+                log.exception("[HUB] Erro ao deslogar: %s", ex)
 
-        dlg = ft.AlertDialog(
-            modal=True,
-            title=ft.Text("Deslogar?", color=TXT),
-            content=ft.Text(
-                "Tem certeza que deseja sair?\n"
-                "Será necessário fazer login novamente.",
-                size=13, color=SEC,
-            ),
-            actions=[
-                ft.ElevatedButton(
-                    "Cancelar",
-                    bgcolor=BD, color=TXT,
-                    on_click=lambda e2: (setattr(dlg, "open", False), page.update()),
-                ),
-                ft.TextButton(
-                    "Deslogar",
-                    style=ft.ButtonStyle(color=VERM),
-                    on_click=_confirmar,
-                ),
-            ],
+        _mostrar_confirmar(
+            "Deslogar?",
+            "Tem certeza que deseja sair?\nSera necessario fazer login novamente.",
+            _fazer_deslogar,
         )
-        page.overlay.append(dlg)
-        dlg.open = True
-        page.update()
+
+    btn_menu = ft.Container(
+        content=ft.Icon("person_outline_rounded", size=20, color=SEC),
+        padding=ft.padding.all(8), border_radius=8, ink=True,
+    )
+
+    def _toggle_menu_usuario(e):
+        _mostrar_confirmar(
+            "Conta",
+            "O que deseja fazer?",
+            _deslogar,
+        )
+
+    btn_menu.on_click = _toggle_menu_usuario
 
     menu_usuario = ft.PopupMenuButton(
         content=ft.Container(
-            content=ft.Icon(ft.Icons.PERSON_OUTLINE, size=20, color=SEC),
+            content=ft.Icon("person_outline_rounded", size=20, color=SEC),
             padding=ft.padding.all(8),
         ),
         items=[
             ft.PopupMenuItem(
-                icon=ft.Icons.MANAGE_ACCOUNTS,
                 text="Perfil",
                 on_click=_nav_perfil,
             ),
             ft.PopupMenuItem(),
             ft.PopupMenuItem(
-                icon=ft.Icons.LOGOUT,
                 text="Deslogar",
                 on_click=lambda e: _deslogar(),
             ),
@@ -736,8 +783,9 @@ def _tela_principal(page: ft.Page, voltar_fn=None):
         content=ft.Row([
             btn_voltar,
             ft.Row([
-                ft.Icon(ft.Icons.MEDICAL_SERVICES, size=18, color=AZUL),
-                ft.Text("Prontuário", size=16, weight=ft.FontWeight.W_700, color=TXT),
+                ft.Icon("medical_services_rounded", size=18, color=AZUL),
+                ft.Text("Prontuario", size=16, weight=ft.FontWeight.W_700,
+                        color=TXT),
             ], spacing=8, tight=True),
             ft.Container(expand=True),
             menu_usuario,
@@ -746,9 +794,9 @@ def _tela_principal(page: ft.Page, voltar_fn=None):
         border=ft.Border(bottom=ft.BorderSide(1, BD)),
     )
 
-    # ══════════════════════════════════════════════════════════════
+    # ══════════════════════════════════════════════════════════
     # MONTAR LAYOUT
-    # ══════════════════════════════════════════════════════════════
+    # ══════════════════════════════════════════════════════════
     _rebuild_abas()
     _rebuild_conteudo()
 
@@ -769,11 +817,10 @@ def _tela_principal(page: ft.Page, voltar_fn=None):
         nav_bar,
     ], spacing=0, expand=True)
 
-    larg = 0
     try:
         larg = page.width or 0
     except Exception:
-        pass
+        larg = 0
 
     if larg > 500:
         conteudo_final = ft.Row([
@@ -785,7 +832,9 @@ def _tela_principal(page: ft.Page, voltar_fn=None):
         conteudo_final = corpo
 
     wrapper = ft.Column(expand=True)
-    wrapper.controls.append(ft.Container(bgcolor=BG, expand=True, content=conteudo_final))
+    wrapper.controls.append(
+        ft.Container(bgcolor=BG, expand=True, content=conteudo_final)
+    )
 
     _carregar_tudo_sync()
     _montado[0] = True
@@ -793,23 +842,23 @@ def _tela_principal(page: ft.Page, voltar_fn=None):
 
 
 # ══════════════════════════════════════════════════════════════
-# ENTRYPOINT DO MÓDULO
+# TELA INCLUIR EXAME (wrapper)
+# ══════════════════════════════════════════════════════════════
+
+def _tela_incluir_exame(page, voltar_fn=None):
+    from telas.tela_incluir_exame import criar_tela_incluir_exame
+
+    def _voltar():
+        if voltar_fn:
+            voltar_fn()
+
+    return criar_tela_incluir_exame(page, _voltar)
+
+
+# ══════════════════════════════════════════════════════════════
+# ENTRYPOINT DO MODULO
 # ══════════════════════════════════════════════════════════════
 
 def criar_tela_prontuario(page: ft.Page, voltar_fn=None):
-    """Entrypoint do módulo Prontuário."""
     criar_tabelas()
     return _tela_principal(page, voltar_fn)
-
-
-# ══════════════════════════════════════════════════════════════
-# TELAS INTERNAS (importadas do app.py original)
-# ══════════════════════════════════════════════════════════════
-
-# Importa as telas internas do app.py original via sys.path
-# (mantidas no mesmo diretório prontuario/)
-def _tela_incluir_exame(page, voltar_fn=None):
-    from .telas.tela_incluir_exame import criar_tela_incluir_exame
-    def _voltar():
-        if voltar_fn: voltar_fn()
-    return criar_tela_incluir_exame(page, _voltar)

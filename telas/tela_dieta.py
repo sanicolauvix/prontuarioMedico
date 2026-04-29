@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """
 tela_dieta.py — Koios Prontuário
 Rotina diária (alimentação, medicamentos, suplementos) + Diário de Saúde.
@@ -7,7 +8,7 @@ import logging
 import threading
 from datetime import date, datetime
 import flet as ft
-from ..dados.model_prontuario import (
+from dados.model_prontuario import (
     listar_rotina, salvar_rotina_item, excluir_rotina_item,
     listar_diario, salvar_diario_entrada, excluir_diario_entrada,
     tendencias_diario, tags_frequentes,
@@ -24,11 +25,11 @@ CORAL = "#FF7B72"
 
 # Tipos de item de rotina
 TIPOS = {
-    "refeicao":    (ft.Icons.RESTAURANT,      "Refeição",     VERD),
-    "medicamento": (ft.Icons.MEDICATION,       "Medicamento",  AZUL),
-    "suplemento":  (ft.Icons.HEALTH_AND_SAFETY,"Suplemento",   ROXO),
-    "atividade":   (ft.Icons.FITNESS_CENTER,   "Atividade",    LAR),
-    "outro":       (ft.Icons.CIRCLE,           "Outro",        MUT),
+    "refeicao":    ("restaurant_rounded",      "Refeição",     VERD),
+    "medicamento": ("medication_rounded",       "Medicamento",  AZUL),
+    "suplemento":  ("health_and_safety_rounded","Suplemento",   ROXO),
+    "atividade":   ("fitness_center_rounded",   "Atividade",    LAR),
+    "outro":       ("circle_rounded",           "Outro",        MUT),
 }
 
 # Emojis de humor/energia
@@ -92,7 +93,7 @@ def _conteudo_rotina(page, wrapper):
         if not itens:
             lista.controls.append(ft.Container(
                 content=ft.Column([
-                    ft.Icon(ft.Icons.SCHEDULE, size=48, color=MUT),
+                    ft.Icon("schedule_rounded", size=48, color=MUT),
                     ft.Text("Nenhum item na rotina.", color=SEC, size=13),
                     ft.Text("Adicione refeições, medicamentos e suplementos.",
                             color=MUT, size=11),
@@ -115,7 +116,7 @@ def _conteudo_rotina(page, wrapper):
         for h in sorted(por_horario.keys()):
             lista.controls.append(ft.Container(
                 content=ft.Row([
-                    ft.Icon(ft.Icons.ACCESS_TIME, size=13, color=AMAR),
+                    ft.Icon("access_time_rounded", size=13, color=AMAR),
                     ft.Text(h, size=13, color=AMAR, weight=ft.FontWeight.W_700),
                 ], spacing=6),
                 padding=ft.padding.only(top=10, left=4, bottom=2)))
@@ -125,7 +126,7 @@ def _conteudo_rotina(page, wrapper):
         if sem_hora:
             lista.controls.append(ft.Container(
                 content=ft.Row([
-                    ft.Icon(ft.Icons.SCHEDULE, size=13, color=MUT),
+                    ft.Icon("schedule_rounded", size=13, color=MUT),
                     ft.Text("Sem horário fixo", size=13, color=MUT,
                             weight=ft.FontWeight.W_700),
                 ], spacing=6),
@@ -179,13 +180,13 @@ def _conteudo_rotina(page, wrapper):
                 ], spacing=2, expand=True),
                 ft.Column([
                     ft.IconButton(
-                        ft.Icons.EDIT_ROUNDED, icon_color=AZUL, icon_size=16,
+                        "edit_rounded", icon_color=AZUL, icon_size=16,
                         on_click=_editar,
                         style=ft.ButtonStyle(
                             padding=ft.padding.all(4),
                             shape=ft.RoundedRectangleBorder(radius=6))),
                     ft.IconButton(
-                        ft.Icons.VISIBILITY_OFF if ativo else ft.Icons.VISIBILITY,
+                        "visibility_off_rounded" if ativo else "visibility_rounded",
                         icon_color=MUT, icon_size=16,
                         on_click=_toggle_ativo,
                         style=ft.ButtonStyle(
@@ -286,21 +287,23 @@ def _conteudo_rotina(page, wrapper):
             content=ft.Column([
                 ft.Container(
                     content=ft.Row([
-                        ft.TextButton(
+                        ft.Container(
                             content=ft.Row([
-                                ft.Icon(ft.Icons.ARROW_BACK, size=16),
+                                ft.Icon("arrow_back_rounded", size=16),
                                 ft.Text("Voltar", size=13),
                             ], spacing=4, tight=True),
+                            padding=ft.padding.symmetric(horizontal=8, vertical=8),
+                            ink=True,
                             on_click=lambda e: (_carregar(), _mostrar_lista())),
                         ft.Row([
-                            ft.Icon(ft.Icons.SCHEDULE, size=18, color=VERD),
+                            ft.Icon("schedule_rounded", size=18, color=VERD),
                             ft.Text("Nova Rotina" if is_novo else "Editar Rotina",
                                     size=16, weight=ft.FontWeight.W_700, color=TXT),
                         ], spacing=8, tight=True),
                         ft.Container(expand=True),
                         ft.FilledButton(
                             content=ft.Row([
-                                ft.Icon(ft.Icons.SAVE, size=16),
+                                ft.Icon("save_rounded", size=16),
                                 ft.Text("Salvar", size=13),
                             ], spacing=6, tight=True),
                             style=ft.ButtonStyle(
@@ -322,11 +325,13 @@ def _conteudo_rotina(page, wrapper):
                         txt_erro,
                     ] + ([
                         ft.Container(height=8),
-                        ft.TextButton(
+                        ft.Container(
                             content=ft.Row([
-                                ft.Icon(ft.Icons.DELETE_OUTLINE, size=14, color=VERM),
+                                ft.Icon("delete_outline_rounded", size=14, color=VERM),
                                 ft.Text("Excluir item", size=12, color=VERM),
                             ], spacing=4, tight=True),
+                            padding=ft.padding.symmetric(horizontal=8, vertical=8),
+                            ink=True,
                             on_click=_excluir),
                     ] if item else []),
                     spacing=8, scroll=ft.ScrollMode.AUTO),
@@ -348,7 +353,7 @@ def _conteudo_rotina(page, wrapper):
                         ft.Container(expand=True),
                         ft.FilledButton(
                             content=ft.Row([
-                                ft.Icon(ft.Icons.ADD, size=16),
+                                ft.Icon("add_rounded", size=16),
                                 ft.Text("Novo Item", size=13),
                             ], spacing=6, tight=True),
                             style=ft.ButtonStyle(
@@ -443,7 +448,7 @@ def _conteudo_diario(page):
         if not entradas:
             lista.controls.append(ft.Container(
                 content=ft.Column([
-                    ft.Icon(ft.Icons.BOOK, size=48, color=MUT),
+                    ft.Icon("book_rounded", size=48, color=MUT),
                     ft.Text("Nenhum relato no diário.", color=SEC, size=13),
                     ft.Text("Registre como você está se sentindo.", color=MUT, size=11),
                 ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=8),
@@ -463,7 +468,7 @@ def _conteudo_diario(page):
                     label_data = data_atual
                 lista.controls.append(ft.Container(
                     content=ft.Row([
-                        ft.Icon(ft.Icons.CALENDAR_TODAY, size=13, color=AZUL),
+                        ft.Icon("calendar_today_rounded", size=13, color=AZUL),
                         ft.Text(label_data, size=13, color=AZUL,
                                 weight=ft.FontWeight.W_700),
                     ], spacing=6),
@@ -510,7 +515,7 @@ def _conteudo_diario(page):
                     ft.Text(hora_txt, size=11, color=MUT),
                     ft.Container(expand=True),
                     ft.IconButton(
-                        ft.Icons.EDIT_ROUNDED, icon_color=MUT, icon_size=15,
+                        "edit_rounded", icon_color=MUT, icon_size=15,
                         on_click=_editar,
                         style=ft.ButtonStyle(
                             padding=ft.padding.all(2),
@@ -639,21 +644,23 @@ def _conteudo_diario(page):
             content=ft.Column([
                 ft.Container(
                     content=ft.Row([
-                        ft.TextButton(
+                        ft.Container(
                             content=ft.Row([
-                                ft.Icon(ft.Icons.ARROW_BACK, size=16),
+                                ft.Icon("arrow_back_rounded", size=16),
                                 ft.Text("Voltar", size=13),
                             ], spacing=4, tight=True),
+                            padding=ft.padding.symmetric(horizontal=8, vertical=8),
+                            ink=True,
                             on_click=lambda e: (_carregar(), _mostrar_lista())),
                         ft.Row([
-                            ft.Icon(ft.Icons.EDIT_NOTE, size=18, color=AZUL),
+                            ft.Icon("edit_note_rounded", size=18, color=AZUL),
                             ft.Text("Novo Relato" if is_nova else "Editar Relato",
                                     size=16, weight=ft.FontWeight.W_700, color=TXT),
                         ], spacing=8, tight=True),
                         ft.Container(expand=True),
                         ft.FilledButton(
                             content=ft.Row([
-                                ft.Icon(ft.Icons.SAVE, size=16),
+                                ft.Icon("save_rounded", size=16),
                                 ft.Text("Salvar", size=13),
                             ], spacing=6, tight=True),
                             style=ft.ButtonStyle(
@@ -681,11 +688,13 @@ def _conteudo_diario(page):
                         txt_erro,
                     ] + ([
                         ft.Container(height=8),
-                        ft.TextButton(
+                        ft.Container(
                             content=ft.Row([
-                                ft.Icon(ft.Icons.DELETE_OUTLINE, size=14, color=VERM),
+                                ft.Icon("delete_outline_rounded", size=14, color=VERM),
                                 ft.Text("Excluir relato", size=12, color=VERM),
                             ], spacing=4, tight=True),
+                            padding=ft.padding.symmetric(horizontal=8, vertical=8),
+                            ink=True,
                             on_click=_excluir),
                     ] if entrada else []),
                     spacing=8, scroll=ft.ScrollMode.AUTO),
@@ -705,7 +714,7 @@ def _conteudo_diario(page):
                         ft.Container(expand=True),
                         ft.FilledButton(
                             content=ft.Row([
-                                ft.Icon(ft.Icons.ADD, size=16),
+                                ft.Icon("add_rounded", size=16),
                                 ft.Text("Novo Relato", size=13),
                             ], spacing=6, tight=True),
                             style=ft.ButtonStyle(
@@ -777,7 +786,7 @@ def _conteudo_diario(page):
                     ft.Text(hora_txt, size=11, color=MUT),
                     ft.Container(expand=True),
                     ft.IconButton(
-                        ft.Icons.EDIT_ROUNDED, icon_color=MUT, icon_size=15,
+                        "edit_rounded", icon_color=MUT, icon_size=15,
                         on_click=_editar,
                         style=ft.ButtonStyle(
                             padding=ft.padding.all(2),
@@ -805,7 +814,7 @@ def _conteudo_diario(page):
         if not entradas:
             lista.controls.append(ft.Container(
                 content=ft.Column([
-                    ft.Icon(ft.Icons.BOOK, size=48, color=MUT),
+                    ft.Icon("book_rounded", size=48, color=MUT),
                     ft.Text("Nenhum relato no diário.", color=SEC, size=13),
                     ft.Text("Registre como você está se sentindo.", color=MUT, size=11),
                 ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=8),
@@ -825,7 +834,7 @@ def _conteudo_diario(page):
                     label_data = data_atual
                 lista.controls.append(ft.Container(
                     content=ft.Row([
-                        ft.Icon(ft.Icons.CALENDAR_TODAY, size=13, color=AZUL),
+                        ft.Icon("calendar_today_rounded", size=13, color=AZUL),
                         ft.Text(label_data, size=13, color=AZUL,
                                 weight=ft.FontWeight.W_700),
                     ], spacing=6),
@@ -845,7 +854,7 @@ def _conteudo_diario(page):
                         ft.Container(expand=True),
                         ft.FilledButton(
                             content=ft.Row([
-                                ft.Icon(ft.Icons.ADD, size=16),
+                                ft.Icon("add_rounded", size=16),
                                 ft.Text("Novo Relato", size=13),
                             ], spacing=6, tight=True),
                             style=ft.ButtonStyle(
@@ -965,21 +974,23 @@ def _conteudo_diario(page):
             content=ft.Column([
                 ft.Container(
                     content=ft.Row([
-                        ft.TextButton(
+                        ft.Container(
                             content=ft.Row([
-                                ft.Icon(ft.Icons.ARROW_BACK, size=16),
+                                ft.Icon("arrow_back_rounded", size=16),
                                 ft.Text("Voltar", size=13),
                             ], spacing=4, tight=True),
+                            padding=ft.padding.symmetric(horizontal=8, vertical=8),
+                            ink=True,
                             on_click=lambda e: (_carregar_nav(), _mostrar_lista_final())),
                         ft.Row([
-                            ft.Icon(ft.Icons.EDIT_NOTE, size=18, color=AZUL),
+                            ft.Icon("edit_note_rounded", size=18, color=AZUL),
                             ft.Text("Novo Relato" if is_nova else "Editar Relato",
                                     size=16, weight=ft.FontWeight.W_700, color=TXT),
                         ], spacing=8, tight=True),
                         ft.Container(expand=True),
                         ft.FilledButton(
                             content=ft.Row([
-                                ft.Icon(ft.Icons.SAVE, size=16),
+                                ft.Icon("save_rounded", size=16),
                                 ft.Text("Salvar", size=13),
                             ], spacing=6, tight=True),
                             style=ft.ButtonStyle(
@@ -1007,11 +1018,13 @@ def _conteudo_diario(page):
                         txt_erro,
                     ] + ([
                         ft.Container(height=8),
-                        ft.TextButton(
+                        ft.Container(
                             content=ft.Row([
-                                ft.Icon(ft.Icons.DELETE_OUTLINE, size=14, color=VERM),
+                                ft.Icon("delete_outline_rounded", size=14, color=VERM),
                                 ft.Text("Excluir relato", size=12, color=VERM),
                             ], spacing=4, tight=True),
+                            padding=ft.padding.symmetric(horizontal=8, vertical=8),
+                            ink=True,
                             on_click=_excluir),
                     ] if entrada else []),
                     spacing=8, scroll=ft.ScrollMode.AUTO),
@@ -1037,8 +1050,8 @@ def _conteudo_diario(page):
 
 def criar_tela_dieta(page: ft.Page, voltar_fn):
     ABAS = [
-        (0, ft.Icons.SCHEDULE,  "Rotina",  VERD),
-        (1, ft.Icons.EDIT_NOTE, "Diário",  AZUL),
+        (0, "schedule_rounded",  "Rotina",  VERD),
+        (1, "edit_note_rounded", "Diário",  AZUL),
     ]
     aba_ativa = [0]
 
@@ -1086,15 +1099,17 @@ def criar_tela_dieta(page: ft.Page, voltar_fn):
 
     cabecalho = ft.Container(
         content=ft.Row([
-            ft.TextButton(
+            ft.Container(
                 content=ft.Row([
-                    ft.Icon(ft.Icons.ARROW_BACK, size=16),
+                    ft.Icon("arrow_back_rounded", size=16),
                     ft.Text("Voltar", size=13),
                 ], spacing=4, tight=True),
+                padding=ft.padding.symmetric(horizontal=8, vertical=8),
+                ink=True,
                 on_click=lambda e: voltar_fn(),
             ),
             ft.Row([
-                ft.Icon(ft.Icons.RESTAURANT_MENU, size=20, color=VERD),
+                ft.Icon("restaurant_menu_rounded", size=20, color=VERD),
                 ft.Text("Rotina & Diário", size=18,
                         weight=ft.FontWeight.W_700, color=TXT),
             ], spacing=8, tight=True),

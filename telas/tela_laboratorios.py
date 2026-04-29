@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """
 tela_laboratorios.py — Koios Prontuário
 Laboratórios detectados nos exames + ferramenta IA para novos layouts.
@@ -6,7 +7,7 @@ Padrão visual: idêntico a tela_exames.py (header + barra de abas + área de co
 import logging
 import threading
 import flet as ft
-from ..dados.model_prontuario import listar_laboratorios
+from dados.model_prontuario import listar_laboratorios
 
 logger = logging.getLogger(__name__)
 
@@ -45,7 +46,7 @@ def _conteudo_labs(page):
         if not labs:
             lista.controls.append(ft.Container(
                 content=ft.Column([
-                    ft.Icon(ft.Icons.BIOTECH, size=48, color=MUT),
+                    ft.Icon("biotech_rounded", size=48, color=MUT),
                     ft.Text("Nenhum laboratório detectado.", color=SEC, size=13),
                     ft.Text("Importe exames para detectar automaticamente.",
                             color=MUT, size=11),
@@ -89,7 +90,7 @@ def _conteudo_labs(page):
                 content=ft.Column([
                     ft.Row([
                         ft.Container(
-                            content=ft.Icon(ft.Icons.BIOTECH, size=20, color=cor),
+                            content=ft.Icon("biotech_rounded", size=20, color=cor),
                             bgcolor=f"{cor}1A", border_radius=8,
                             width=40, height=40,
                             alignment=ft.alignment.Alignment(0, 0)),
@@ -265,7 +266,7 @@ Responda em JSON:
         ft.Container(
             content=ft.Column([
                 ft.Row([
-                    ft.Icon(ft.Icons.PSYCHOLOGY, size=16, color=ROXO),
+                    ft.Icon("psychology_rounded", size=16, color=ROXO),
                     ft.Text("Analisar PDF de laboratório desconhecido",
                             size=13, color=ROXO, weight=ft.FontWeight.W_600),
                 ], spacing=8),
@@ -275,7 +276,7 @@ Responda em JSON:
                 ft.Row([
                     ft.FilledButton(
                         content=ft.Row([
-                            ft.Icon(ft.Icons.PSYCHOLOGY, size=14),
+                            ft.Icon("psychology_rounded", size=14),
                             ft.Text("Analisar com IA", size=12),
                         ], spacing=4, tight=True),
                         style=ft.ButtonStyle(
@@ -305,8 +306,8 @@ Responda em JSON:
 
 def criar_tela_laboratorios(page: ft.Page, voltar_fn):
     ABAS = [
-        (0, ft.Icons.BIOTECH,     "Laboratórios", CORAL),
-        (1, ft.Icons.PSYCHOLOGY,  "IA",            ROXO),
+        (0, "biotech_rounded",     "Laboratórios", CORAL),
+        (1, "psychology_rounded",  "IA",            ROXO),
     ]
     aba_ativa = [0]
 
@@ -351,15 +352,17 @@ def criar_tela_laboratorios(page: ft.Page, voltar_fn):
 
     cabecalho = ft.Container(
         content=ft.Row([
-            ft.TextButton(
+            ft.Container(
                 content=ft.Row([
-                    ft.Icon(ft.Icons.ARROW_BACK, size=16),
+                    ft.Icon("arrow_back_rounded", size=16),
                     ft.Text("Voltar", size=13),
                 ], spacing=4, tight=True),
+                padding=ft.padding.symmetric(horizontal=8, vertical=8),
+                ink=True,
                 on_click=lambda e: voltar_fn(),
             ),
             ft.Row([
-                ft.Icon(ft.Icons.BIOTECH, size=20, color=CORAL),
+                ft.Icon("biotech_rounded", size=20, color=CORAL),
                 ft.Text("Laboratórios", size=18,
                         weight=ft.FontWeight.W_700, color=TXT),
             ], spacing=8, tight=True),

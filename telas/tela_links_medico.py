@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """
 tela_links_medico.py — Koios Prontuário
 Gestão de links de acesso para médicos.
@@ -5,7 +6,7 @@ Gestão de links de acesso para médicos.
 import logging
 import flet as ft
 import webbrowser
-from ..dados.model_prontuario import (
+from dados.model_prontuario import (
     listar_medicos, criar_link_medico,
     listar_links_medicos, revogar_link_medico,
 )
@@ -50,7 +51,7 @@ def _conteudo_links(page):
         if not links:
             lista_links.controls.append(ft.Container(
                 content=ft.Column([
-                    ft.Icon(ft.Icons.LINK_OFF_ROUNDED, size=36, color=MUT),
+                    ft.Icon("link_off_rounded", size=36, color=MUT),
                     ft.Text("Nenhum link gerado ainda.", size=13, color=MUT),
                     ft.Text("Gere um link abaixo para compartilhar com o médico.",
                             size=11, color=MUT),
@@ -91,28 +92,34 @@ def _conteudo_links(page):
             carregar()
 
         acoes = ft.Row([
-            ft.TextButton(
+            ft.Container(
                 content=ft.Row([
-                    ft.Icon(ft.Icons.COPY_ROUNDED, size=13, color=AZUL),
+                    ft.Icon("copy_rounded", size=13, color=AZUL),
                     ft.Text("Copiar link", size=11, color=AZUL),
                 ], spacing=4, tight=True),
+                padding=ft.padding.symmetric(horizontal=8, vertical=8),
+                ink=True,
                 on_click=copiar_link,
                 disabled=not ativo,
             ),
-            ft.TextButton(
+            ft.Container(
                 content=ft.Row([
-                    ft.Icon(ft.Icons.OPEN_IN_NEW_ROUNDED, size=13, color=SEC),
+                    ft.Icon("open_in_new_rounded", size=13, color=SEC),
                     ft.Text("Testar", size=11, color=SEC),
                 ], spacing=4, tight=True),
+                padding=ft.padding.symmetric(horizontal=8, vertical=8),
+                ink=True,
                 on_click=abrir_link,
                 disabled=not ativo,
             ),
         ] + ([
-            ft.TextButton(
+            ft.Container(
                 content=ft.Row([
-                    ft.Icon(ft.Icons.BLOCK_ROUNDED, size=13, color=VERM),
+                    ft.Icon("block_rounded", size=13, color=VERM),
                     ft.Text("Revogar", size=11, color=VERM),
                 ], spacing=4, tight=True),
+                padding=ft.padding.symmetric(horizontal=8, vertical=8),
+                ink=True,
                 on_click=revogar,
             ),
         ] if ativo else []),
@@ -123,7 +130,7 @@ def _conteudo_links(page):
                 ft.Row([
                     ft.Column([
                         ft.Row([
-                            ft.Icon(ft.Icons.PERSON, size=14, color=cor_status),
+                            ft.Icon("person_rounded", size=14, color=cor_status),
                             ft.Text(lk["nome_medico"], size=13, color=TXT,
                                     weight=ft.FontWeight.W_600),
                             ft.Container(
@@ -196,7 +203,7 @@ def _conteudo_links(page):
             especialidade = m.get("especialidade") or ""
             sug_med.controls.append(ft.Container(
                 content=ft.Row([
-                    ft.Icon(ft.Icons.PERSON, size=14, color=AZUL),
+                    ft.Icon("person_rounded", size=14, color=AZUL),
                     ft.Column([
                         ft.Text(m["nome"], size=12, color=TXT),
                         ft.Text(especialidade, size=10, color=MUT),
@@ -249,7 +256,7 @@ def _conteudo_links(page):
 
     aviso = ft.Container(
         content=ft.Row([
-            ft.Icon(ft.Icons.SECURITY_ROUNDED, size=13, color=MUT),
+            ft.Icon("security_rounded", size=13, color=MUT),
             ft.Text(
                 "Cada médico tem um link único. "
                 "Revogue quando não precisar mais do acesso. "
@@ -273,7 +280,7 @@ def _conteudo_links(page):
         ft.Row([
             ft.FilledButton(
                 content=ft.Row([
-                    ft.Icon(ft.Icons.ADD_LINK_ROUNDED, size=16),
+                    ft.Icon("add_link_rounded", size=16),
                     ft.Text("Gerar Link", size=13, weight=ft.FontWeight.W_600),
                 ], spacing=6, tight=True),
                 style=ft.ButtonStyle(
@@ -309,15 +316,17 @@ def criar_tela_links_medico(page: ft.Page, voltar_fn):
 
     cabecalho = ft.Container(
         content=ft.Row([
-            ft.TextButton(
+            ft.Container(
                 content=ft.Row([
-                    ft.Icon(ft.Icons.ARROW_BACK, size=16),
+                    ft.Icon("arrow_back_rounded", size=16),
                     ft.Text("Voltar", size=13),
                 ], spacing=4, tight=True),
+                padding=ft.padding.symmetric(horizontal=8, vertical=8),
+                ink=True,
                 on_click=lambda e: voltar_fn(),
             ),
             ft.Row([
-                ft.Icon(ft.Icons.LINK_ROUNDED, size=18, color=AZUL),
+                ft.Icon("link_rounded", size=18, color=AZUL),
                 ft.Text("Links de Acesso Médico", size=16,
                         weight=ft.FontWeight.W_700, color=TXT),
             ], spacing=8, tight=True),

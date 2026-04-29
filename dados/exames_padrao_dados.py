@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """
 exames_padrao_dados.py
 Tabela pré-populada com 100+ exames laboratoriais mais comuns no Brasil.

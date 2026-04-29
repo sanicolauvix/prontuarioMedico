@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """
 tela_exames_padrao.py — Koios Prontuário
 Gerenciamento de Exames Padrão (CRUD)
@@ -5,7 +6,7 @@ Padrão visual: idêntico a tela_exames.py (header + barra de abas + área de co
 """
 import logging
 import flet as ft
-from ..dados.model_prontuario import (
+from dados.model_prontuario import (
     DB_PATH,
     listar_exames_padrao,
     salvar_exame_padrao,
@@ -52,17 +53,20 @@ def _dialog_exame_padrao(page, titulo, dados, on_salvar):
     tf_ref_max   = _tf("Ref. máxima", dados.get("ref_max", ""), hint="10.0", largura=100)
     txt_erro     = ft.Text("", size=11, color=VERM)
 
+    ref = [None]
+
     def _fechar(e=None):
-        dlg.open = False
-        if dlg in page.overlay:
-            page.overlay.remove(dlg)
-        page.update()
+        if ref[0] and ref[0] in page.overlay:
+            page.overlay.remove(ref[0])
+        try: page.update()
+        except Exception: pass
 
     def _salvar(e):
         nome = tf_nome.value.strip()
         if not nome:
-            txt_erro.value = "Nome oficial é obrigatório."
-            page.update()
+            txt_erro.value = "Nome oficial e obrigatorio."
+            try: page.update()
+            except Exception: pass
             return
 
         def _to_float(v):
@@ -80,98 +84,110 @@ def _dialog_exame_padrao(page, titulo, dados, on_salvar):
             "ref_max":   _to_float(tf_ref_max.value),
         })
 
-    dlg = ft.AlertDialog(
-        modal=True,
-        bgcolor=CARD,
-        shape=ft.RoundedRectangleBorder(radius=14),
-        title=ft.Row([
-            ft.Icon(ft.Icons.SCIENCE_OUTLINED, color=AZUL, size=18),
-            ft.Text(titulo, size=15, weight=ft.FontWeight.W_700, color=TXT),
-        ], spacing=8),
+    btn_cancel = ft.Container(
+        content=ft.Text("Cancelar", size=13, color=SEC),
+        padding=ft.padding.symmetric(horizontal=12, vertical=8),
+        border_radius=8, bgcolor=f"{SEC}22", ink=True,
+    )
+    btn_cancel.on_click = _fechar
+
+    btn_salvar = ft.Container(
+        content=ft.Text("Salvar", size=13, color=AZUL,
+                        weight=ft.FontWeight.W_600),
+        padding=ft.padding.symmetric(horizontal=12, vertical=8),
+        border_radius=8, bgcolor=f"{AZUL}22", ink=True,
+    )
+    btn_salvar.on_click = _salvar
+
+    ref[0] = ft.Container(
         content=ft.Container(
             content=ft.Column([
+                ft.Row([
+                    ft.Icon("science_rounded", color=AZUL, size=18),
+                    ft.Text(titulo, size=15, weight=ft.FontWeight.W_700, color=TXT),
+                ], spacing=8),
+                ft.Container(height=10),
                 tf_nome,
                 ft.Row([tf_categoria, tf_unidade], spacing=8,
                        vertical_alignment=ft.CrossAxisAlignment.CENTER),
                 ft.Row([
                     ft.Text("Ref:", size=12, color=SEC),
                     tf_ref_min,
-                    ft.Text("–", size=12, color=SEC),
+                    ft.Text("-", size=12, color=SEC),
                     tf_ref_max,
                 ], spacing=6, vertical_alignment=ft.CrossAxisAlignment.CENTER),
                 txt_erro,
-            ], spacing=10, tight=True),
-            width=400,
-            padding=ft.padding.only(left=4, right=4, top=4, bottom=0),
+                ft.Container(height=8),
+                ft.Row([btn_cancel, btn_salvar], spacing=8,
+                       alignment=ft.MainAxisAlignment.END),
+            ], spacing=8, tight=True),
+            bgcolor=CARD, border_radius=14,
+            padding=ft.padding.all(20), width=340,
         ),
-        actions=[
-            ft.TextButton("Cancelar", on_click=_fechar,
-                          style=ft.ButtonStyle(color=SEC)),
-            ft.FilledButton(
-                "Salvar", on_click=_salvar,
-                style=ft.ButtonStyle(
-                    bgcolor=AZUL,
-                    shape=ft.RoundedRectangleBorder(radius=7),
-                    padding=ft.padding.symmetric(horizontal=12, vertical=7),
-                ),
-            ),
-        ],
-        actions_alignment=ft.MainAxisAlignment.END,
+        bgcolor="#CC000000", expand=True, alignment=ft.Alignment(0, 0),
     )
-    page.overlay.append(dlg)
-    dlg.open = True
-    page.update()
+    page.overlay.append(ref[0])
+    try: page.update()
+    except Exception: pass
 
 
 def _dialog_confirmar_excluir(page, nome, on_confirmar):
+    ref = [None]
+
     def _fechar(e=None):
-        dlg.open = False
-        if dlg in page.overlay:
-            page.overlay.remove(dlg)
-        page.update()
+        if ref[0] and ref[0] in page.overlay:
+            page.overlay.remove(ref[0])
+        try: page.update()
+        except Exception: pass
 
     def _confirmar(e):
         _fechar()
         on_confirmar()
 
-    dlg = ft.AlertDialog(
-        modal=True,
-        bgcolor=CARD,
-        shape=ft.RoundedRectangleBorder(radius=14),
-        title=ft.Row([
-            ft.Icon(ft.Icons.DELETE_OUTLINE, color=VERM, size=18),
-            ft.Text("Excluir exame padrão?", size=15,
-                    weight=ft.FontWeight.W_700, color=TXT),
-        ], spacing=8),
+    btn_cancel = ft.Container(
+        content=ft.Text("Cancelar", size=13, color=SEC),
+        padding=ft.padding.symmetric(horizontal=12, vertical=8),
+        border_radius=8, bgcolor=f"{SEC}22", ink=True,
+    )
+    btn_cancel.on_click = _fechar
+
+    btn_excluir = ft.Container(
+        content=ft.Text("Excluir", size=13, color=VERM,
+                        weight=ft.FontWeight.W_600),
+        padding=ft.padding.symmetric(horizontal=12, vertical=8),
+        border_radius=8, bgcolor=f"{VERM}22", ink=True,
+    )
+    btn_excluir.on_click = _confirmar
+
+    ref[0] = ft.Container(
         content=ft.Container(
             content=ft.Column([
+                ft.Row([
+                    ft.Icon("delete_outline_rounded", color=VERM, size=18),
+                    ft.Text("Excluir exame padrao?", size=15,
+                            weight=ft.FontWeight.W_700, color=TXT),
+                ], spacing=8),
+                ft.Container(height=8),
                 ft.Text(f'"{nome}"', size=13, color=LAR,
                         weight=ft.FontWeight.W_600),
                 ft.Text(
-                    "Isso removerá o exame padrão e todos os vínculos de sinônimos.\n"
-                    "Os resultados já gravados não serão apagados.",
+                    "Isso removera o exame padrao e todos os vinculos.\n"
+                    "Os resultados gravados nao serao apagados.",
                     size=12, color=SEC,
                 ),
+                ft.Container(height=16),
+                ft.Row([btn_cancel, btn_excluir], spacing=8,
+                       alignment=ft.MainAxisAlignment.END),
             ], spacing=6, tight=True),
-            width=400, padding=4,
+            bgcolor=CARD, border_radius=14,
+            padding=ft.padding.all(20), width=320,
         ),
-        actions=[
-            ft.TextButton("Cancelar", on_click=_fechar,
-                          style=ft.ButtonStyle(color=SEC)),
-            ft.FilledButton(
-                "Excluir", on_click=_confirmar,
-                style=ft.ButtonStyle(
-                    bgcolor=VERM,
-                    shape=ft.RoundedRectangleBorder(radius=7),
-                    padding=ft.padding.symmetric(horizontal=12, vertical=7),
-                ),
-            ),
-        ],
-        actions_alignment=ft.MainAxisAlignment.END,
+        bgcolor="#CC000000", expand=True, alignment=ft.Alignment(0, 0),
     )
-    page.overlay.append(dlg)
-    dlg.open = True
-    page.update()
+    ref[0].on_click = _fechar
+    page.overlay.append(ref[0])
+    try: page.update()
+    except Exception: pass
 
 
 # ══════════════════════════════════════════════════════════════
@@ -185,7 +201,7 @@ def _conteudo_lista(page, parametro_pendente=None, voltar_fn=None):
     txt_total = ft.Text("", size=12, color=SEC)
     tf_busca  = ft.TextField(
         hint_text="Buscar por nome ou categoria...",
-        prefix_icon=ft.Icons.SEARCH,
+        prefix_icon="search_rounded",
         bgcolor=CARD,
         border_color=BD2,
         focused_border_color=AZUL,
@@ -207,7 +223,7 @@ def _conteudo_lista(page, parametro_pendente=None, voltar_fn=None):
         if not items:
             lista.controls.append(ft.Container(
                 content=ft.Column([
-                    ft.Icon(ft.Icons.SEARCH_OFF, size=44, color=MUT),
+                    ft.Icon("search_off_rounded", size=44, color=MUT),
                     ft.Text("Nenhum exame padrão encontrado.", size=14, color=SEC),
                 ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=8),
                 alignment=ft.alignment.center, padding=40,
@@ -261,13 +277,13 @@ def _conteudo_lista(page, parametro_pendente=None, voltar_fn=None):
                         ft.Text(sub, size=11, color=SEC),
                     ], spacing=2, expand=True, tight=True),
                     ft.IconButton(
-                        ft.Icons.EDIT_OUTLINED,
+                        "edit_outlined_rounded",
                         icon_color=AZUL, icon_size=18,
                         padding=ft.padding.all(4),
                         on_click=_editar,
                     ),
                     ft.IconButton(
-                        ft.Icons.DELETE_OUTLINE,
+                        "delete_outline_rounded",
                         icon_color=VERM, icon_size=18,
                         padding=ft.padding.all(4),
                         on_click=_del,
@@ -313,7 +329,7 @@ def _conteudo_lista(page, parametro_pendente=None, voltar_fn=None):
             return
         if parametro_pendente:
             try:
-                from ..dados.limpeza import vincular_manualmente, executar_limpeza
+                from dados.limpeza import vincular_manualmente, executar_limpeza
                 vincular_manualmente(parametro_pendente, novo_id)
                 try:
                     executar_limpeza()
@@ -367,7 +383,7 @@ def _conteudo_lista(page, parametro_pendente=None, voltar_fn=None):
             tf_busca,
             ft.FilledButton(
                 content=ft.Row([
-                    ft.Icon(ft.Icons.ADD, size=16),
+                    ft.Icon("add_rounded", size=16),
                     ft.Text("Novo", size=13, weight=ft.FontWeight.W_600),
                 ], spacing=6, tight=True),
                 style=ft.ButtonStyle(
@@ -395,7 +411,7 @@ def criar_tela_exames_padrao(page: ft.Page, voltar_fn=None,
                         com o nome pré-preenchido e vincula ao salvar
     """
     ABAS = [
-        (0, ft.Icons.SCIENCE_OUTLINED, "Exames Padrão", AZUL),
+        (0, "science_outlined_rounded", "Exames Padrão", AZUL),
     ]
     aba_ativa = [0]
 
@@ -439,15 +455,17 @@ def criar_tela_exames_padrao(page: ft.Page, voltar_fn=None,
 
     cabecalho = ft.Container(
         content=ft.Row([
-            ft.TextButton(
+            ft.Container(
                 content=ft.Row([
-                    ft.Icon(ft.Icons.ARROW_BACK, size=16),
+                    ft.Icon("arrow_back_rounded", size=16),
                     ft.Text("Voltar", size=13),
                 ], spacing=4, tight=True),
+                padding=ft.padding.symmetric(horizontal=8, vertical=8),
+                ink=True,
                 on_click=lambda e: voltar_fn() if voltar_fn else None,
             ),
             ft.Row([
-                ft.Icon(ft.Icons.SCIENCE_OUTLINED, size=20, color=AZUL),
+                ft.Icon("science_outlined_rounded", size=20, color=AZUL),
                 ft.Text("Exames Padrão", size=18,
                         weight=ft.FontWeight.W_700, color=TXT),
             ], spacing=8, tight=True),

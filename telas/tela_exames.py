@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """
 tela_exames.py - Consulta de Exames
 VERSAO: 2.0 — aba Medico com fluxo proprio
@@ -17,7 +18,7 @@ import logging as _LOG
 _LOG.basicConfig(level=_LOG.INFO)
 _LOG.info("[tela_exames] CARREGANDO VERSAO 2.0")
 print("[tela_exames] VERSAO 2.0 CARREGADA", flush=True)
-from ..dados.model_prontuario import DB_PATH, listar_especialidades
+from dados.model_prontuario import DB_PATH, listar_especialidades
 try:
     from shared.koios_log import klog, kdebug
 except ImportError:
@@ -728,7 +729,7 @@ def renderizar_grafico_combinado(page: ft.Page, exames_selecionados: list) -> ft
                 ft.Text(nome, size=11, color="#E6EDF3",
                         weight=ft.FontWeight.W_500),
                 ft.Text(f"[{uni}]" if uni else "", size=9, color="#484F58"),
-                ft.Icon(ft.Icons.CHEVRON_RIGHT, size=12, color=cor),
+                ft.Icon("chevron_right_rounded", size=12, color=cor),
             ], spacing=5, tight=True),
             bgcolor="#161B22", border_radius=16,
             padding=ft.padding.symmetric(horizontal=10, vertical=5),
@@ -795,7 +796,7 @@ def renderizar_grafico_combinado(page: ft.Page, exames_selecionados: list) -> ft
         # Cabeçalho com voltar
         btn_voltar = ft.Container(
             content=ft.Row([
-                ft.Icon(ft.Icons.ARROW_BACK, size=14, color="#8B949E"),
+                ft.Icon("arrow_back_rounded", size=14, color="#8B949E"),
                 ft.Text("Voltar ao gráfico", size=12, color="#8B949E"),
             ], spacing=6, tight=True),
             on_click=lambda e: _voltar_grafico(),
@@ -833,7 +834,7 @@ def renderizar_grafico_combinado(page: ft.Page, exames_selecionados: list) -> ft
 
             btn_pdf = ft.Container(
                 content=ft.Row([
-                    ft.Icon(ft.Icons.PICTURE_AS_PDF_ROUNDED, size=13, color="#FF4444"),
+                    ft.Icon("picture_as_pdf_rounded", size=13, color="#FF4444"),
                     ft.Text("Ver PDF", size=11, color="#58A6FF"),
                 ], spacing=4, tight=True),
                 bgcolor="#0D1117", border_radius=6,
@@ -978,19 +979,19 @@ def renderizar_card_laudo(page: ft.Page, laudo: dict) -> ft.Control:
         visible=False,
     )
 
-    icone_exp = ft.Icon(ft.Icons.EXPAND_MORE, size=16, color="#8B949E")
+    icone_exp = ft.Icon("expand_more_rounded", size=16, color="#8B949E")
 
     def toggle(e):
         expandido[0] = not expandido[0]
         texto_container.visible = expandido[0]
-        icone_exp.name = ft.Icons.EXPAND_LESS if expandido[0] else ft.Icons.EXPAND_MORE
+        icone_exp.name = "expand_less_rounded" if expandido[0] else "expand_more_rounded"
         try: page.update()
         except Exception: pass
 
     cabecalho = ft.Container(
         content=ft.Row([
             ft.Container(
-                content=ft.Icon(ft.Icons.DESCRIPTION_ROUNDED, size=16, color="#BC8CFF"),
+                content=ft.Icon("description_rounded", size=16, color="#BC8CFF"),
                 bgcolor="#BC8CFF22", border_radius=6,
                 width=32, height=32, alignment=ft.alignment.Alignment(0, 0),
             ),
@@ -1004,11 +1005,13 @@ def renderizar_card_laudo(page: ft.Page, laudo: dict) -> ft.Control:
                     ft.Text(laudo.get("laboratorio", ""), size=11, color="#58A6FF"),
                 ], spacing=4),
             ], spacing=2, expand=True),
-            ft.TextButton(
+            ft.Container(
                 content=ft.Row([
-                    ft.Icon(ft.Icons.PICTURE_AS_PDF_ROUNDED, size=13, color="#FF7B7B"),
+                    ft.Icon("picture_as_pdf_rounded", size=13, color="#FF7B7B"),
                     ft.Text("PDF", size=10, color="#58A6FF"),
                 ], spacing=4, tight=True),
+                padding=ft.padding.symmetric(horizontal=8, vertical=8),
+                ink=True,
                 on_click=lambda e: webbrowser.open(
                     "https://drive.google.com/file/d/" + laudo["drive_id"] + "/view"
                 ),
@@ -1148,16 +1151,17 @@ def criar_gestor_selecao(page: ft.Page, fn_renderizar, fn_limpar):
             chips_row.controls.append(ft.Container(
                 content=ft.Row([
                     ft.Text(ex["nome_oficial"], size=11, color="#E6EDF3"),
-                    ft.Icon(ft.Icons.CLOSE, size=11, color="#8B949E"),
+                    ft.Icon("close_rounded", size=11, color="#8B949E"),
                 ], spacing=4, tight=True),
                 bgcolor="#21262D", border_radius=12,
                 padding=ft.padding.symmetric(horizontal=8, vertical=4),
                 on_click=_rem,
             ))
-        chips_row.controls.append(ft.TextButton(
-            "Limpar tudo",
+        chips_row.controls.append(ft.Container(
+            content=ft.Text("Limpar tudo", size=13, color="#F0883E"),
+            padding=ft.padding.symmetric(horizontal=12, vertical=8),
+            border_radius=8, ink=True,
             on_click=lambda e: _limpar_tudo(),
-            style=ft.ButtonStyle(color="#F0883E"),
         ))
 
     def _limpar_tudo():
@@ -1221,7 +1225,7 @@ def _conteudo_buscar(page, fn_adicionar, chips_row, txt_info, col_resultado, sel
         hint_style=ft.TextStyle(color="#484F58"),
         text_style=ft.TextStyle(color="#E6EDF3"),
         border_radius=8, height=42,
-        prefix_icon=ft.Icons.SEARCH,
+        prefix_icon="search_rounded",
     )
     lista = ft.Column(spacing=4)
 
@@ -1229,12 +1233,14 @@ def _conteudo_buscar(page, fn_adicionar, chips_row, txt_info, col_resultado, sel
     area_busca = ft.Column([txt_busca, lista, txt_info], spacing=6, visible=True)
 
     # Botão para abrir busca novamente no modo resultado
-    btn_add_mais = ft.TextButton(
+    btn_add_mais = ft.Container(
         content=ft.Row([
-            ft.Icon(ft.Icons.ADD_CIRCLE_OUTLINE_ROUNDED, size=14, color="#58A6FF"),
+            ft.Icon("add_circle_outline_rounded", size=14, color="#58A6FF"),
             ft.Text("Adicionar exame", size=12, color="#58A6FF"),
         ], spacing=5, tight=True),
         visible=False,
+        padding=ft.padding.symmetric(horizontal=8, vertical=8),
+        ink=True,
         on_click=lambda e: _entrar_modo_busca(),
     )
 
@@ -1275,13 +1281,13 @@ def _conteudo_buscar(page, fn_adicionar, chips_row, txt_info, col_resultado, sel
                     _entrar_modo_resultado()
             lista.controls.append(ft.Container(
                 content=ft.Row([
-                    ft.Icon(ft.Icons.DESCRIPTION_ROUNDED if _eh_laudo
-                            else ft.Icons.SHOW_CHART_ROUNDED, size=13, color=cor),
+                    ft.Icon("description_rounded" if _eh_laudo
+                            else "show_chart_rounded", size=13, color=cor),
                     ft.Column([
                         ft.Text(ex["nome_oficial"], size=12, color="#E6EDF3"),
                         ft.Text(sub, size=10, color="#484F58"),
                     ], spacing=1, expand=True),
-                    ft.Icon(ft.Icons.ADD_CIRCLE_OUTLINE_ROUNDED, size=14, color=cor),
+                    ft.Icon("add_circle_outline_rounded", size=14, color=cor),
                 ], spacing=8),
                 padding=ft.padding.symmetric(horizontal=10, vertical=8),
                 border_radius=6, bgcolor="#161B22",
@@ -1351,7 +1357,7 @@ def _criar_motor_selecao_exames(page, pubsub_tag: str):
         hint_style=ft.TextStyle(color=MUT),
         text_style=ft.TextStyle(color=TXT),
         border_radius=8, height=44,
-        prefix_icon=ft.Icons.SEARCH,
+        prefix_icon="search_rounded",
         visible=False,
     )
     lista_exames = ft.Column(spacing=4, visible=False)
@@ -1359,7 +1365,7 @@ def _criar_motor_selecao_exames(page, pubsub_tag: str):
 
     btn_add_mais = ft.Container(
         content=ft.Row([
-            ft.Icon(ft.Icons.ADD_CIRCLE_OUTLINE_ROUNDED, size=14, color=AZUL),
+            ft.Icon("add_circle_outline_rounded", size=14, color=AZUL),
             ft.Text("Adicionar exame", size=12, color=AZUL,
                     weight=ft.FontWeight.W_500),
         ], spacing=6, tight=True),
@@ -1412,16 +1418,17 @@ def _criar_motor_selecao_exames(page, pubsub_tag: str):
             chips_row.controls.append(ft.Container(
                 content=ft.Row([
                     ft.Text(ex["nome_oficial"], size=11, color=TXT),
-                    ft.Icon(ft.Icons.CLOSE, size=11, color=SEC),
+                    ft.Icon("close_rounded", size=11, color=SEC),
                 ], spacing=4, tight=True),
                 bgcolor=BD, border_radius=12,
                 padding=ft.padding.symmetric(horizontal=8, vertical=4),
                 on_click=_rem,
             ))
-        chips_row.controls.append(ft.TextButton(
-            "Limpar tudo",
+        chips_row.controls.append(ft.Container(
+            content=ft.Text("Limpar tudo", size=13, color=LAR),
+            padding=ft.padding.symmetric(horizontal=12, vertical=8),
+            border_radius=8, ink=True,
             on_click=lambda e: _limpar_tudo(),
-            style=ft.ButtonStyle(color=LAR),
         ))
 
     # ── limpeza ──────────────────────────────────────────────────────────
@@ -1506,8 +1513,8 @@ def _criar_motor_selecao_exames(page, pubsub_tag: str):
                 content=ft.Row([
                     ft.Container(
                         content=ft.Icon(
-                            ft.Icons.DESCRIPTION_ROUNDED if eh_laudo
-                            else ft.Icons.SHOW_CHART_ROUNDED,
+                            "description_rounded" if eh_laudo
+                            else "show_chart_rounded",
                             size=14, color=cor),
                         bgcolor=f"{cor}18", border_radius=6,
                         width=30, height=30,
@@ -1517,7 +1524,7 @@ def _criar_motor_selecao_exames(page, pubsub_tag: str):
                                 weight=ft.FontWeight.W_500),
                         ft.Text(sub, size=10, color=MUT),
                     ], spacing=1, expand=True),
-                    ft.Icon(ft.Icons.ADD_CIRCLE_OUTLINE_ROUNDED, size=16, color=cor),
+                    ft.Icon("add_circle_outline_rounded", size=16, color=cor),
                 ], spacing=8, vertical_alignment=ft.CrossAxisAlignment.CENTER),
                 padding=ft.padding.symmetric(horizontal=10, vertical=8),
                 border_radius=6, bgcolor=CARD,
@@ -1663,7 +1670,7 @@ def _conteudo_medico(page):
             total = m.get("total", 0)
             sug_med.controls.append(ft.Container(
                 content=ft.Row([
-                    ft.Icon(ft.Icons.PERSON, size=14, color=VERD),
+                    ft.Icon("person_rounded", size=14, color=VERD),
                     ft.Column([
                         ft.Text(m["nome"], size=12, color=TXT),
                         ft.Row([
@@ -1697,7 +1704,7 @@ def _conteudo_especialidades(page):
     if not todas:
         return [ft.Container(
             content=ft.Column([
-                ft.Icon(ft.Icons.MEDICAL_SERVICES_OUTLINED, size=36, color=MUT),
+                ft.Icon("medical_services_outlined_rounded", size=36, color=MUT),
                 ft.Text("Nenhuma especialidade cadastrada.", size=13,
                         color=SEC, weight=ft.FontWeight.W_600),
                 ft.Text("Execute: python -m prontuario.dados.fix_seed",
@@ -1714,7 +1721,7 @@ def _conteudo_especialidades(page):
         hint_text="Filtrar especialidade...",
         bgcolor=CARD, border_color=BD2, focused_border_color=AMAR,
         hint_style=ft.TextStyle(color=MUT), text_style=ft.TextStyle(color=TXT),
-        border_radius=8, height=44, prefix_icon=ft.Icons.SEARCH,
+        border_radius=8, height=44, prefix_icon="search_rounded",
     )
     lbl_ver_mais = ft.Text(f"▼ Ver todas as especialidades ({len(todas)})",
                            size=11, color=AMAR)
@@ -1756,7 +1763,7 @@ def _conteudo_especialidades(page):
             esps_chips.controls.append(ft.Container(
                 content=ft.Row([
                     ft.Text(nome, size=11, color=AMAR, weight=ft.FontWeight.W_500),
-                    ft.Icon(ft.Icons.CLOSE_ROUNDED, size=11, color=MUT),
+                    ft.Icon("close_rounded", size=11, color=MUT),
                 ], spacing=4, tight=True),
                 bgcolor=f"{AMAR}18", border_radius=12,
                 border=ft.Border(
@@ -1768,7 +1775,7 @@ def _conteudo_especialidades(page):
             ))
         esps_chips.controls.append(ft.Container(
             content=ft.Row([
-                ft.Icon(ft.Icons.ADD_ROUNDED, size=13, color=AMAR),
+                ft.Icon("add_rounded", size=13, color=AMAR),
                 ft.Text("Adicionar especialidade", size=12, color=AMAR),
             ], spacing=4, tight=True),
             padding=ft.padding.symmetric(horizontal=8, vertical=4),
@@ -1792,11 +1799,13 @@ def _conteudo_especialidades(page):
     barra_topo = ft.Row([
         esps_chips,
         ft.Container(expand=True),
-        ft.TextButton(
+        ft.Container(
             content=ft.Row([
-                ft.Icon(ft.Icons.CLEAR_ALL_ROUNDED, size=14, color=LAR),
+                ft.Icon("clear_all_rounded", size=14, color=LAR),
                 ft.Text("Limpar tudo", size=12, color=LAR),
             ], spacing=4, tight=True),
+            padding=ft.padding.symmetric(horizontal=8, vertical=8),
+            ink=True,
             on_click=_limpar_tudo,
         ),
     ], vertical_alignment=ft.CrossAxisAlignment.CENTER)
@@ -1878,7 +1887,7 @@ def _conteudo_classificacao(page):
         hint_text="Filtrar categoria...",
         bgcolor=CARD, border_color=BD2, focused_border_color=ROXO,
         hint_style=ft.TextStyle(color=MUT), text_style=ft.TextStyle(color=TXT),
-        border_radius=8, height=44, prefix_icon=ft.Icons.SEARCH,
+        border_radius=8, height=44, prefix_icon="search_rounded",
     )
     estagio1 = ft.Column(controls=[txt_filtro, lista_cat], spacing=8, visible=True)
 
@@ -1903,7 +1912,7 @@ def _conteudo_classificacao(page):
             cats_chips.controls.append(ft.Container(
                 content=ft.Row([
                     ft.Text(nome, size=11, color=ROXO, weight=ft.FontWeight.W_500),
-                    ft.Icon(ft.Icons.CLOSE_ROUNDED, size=11, color=MUT),
+                    ft.Icon("close_rounded", size=11, color=MUT),
                 ], spacing=4, tight=True),
                 bgcolor=f"{ROXO}18", border_radius=12,
                 border=ft.Border(
@@ -1915,7 +1924,7 @@ def _conteudo_classificacao(page):
             ))
         cats_chips.controls.append(ft.Container(
             content=ft.Row([
-                ft.Icon(ft.Icons.ADD_ROUNDED, size=13, color=ROXO),
+                ft.Icon("add_rounded", size=13, color=ROXO),
                 ft.Text("Adicionar categoria", size=12, color=ROXO),
             ], spacing=4, tight=True),
             padding=ft.padding.symmetric(horizontal=8, vertical=4),
@@ -1939,11 +1948,13 @@ def _conteudo_classificacao(page):
     barra_topo = ft.Row([
         cats_chips,
         ft.Container(expand=True),
-        ft.TextButton(
+        ft.Container(
             content=ft.Row([
-                ft.Icon(ft.Icons.CLEAR_ALL_ROUNDED, size=14, color=LAR),
+                ft.Icon("clear_all_rounded", size=14, color=LAR),
                 ft.Text("Limpar tudo", size=12, color=LAR),
             ], spacing=4, tight=True),
+            padding=ft.padding.symmetric(horizontal=8, vertical=8),
+            ink=True,
             on_click=_limpar_tudo,
         ),
     ], vertical_alignment=ft.CrossAxisAlignment.CENTER)
@@ -2024,7 +2035,7 @@ def _conteudo_exames(page):
         hint_style=ft.TextStyle(color="#484F58"),
         text_style=ft.TextStyle(color="#E6EDF3"),
         border_radius=8, height=44,
-        prefix_icon=ft.Icons.SEARCH,
+        prefix_icon="search_rounded",
     )
     lista = ft.Column(spacing=4)
 
@@ -2094,8 +2105,8 @@ def _conteudo_exames(page):
 
         return ft.Container(
             content=ft.Row([
-                ft.Icon(ft.Icons.DESCRIPTION_ROUNDED if _eh_laudo
-                        else ft.Icons.SHOW_CHART_ROUNDED, size=13, color=cor),
+                ft.Icon("description_rounded" if _eh_laudo
+                        else "show_chart_rounded", size=13, color=cor),
                 ft.Column([
                     ft.Text(label, size=12, color="#E6EDF3"),
                     ft.Row([
@@ -2106,9 +2117,9 @@ def _conteudo_exames(page):
                         ft.Text(ex.get("laboratorio",""), size=10, color="#58A6FF"),
                     ], spacing=4),
                 ], spacing=1, expand=True),
-                ft.IconButton(ft.Icons.VISIBILITY_ROUNDED,
+                ft.IconButton("visibility_rounded",
                               icon_color="#58A6FF", icon_size=16, on_click=_ver),
-                ft.IconButton(ft.Icons.DELETE_ROUNDED,
+                ft.IconButton("delete_rounded",
                               icon_color="#F85149", icon_size=16, on_click=_del),
             ], spacing=8),
             padding=ft.padding.symmetric(horizontal=10, vertical=8),
@@ -2151,11 +2162,11 @@ def _conteudo_exames(page):
 def criar_tela_consulta(page: ft.Page, voltar_fn):
 
     ABAS = [
-        (0, ft.Icons.SEARCH,            "Buscar",         AZUL),
-        (1, ft.Icons.PERSON,            "Médico",          VERD),
-        (2, ft.Icons.MEDICAL_SERVICES,  "Especialidade",   AMAR),
-        (3, ft.Icons.FOLDER_ROUNDED,    "Exames",          LAR),
-        (4, ft.Icons.CATEGORY,          "Classificação",   ROXO),
+        (0, "search_rounded",            "Buscar",         AZUL),
+        (1, "person_rounded",            "Médico",          VERD),
+        (2, "medical_services_rounded",  "Especialidade",   AMAR),
+        (3, "folder_rounded",    "Exames",          LAR),
+        (4, "category_rounded",          "Classificação",   ROXO),
     ]
     aba_ativa = [0]
 
@@ -2210,11 +2221,13 @@ def criar_tela_consulta(page: ft.Page, voltar_fn):
     _rebuild_abas()
     _rebuild_conteudo()
 
-    btn_voltar = ft.TextButton(
+    btn_voltar = ft.Container(
         content=ft.Row([
-            ft.Icon(ft.Icons.ARROW_BACK, size=16),
+            ft.Icon("arrow_back_rounded", size=16),
             ft.Text("Voltar", size=13),
         ], spacing=4, tight=True),
+        padding=ft.padding.symmetric(horizontal=8, vertical=8),
+        ink=True,
         on_click=lambda e: voltar_fn(),
     )
 
@@ -2222,7 +2235,7 @@ def criar_tela_consulta(page: ft.Page, voltar_fn):
         content=ft.Row([
             btn_voltar,
             ft.Row([
-                ft.Icon(ft.Icons.SEARCH, size=20, color="#58A6FF"),
+                ft.Icon("search_rounded", size=20, color="#58A6FF"),
                 ft.Text("Consulta de Exames", size=18,
                         weight=ft.FontWeight.W_700, color="#E6EDF3"),
             ], spacing=8, tight=True),

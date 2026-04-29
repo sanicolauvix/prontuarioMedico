@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 # KOIOS v1.0 | gerado: 2026-03-12 07:53 | model.py
 """
 model.py - Banco de dados SQLite

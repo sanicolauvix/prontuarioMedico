@@ -1,0 +1,9 @@
+[tool.flet.app]
+name = "Prontuario Medico"
+description = "Prontuario Medico - Koios"
+product = "Prontuario Medico"
+company = "Koios"
+copyright = "2026"
+
+[tool.flet.android]
+permissions = ["INTERNET", "CAMERA", "READ_EXTERNAL_STORAGE", "WRITE_EXTERNAL_STORAGE"]

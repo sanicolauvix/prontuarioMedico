@@ -1,9 +1,10 @@
+# -*- coding: utf-8 -*-
 """
 tela_especialidades.py - Cadastro de especialidades médicas
 Acessível via tela de médicos (botão Especialidades)
 """
 import flet as ft
-from ..dados.model_prontuario import listar_especialidades, salvar_especialidade, excluir_especialidade
+from dados.model_prontuario import listar_especialidades, salvar_especialidade, excluir_especialidade
 
 
 COR  = "#BC8CFF"
@@ -17,7 +18,7 @@ def criar_tela_especialidades(page: ft.Page, voltar_fn):
     lista     = ft.Column(spacing=6)
     txt_busca = ft.TextField(
         label="Buscar especialidade",
-        prefix_icon=ft.Icons.SEARCH,
+        prefix_icon="search_rounded",
         bgcolor="#161B22", border_color="#30363D",
         focused_border_color=COR,
         label_style=ft.TextStyle(color="#8B949E"),
@@ -68,13 +69,13 @@ def criar_tela_especialidades(page: ft.Page, voltar_fn):
                     ], spacing=2, expand=True),
                     ft.Container(width=8, height=8, bgcolor=cor_dot, border_radius=4),
                     ft.IconButton(
-                        ft.Icons.EDIT_ROUNDED, icon_size=16, icon_color="#484F58",
+                        "edit_rounded", icon_size=16, icon_color="#484F58",
                         tooltip="Editar",
                         on_click=make_editar(esp),
                         padding=ft.padding.all(4),
                     ),
                     ft.IconButton(
-                        ft.Icons.DELETE_OUTLINE, icon_size=16, icon_color=VERM,
+                        "delete_outline_rounded", icon_size=16, icon_color=VERM,
                         tooltip="Excluir",
                         on_click=make_excluir(esp),
                         padding=ft.padding.all(4),
@@ -96,44 +97,62 @@ def criar_tela_especialidades(page: ft.Page, voltar_fn):
     txt_busca.on_change = filtrar
 
     def confirmar_exclusao(esp):
+        ref = [None]
+
+        def _fechar(e=None):
+            if ref[0] and ref[0] in page.overlay:
+                page.overlay.remove(ref[0])
+            try: page.update()
+            except Exception: pass
+
         def _excluir(e):
-            dlg_conf.open = False
-            page.update()
+            _fechar()
             ok = excluir_especialidade(esp["id"])
             if ok:
-                _snack(f"'{esp['nome']}' excluída.")
+                _snack(f"'{esp['nome']}' excluida.")
             else:
-                _snack(f"Não é possível excluir — há médicos vinculados.", VERM)
+                _snack("Nao e possivel excluir — ha medicos vinculados.", VERM)
             carregar()
 
-        def _cancelar(e):
-            dlg_conf.open = False
-            page.update()
-
-        dlg_conf = ft.AlertDialog(
-            modal=True,
-            title=ft.Text("Confirmar exclusão", color="#E6EDF3", size=14),
-            content=ft.Text(
-                f"Deseja excluir a especialidade \"{esp['nome']}\"?\n"
-                "Médicos vinculados impedirão a exclusão.",
-                size=13, color="#8B949E",
-            ),
-            actions=[
-                ft.TextButton("Cancelar", on_click=_cancelar),
-                ft.FilledButton(
-                    "Excluir",
-                    style=ft.ButtonStyle(
-                        bgcolor=VERM,
-                        shape=ft.RoundedRectangleBorder(radius=6),
-                    ),
-                    on_click=_excluir,
-                ),
-            ],
-            actions_alignment=ft.MainAxisAlignment.END,
+        btn_cancel = ft.Container(
+            content=ft.Text("Cancelar", size=13, color=SEC),
+            padding=ft.padding.symmetric(horizontal=12, vertical=8),
+            border_radius=8, bgcolor=f"{SEC}22", ink=True,
         )
-        page.overlay.append(dlg_conf)
-        dlg_conf.open = True
-        page.update()
+        btn_cancel.on_click = _fechar
+
+        btn_excluir = ft.Container(
+            content=ft.Text("Excluir", size=13, color=VERM,
+                            weight=ft.FontWeight.W_600),
+            padding=ft.padding.symmetric(horizontal=12, vertical=8),
+            border_radius=8, bgcolor=f"{VERM}22", ink=True,
+        )
+        btn_excluir.on_click = _excluir
+
+        ref[0] = ft.Container(
+            content=ft.Container(
+                content=ft.Column([
+                    ft.Text("Confirmar exclusao", size=15, color=TXT,
+                            weight=ft.FontWeight.W_700, text_align="center"),
+                    ft.Container(height=8),
+                    ft.Text(
+                        f"Deseja excluir \"{esp['nome']}\"?\n"
+                        "Medicos vinculados impedem a exclusao.",
+                        size=13, color=SEC, text_align="center",
+                    ),
+                    ft.Container(height=20),
+                    ft.Row([btn_cancel, btn_excluir], spacing=8,
+                           alignment=ft.MainAxisAlignment.CENTER),
+                ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, tight=True),
+                bgcolor=CARD, border_radius=14,
+                padding=ft.padding.all(24), width=300,
+            ),
+            bgcolor="#CC000000", expand=True, alignment=ft.Alignment(0, 0),
+        )
+        ref[0].on_click = _fechar
+        page.overlay.append(ref[0])
+        try: page.update()
+        except Exception: pass
 
     def abrir_ficha(esp=None):
         is_novo = esp is None
@@ -161,60 +180,77 @@ def criar_tela_especialidades(page: ft.Page, voltar_fn):
         )
         txt_erro = ft.Text("", color="#FF4444", size=11)
 
+        ref = [None]
+
+        def _fechar_form(e=None):
+            if ref[0] and ref[0] in page.overlay:
+                page.overlay.remove(ref[0])
+            try: page.update()
+            except Exception: pass
+
         def salvar(e):
             if not f_nome.value.strip():
-                txt_erro.value = "Nome é obrigatório."
-                page.update()
+                txt_erro.value = "Nome e obrigatorio."
+                try: page.update()
+                except Exception: pass
                 return
             salvar_especialidade({
-                "id":       esp["id"] if esp else None,
-                "nome":     f_nome.value.strip(),
+                "id":        esp["id"] if esp else None,
+                "nome":      f_nome.value.strip(),
                 "descricao": f_desc.value.strip() or None,
-                "ativo":    1 if sw_ativo.value else 0,
+                "ativo":     1 if sw_ativo.value else 0,
             })
-            dlg.open = False
-            page.update()
+            _fechar_form()
             carregar()
 
-        def cancelar(e):
-            dlg.open = False
-            page.update()
-
-        dlg = ft.AlertDialog(
-            modal=True,
-            title=ft.Row([
-                ft.Icon(ft.Icons.LOCAL_HOSPITAL_ROUNDED, color=COR, size=20),
-                ft.Text("Nova Especialidade" if is_novo else "Editar Especialidade",
-                        size=15, weight=ft.FontWeight.W_600, color="#E6EDF3"),
-            ], spacing=8),
-            content=ft.Container(
-                content=ft.Column([f_nome, f_desc, sw_ativo, txt_erro], spacing=8),
-                width=400,
-            ),
-            actions=[
-                ft.TextButton("Cancelar", on_click=cancelar),
-                ft.FilledButton(
-                    "Salvar",
-                    style=ft.ButtonStyle(
-                        bgcolor=COR,
-                        shape=ft.RoundedRectangleBorder(radius=6),
-                    ),
-                    on_click=salvar,
-                ),
-            ],
-            actions_alignment=ft.MainAxisAlignment.END,
+        btn_cancel_form = ft.Container(
+            content=ft.Text("Cancelar", size=13, color=SEC),
+            padding=ft.padding.symmetric(horizontal=12, vertical=8),
+            border_radius=8, bgcolor=f"{SEC}22", ink=True,
         )
-        page.overlay.append(dlg)
-        dlg.open = True
-        page.update()
+        btn_cancel_form.on_click = _fechar_form
+
+        btn_salvar = ft.Container(
+            content=ft.Text("Salvar", size=13, color=COR,
+                            weight=ft.FontWeight.W_600),
+            padding=ft.padding.symmetric(horizontal=12, vertical=8),
+            border_radius=8, bgcolor=f"{COR}22", ink=True,
+        )
+        btn_salvar.on_click = salvar
+
+        ref[0] = ft.Container(
+            content=ft.Container(
+                content=ft.Column([
+                    ft.Row([
+                        ft.Icon("local_hospital_rounded", color=COR, size=18),
+                        ft.Text(
+                            "Nova Especialidade" if is_novo else "Editar Especialidade",
+                            size=15, weight=ft.FontWeight.W_600, color=TXT),
+                    ], spacing=8),
+                    ft.Container(height=12),
+                    f_nome, f_desc, sw_ativo, txt_erro,
+                    ft.Container(height=12),
+                    ft.Row([btn_cancel_form, btn_salvar], spacing=8,
+                           alignment=ft.MainAxisAlignment.END),
+                ], spacing=6, tight=True),
+                bgcolor=CARD, border_radius=14,
+                padding=ft.padding.all(20), width=340,
+            ),
+            bgcolor="#CC000000", expand=True, alignment=ft.Alignment(0, 0),
+        )
+        page.overlay.append(ref[0])
+        try: page.update()
+        except Exception: pass
 
     carregar()
 
-    btn_voltar = ft.TextButton(
+    btn_voltar = ft.Container(
         content=ft.Row([
-            ft.Icon(ft.Icons.ARROW_BACK, size=16),
+            ft.Icon("arrow_back_rounded", size=16),
             ft.Text("Voltar", size=13),
         ], spacing=4, tight=True),
+        padding=ft.padding.symmetric(horizontal=8, vertical=8),
+        ink=True,
         on_click=lambda e: voltar_fn(),
     )
 
@@ -225,7 +261,7 @@ def criar_tela_especialidades(page: ft.Page, voltar_fn):
                     color="#E6EDF3", expand=True),
             ft.FilledButton(
                 content=ft.Row([
-                    ft.Icon(ft.Icons.ADD_ROUNDED, size=16),
+                    ft.Icon("add_rounded", size=16),
                     ft.Text("Nova", size=13),
                 ], spacing=6, tight=True),
                 style=ft.ButtonStyle(
