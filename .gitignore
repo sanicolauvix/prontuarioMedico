@@ -1,0 +1,17 @@
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+build/
+*.egg-info/
+dist/
+*.log
+dados/prontuario.db
+dados/prontuario.db-shm
+dados/prontuario.db-wal
+client_secrets.json
+client_secrets_android.json
+mycreds.json
+temp/
+logs/

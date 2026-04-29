@@ -454,7 +454,6 @@ def _aba_conferencia(page, voltar_fn):
                     content=ft.Text("Cancelar", size=13, color=SEC),
                     padding=ft.padding.symmetric(horizontal=12, vertical=8),
                     border_radius=8, ink=True,
-                    on_click=lambda e,
                 ),
                 ft.FilledButton("Confirmar",
                     style=ft.ButtonStyle(bgcolor=cor,

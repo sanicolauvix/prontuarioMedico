@@ -179,7 +179,8 @@ function Fase-PrepararBuild {
     if (Test-Path $pyprojectToml) {
         Copy-Item $pyprojectToml $pyprojectBak -Force
     }
-    "[tool.flet.app]`nname = `"Prontuario Medico`"`n" | Set-Content $pyprojectToml -Encoding UTF8
+    $pyContent = "[tool.flet.app]`nname = `"Prontuario Medico`"`n"
+    [System.IO.File]::WriteAllText($pyprojectToml, $pyContent, (New-Object System.Text.UTF8Encoding $false))
     LogOk "pyproject.toml simplificado (org removido -- pacote sera com.flet.prontuario)"
 
     $script:buildPreparado = $true
