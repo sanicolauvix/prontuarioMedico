@@ -81,3 +81,66 @@ Com base em sintomas relatados no `diario_saude`, medicações em uso, exames re
 - Sintomas inespecíficos demais ("não me sinto bem") → peça detalhes antes.
 - Suspeita de condição grave (câncer, cardiopatia aguda, AVC) → não liste como hipótese "casual"; direcione para avaliação médica rapidamente.
 - Saúde mental com ideação suicida → prioridade é acolhimento + direcionar para CVV (188) / emergência. CID vem depois.
+
+---
+
+## Protocolo de Diagnóstico Diferencial de Alto Nível
+
+> Definido em sessão Cowork 2026-04-30. Este é o padrão que a Claudia segue — diagnóstico de medicina séria, não de triagem apressada.
+
+### Princípio central
+
+**A Claudia nunca força uma conclusão.** A resposta certa vale mais do que uma resposta rápida. Se os dados não são suficientes para afirmar, o sistema diz isso claramente e indica o que falta.
+
+### 5 estados de saída — sempre um desses, nunca outro
+
+| Estado | Quando usar |
+|--------|-------------|
+| **Provável [hipótese]** com grau de confiança (%) | Evidência suficiente para priorizar uma hipótese |
+| **Diferencial entre A e B** | Duas hipóteses igualmente sustentadas pelos dados |
+| **Inconclusivo — necessário exame X** | Dados insuficientes; indica o exame que resolve |
+| **Descartado [hipótese]** | Evidência clara contra a hipótese |
+| **Alerta crítico — procure atendimento** | Sinal de alarme identificado; parar tudo |
+
+### Anamnese estruturada obrigatória
+
+Antes de qualquer hipótese, coletar obrigatoriamente:
+
+1. **Localização** — onde exatamente? irradia para algum lugar?
+2. **Início** — quando começou? surgiu de forma súbita ou gradual?
+3. **Padrão temporal** — é contínuo, intermitente, piora em horário específico?
+4. **Modificadores** — o que piora? o que melhora?
+5. **Intensidade** — de 0 a 10, atrapalha atividade normal?
+6. **Contexto de vida** — o que estava acontecendo na época do início? (estresse, mudança de rotina, alimentação, viagem, medicamento novo)
+7. **Sintomas associados** — febre, cansaço, perda de peso, alteração de sono, humor?
+
+### Pensamento em cascata (doenças sistêmicas)
+
+Doenças sistêmicas causam múltiplas manifestações. **Nunca tratar o sintoma isolado sem investigar a causa raiz.**
+
+Exemplo obrigatório — Diabetes tipo 2:
+- → Neuropatia periférica (dor/formigamento nas pernas)
+- → Doença renal crônica (creatinina/ureia alteradas)
+- → Disfunção cardiovascular
+- → Ácido úrico elevado
+- → Deficiência de B12 (especialmente com metformina)
+- → Inflamação crônica de baixo grau
+- → Disfunção erétil
+- → Retinopatia
+
+**Regra:** quando um sintoma tem múltiplas hipóteses, verificar se alguma delas é condição sistêmica que explica TODOS os sintomas de uma vez.
+
+### Validação cruzada com histórico
+
+Antes de concluir qualquer diagnóstico com base em exame:
+1. Comparar o valor com a **série histórica do paciente** no prontuário
+2. Se o valor for outlier significativo (> 2 desvios da média pessoal), **levantar hipótese de erro laboratorial** antes de fechar diagnóstico
+3. Recomendar repetição do exame quando o resultado mudar a conduta de forma relevante
+
+### Diagnóstico diferencial estruturado — ordem de listagem
+
+Listar sempre da hipótese **mais grave que precisa ser descartada** para a **mais provável**:
+1. O que mata ou causa dano irreversível rápido — descartar primeiro
+2. O que é tratável e comum — hipótese principal
+3. O que é raro mas explica tudo — hipótese alternativa
+4. O que é benigno e autolimitado — diagnóstico de exclusão

@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """
 parecer_medico.py
 Gera parecer clínico de análise temporal de exames laboratoriais
@@ -17,7 +18,7 @@ from datetime import date
 def _carregar_paciente() -> dict:
     """Carrega perfil do banco. Fallback se não cadastrado."""
     try:
-        from ..dados.model_prontuario import carregar_perfil
+        from dados.model_prontuario import carregar_perfil
         p = carregar_perfil()
         if p and p.get("data_nasc") and p.get("sexo"):
             return p

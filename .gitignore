@@ -12,6 +12,8 @@ dados/prontuario.db-shm
 dados/prontuario.db-wal
 client_secrets.json
 client_secrets_android.json
+client_secret_android.json
 mycreds.json
+pyproject.toml
 temp/
 logs/

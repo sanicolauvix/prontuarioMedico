@@ -104,3 +104,52 @@ git add -A && git commit -m "feat: ..." && git push
 - **COM**: extracao de PDF, IA (Claudia), remedios, dieta, parecer medico
 - **SEM**: financeiro, vendas, parcelas, fornecedores, catalogo, compras
 - Sem sync Drive bidirecional (apenas backup simples)
+
+## UTI Domestica -- Funcionalidades Planejadas (Cowork 2026-04-30)
+
+### Conceito
+
+Dashboard continuo de sinais vitais, inspirado em monitor de UTI. Nao snapshot -- tendencia ao longo do tempo. Correlacionar com diario de alimentacao, suplementos e rotina para identificar causa de variacoes.
+
+### Bluetooth -- Regra absoluta
+
+Todos os dispositivos integrados OBRIGATORIAMENTE tem Bluetooth. Nao integrar dispositivo sem BLE. Entrada manual e fallback para casos especificos apenas.
+
+### Kit de dispositivos recomendado
+
+- Omron HEM-6232T -- pressao arterial com BLE (~R$250)
+- G-Tech Lite Smart -- glicemia com BLE (~R$150)
+- Oximetro com BLE (~R$100, a definir modelo)
+- Speedguc 3 em 1 -- glicose + acido urico + colesterol (sem BLE ainda -- entrada manual para acido urico/colesterol enquanto mercado nao evolui)
+
+### Arquitetura BLE
+
+```
+utils/bluetooth/
+  ble_manager.py        # scan, connect, disconnect (bleak)
+  dispositivos/
+    omron_pa.py
+    gtech_glicose.py
+    oximetro.py
+  model_sinais.py       # tabela sinais_vitais no prontuario.db
+```
+
+Biblioteca: `bleak` (BLE puro Python, compativel com Android via Flet)
+
+### Telas a criar
+
+- `tela_dashboard_vital.py` -- painel UTI com grafico de tendencia + alertas
+- `tela_anamnese.py` -- anamnese guiada (sequencia estruturada, nao campo livre)
+- `claudia/diagnostico_diferencial.py` -- engine de diagnostico diferencial (5 estados de saida)
+
+### Diario de correlacao
+
+- Registrar: refeicao, suplemento, atividade, sono, humor, sintoma
+- Claudia correlaciona automaticamente eventos do diario com variacoes nos sinais vitais
+- Exemplos: batata-yacon x glicemia, magnesio x sono, propranolol x pressao
+
+### Engine de diagnostico (protocolo completo em claudia/references/cid_diagnostico.md)
+
+- Anamnese estruturada -> cruzamento com exames -> 1 dos 5 estados de saida
+- Nunca retorna diagnostico fechado
+- Integrado a tela_parecer.py

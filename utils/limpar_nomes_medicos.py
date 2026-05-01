@@ -1,10 +1,11 @@
+# -*- coding: utf-8 -*-
 """
 Roda UMA VEZ para limpar nomes sujos de médicos já no banco.
 python limpar_nomes_medicos.py
 """
 import sqlite3, sys
 sys.path.insert(0, ".")
-from ..dados.model_prontuario import DB_PATH, _limpar_nome_medico
+from dados.model_prontuario import DB_PATH, _limpar_nome_medico
 
 # Testa o normalizador primeiro
 testes = [

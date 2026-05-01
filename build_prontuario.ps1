@@ -1,14 +1,15 @@
-# Prontuario Medico - build_prontuario.ps1 v2
+# Prontuario Medico - build_prontuario.ps1 v3
 # UTF-8 BOM + CRLF -- NUNCA usar travessao Unicode em comentarios
 #
-# Baseado em build_prestanista.ps1 v40
-# Diferencas criticas:
-#   - Sem --source-packages para auth (usa urllib puro)
-#   - COM --source-packages pdfplumber (extensoes C para ARM64)
-#   - Entry point: main.py (direto, sem copia)
-#   - pyproject.toml removido org= durante build
-#   - App: Prontuario | Package: com.flet.prontuario
-#   - Secrets: client_secrets_android.json
+# Baseado em build_prestanista.ps1 v40 -- alinhado em 2026-05-01
+#
+# Diferencas vs Prestanista:
+#   - --source-packages inclui pdfplumber (extensoes C para ARM64)
+#   - Fase-NomeApp: seta app_name = "Prontuario Medico" no strings.xml
+#   - pastasMover: doc, temp, dados
+#   - Logcat filtra: PRONTUARIO, KOIOS
+#   - pyproject.toml removido em Fase-FletBuild (evita package com.koios.*)
+#   - Modo 5: so flutter build (~2 min) para quando flet build OK e flutter falhou
 #
 # USO:
 #   .\build_prontuario.ps1         -- menu interativo
@@ -16,9 +17,10 @@
 #   .\build_prontuario.ps1 -modo 2 -- so .py mudaram  (~5 min)
 #   .\build_prontuario.ps1 -modo 3 -- assets/yaml     (~12 min)
 #   .\build_prontuario.ps1 -modo 4 -- so instalar     (<1 min)
+#   .\build_prontuario.ps1 -modo 5 -- so flutter build (~2 min)
 
 param(
-    [ValidateSet("1","2","3","4")]
+    [ValidateSet("1","2","3","4","5")]
     [string]$modo = ""
 )
 
@@ -31,6 +33,7 @@ $projeto    = "C:\pessoal\python\prontuario"
 $tempDir    = "C:\pessoal\python\_temp_build_exclusions_prontuario"
 
 # Deteccao do Flutter 3.29.2 -- CRITICO: versao hardcoded no Flet 0.28.2
+# NUNCA usar o flutter do PATH sem verificar a versao -- pode ser outra versao
 $flutter = $null
 
 $tentativa = "C:\Users\$env:USERNAME\flutter\3.29.2\bin\flutter.bat"
@@ -76,25 +79,14 @@ Write-Host "  Flutter: $flutter" -ForegroundColor DarkGray
 $adb    = "$env:LOCALAPPDATA\Android\Sdk\platform-tools\adb.exe"
 $pubPkg = "$env:LOCALAPPDATA\Pub\Cache\hosted\pub.dev\webview_flutter_android-4.10.13"
 
-# Caminhos do build
 $gradlePadrao = "$projeto\build\flutter\android\app\build.gradle"
 $appzipPadrao = "$projeto\build\flutter\app\app.zip"
 $apkOrigemPad = "$projeto\build\flutter\build\app\outputs\flutter-apk\app-release.apk"
 $apkDestino   = "$projeto\build\apk\Prontuario.apk"
 
-# Pastas a mover antes do flet build
-$pastasMover = @("doc", "temp", "dados")
+$pastasMover          = @("doc", "temp", "dados")
 $script:pastasMovidas = @()
 
-# Arquivos gerenciados durante o build
-$reqDesktop       = "$projeto\requirements.txt"
-$reqApk           = "$projeto\requirements_apk.txt"
-$reqDesktopBackup = "$projeto\requirements_desktop.txt"
-$pyprojectToml    = "$projeto\pyproject.toml"
-$pyprojectBak     = "$tempDir\pyproject_prontuario.bak"
-$script:buildPreparado = $false
-
-# Log
 $logDir         = "$projeto\logs"
 $script:logFile = $null
 
@@ -108,7 +100,11 @@ function Log([string]$msg, [string]$cor = "White") {
     if ($script:logFile) {
         $dir = Split-Path $script:logFile
         if (-not (Test-Path $dir)) { New-Item -ItemType Directory -Path $dir | Out-Null }
-        Add-Content -Path $script:logFile -Value $linha -Encoding UTF8
+        try {
+            Add-Content -Path $script:logFile -Value $linha -Encoding UTF8 -ErrorAction Stop
+        } catch {
+            # log temporariamente bloqueado (VSCode/antivirus) -- ignora, nao falha o build
+        }
     }
 }
 function LogOk([string]$m)    { Log "  OK  $m" "Green"    }
@@ -152,62 +148,6 @@ function Buscar-ApkOrigem {
                   Select-Object -First 1
     if ($encontrado) { return $encontrado.FullName }
     return $null
-}
-
-# ==============================================================================
-# FASES: PREPARAR / RESTAURAR BUILD
-# ==============================================================================
-
-function Fase-PrepararBuild {
-    Log "--- Preparando build (requirements + pyproject) ---"
-
-    # 1. requirements.txt desktop -> requirements_desktop.txt
-    if (Test-Path $reqDesktop) {
-        Move-Item $reqDesktop $reqDesktopBackup -Force
-        LogOk "requirements.txt (desktop) -> requirements_desktop.txt"
-    }
-
-    # 2. requirements_apk.txt -> requirements.txt (lido pelo flet build)
-    if (-not (Test-Path $reqApk)) {
-        throw "requirements_apk.txt nao encontrado -- necessario para o build"
-    }
-    Copy-Item $reqApk $reqDesktop -Force
-    LogOk "requirements_apk.txt -> requirements.txt (APK)"
-
-    # 3. pyproject.toml -- remover org= para evitar pacote com.koios.*
-    if (-not (Test-Path $tempDir)) { New-Item -ItemType Directory -Path $tempDir | Out-Null }
-    if (Test-Path $pyprojectToml) {
-        Copy-Item $pyprojectToml $pyprojectBak -Force
-    }
-    $pyContent = "[tool.flet.app]`nname = `"Prontuario Medico`"`n"
-    [System.IO.File]::WriteAllText($pyprojectToml, $pyContent, (New-Object System.Text.UTF8Encoding $false))
-    LogOk "pyproject.toml simplificado (org removido -- pacote sera com.flet.prontuario)"
-
-    $script:buildPreparado = $true
-    LogOk "build preparado"
-}
-
-function Fase-RestaurarBuild {
-    if (-not $script:buildPreparado) { return }
-    Log "--- Restaurando arquivos apos build ---"
-
-    # 1. Remover requirements.txt (APK) e restaurar desktop
-    if (Test-Path $reqDesktop) {
-        Remove-Item $reqDesktop -Force -ErrorAction SilentlyContinue
-    }
-    if (Test-Path $reqDesktopBackup) {
-        Move-Item $reqDesktopBackup $reqDesktop -Force
-        LogOk "requirements.txt (desktop) restaurado"
-    }
-
-    # 2. Restaurar pyproject.toml
-    if (Test-Path $pyprojectBak) {
-        Copy-Item $pyprojectBak $pyprojectToml -Force
-        Remove-Item $pyprojectBak -Force -ErrorAction SilentlyContinue
-        LogOk "pyproject.toml restaurado"
-    }
-
-    $script:buildPreparado = $false
 }
 
 # ==============================================================================
@@ -292,8 +232,33 @@ function Fase-FletBuild {
     Log "--- flet build apk (~12-15 min) ---"
     $ini = Get-Date
 
-    $prevEncoding  = [Console]::OutputEncoding
-    $prevInput     = [Console]::InputEncoding
+    # Pre-limpar build\apk -- flet tenta shutil.rmtree nessa pasta e falha se Windows tiver lock
+    # Remover antes para evitar PermissionError dentro do flet build
+    $apkDir = "$projeto\build\apk"
+    if (Test-Path $apkDir) {
+        $prevEA2 = $ErrorActionPreference
+        $ErrorActionPreference = "Continue"
+        Remove-Item $apkDir -Recurse -Force -ErrorAction SilentlyContinue
+        if (Test-Path $apkDir) {
+            Rename-Item $apkDir "$apkDir.old" -ErrorAction SilentlyContinue
+            LogSec "build\apk renomeado (lock do Windows -- flet nao vai falhar)"
+        } else {
+            LogSec "build\apk removido (previne PermissionError no flet build)"
+        }
+        $ErrorActionPreference = $prevEA2
+    }
+
+    # pyproject.toml com org= gera package com.koios.* errado -- remover antes do build
+    # Sem pyproject.toml: package = com.flet.prontuario (correto)
+    $pyproject = "$projeto\pyproject.toml"
+    if (Test-Path $pyproject) {
+        Remove-Item $pyproject -Force
+        LogSec "pyproject.toml removido (evita package com.koios.*)"
+    }
+
+    # FIX UnicodeEncodeError: forcar UTF-8 antes do flet (rich usa Unicode)
+    $prevEncoding = [Console]::OutputEncoding
+    $prevInput    = [Console]::InputEncoding
     [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
     [Console]::InputEncoding  = [System.Text.Encoding]::UTF8
     $env:PYTHONIOENCODING = "utf-8"
@@ -301,10 +266,10 @@ function Fase-FletBuild {
 
     $prev = $ErrorActionPreference
     $ErrorActionPreference = "Continue"
-    # pdfplumber tem extensoes C -- precisa --source-packages para ARM64
     & flet build apk `
         --project Prontuario `
-        --source-packages pdfplumber `
+        --source-packages pdfplumber google-auth google-auth-httplib2 `
+                          requests repath anthropic httpx `
         --permissions camera photo_library `
         -v
     $fletExit = $LASTEXITCODE
@@ -313,13 +278,12 @@ function Fase-FletBuild {
     [Console]::OutputEncoding = $prevEncoding
     [Console]::InputEncoding  = $prevInput
 
-    # Matar processos Java deixados pelo flet build
     $prevKill = $ErrorActionPreference
     $ErrorActionPreference = "Continue"
     Get-Process -Name "java","javaw" -ErrorAction SilentlyContinue | Stop-Process -Force
     Start-Sleep -Seconds 3
 
-    # Deletar .cxx apos flet build (evita trava no flutter build)
+    # Deletar .cxx logo apos flet build -- evita AccessDeniedException no flutter build
     $cxxDir = "$projeto\build\flutter\android\app\.cxx"
     if (Test-Path $cxxDir) {
         cmd /c "rd /s /q `"$cxxDir`"" 2>$null
@@ -336,7 +300,7 @@ function Fase-FletBuild {
 
     $g = Buscar-Gradle
     if (-not $g) {
-        throw "flet build falhou: gradle nao encontrado. Verifique $logDir"
+        throw "flet build falhou: gradle nao encontrado. Ver $logDir"
     }
     $dur = [int]((Get-Date) - $ini).TotalSeconds
     LogOk "flet build OK em ${dur}s | gradle: $g"
@@ -369,28 +333,6 @@ function Fase-LimparSitePackages {
         }
     }
     if (-not $achouAlgo) { LogSec "nada para limpar em site-packages" }
-}
-
-function Fase-LimparAppZip {
-    Log "--- Limpando .git e .pyc do app.zip ---"
-    $z = Buscar-AppZip
-    if (-not $z) { LogAviso "app.zip nao encontrado -- pulando"; return }
-    Add-Type -AssemblyName System.IO.Compression.FileSystem
-    $arc = [System.IO.Compression.ZipFile]::Open($z, 'Update')
-    try {
-        $git = @($arc.Entries | Where-Object { $_.FullName -like ".git/*" })
-        $git | ForEach-Object { $_.Delete() }
-        if ($git.Count -gt 0) { LogOk "Removidas $($git.Count) entradas .git" }
-        else                  { LogSec "nenhuma entrada .git no app.zip" }
-
-        $pyc = @($arc.Entries | Where-Object { $_.FullName -like "*__pycache__*" -or $_.FullName -like "*.pyc" })
-        $pyc | ForEach-Object { $_.Delete() }
-        if ($pyc.Count -gt 0) { LogOk "Removidos $($pyc.Count) arquivos .pyc do app.zip" }
-        else                  { LogSec "nenhum .pyc no app.zip" }
-    } finally { $arc.Dispose() }
-    $zipMB = [math]::Round((Get-Item $z).Length / 1MB, 1)
-    if ($zipMB -gt 15) { LogAviso "app.zip: $zipMB MB (acima de 15 MB)" }
-    else               { LogOk    "app.zip: $zipMB MB" }
 }
 
 function Fase-ReescreverAppZip {
@@ -602,14 +544,14 @@ function Fase-FlutterBuild {
     (Get-Content $g) `
         -replace 'minSdkVersion flutter\.minSdkVersion','minSdkVersion 24' |
         Set-Content $g
-    LogOk "minSdkVersion 24"
+    LogOk "minSdkVersion 24 em $g"
 
     $gc = Get-Content $g -Raw
     if ($gc -notmatch "arm64-v8a") {
         $gc = $gc -replace "(ndk \{[^}]*\})", "ndk {`n            abiFilters `"arm64-v8a`"`n        }"
         if ($gc -match "arm64-v8a") {
             $gc | Set-Content $g -NoNewline
-            LogOk "abiFilters arm64-v8a adicionado"
+            LogOk "abiFilters arm64-v8a adicionado ao build.gradle"
         } else {
             $gc = $gc -replace "(defaultConfig \{)", "`$1`n        ndk {`n            abiFilters `"arm64-v8a`"`n        }"
             $gc | Set-Content $g -NoNewline
@@ -639,22 +581,25 @@ function Fase-FlutterBuild {
     $prev = $ErrorActionPreference
     $ErrorActionPreference = "Continue"
     cmd /c "rd /s /q `"$projeto\build\flutter\build`"" 2>$null
+    LogSec "build\flutter\build removido"
     cmd /c "rd /s /q `"$projeto\build\flutter\android\app\.cxx`"" 2>$null
+    LogSec "android\app\.cxx removido"
     Start-Sleep -Seconds 2
     $ErrorActionPreference = $prev
-    LogOk "residuos limpos"
+    LogOk "residuos do Gradle limpos"
 
     $androidDir = Split-Path (Split-Path $g)
     $ini = Get-Date
     Set-Location $androidDir
 
-    # Injetar nome do app, deep link, portrait, camera
+    $env:SERIOUS_PYTHON_SITE_PACKAGES = "$projeto\build\site-packages"
+
     Fase-NomeApp
     Fase-InjetarDeepLink
     Fase-LockPortrait
     Fase-InjetarCamera
 
-    # FIX CRITICO: pub get apos InjetarCamera (registra image_picker_android)
+    # FIX CRITICO: pub get apos InjetarCamera -- registra image_picker_android
     Log "--- flutter pub get (registrar image_picker_android) ---"
     $prev = $ErrorActionPreference
     $ErrorActionPreference = "Continue"
@@ -664,7 +609,6 @@ function Fase-FlutterBuild {
     $ErrorActionPreference = $prev
     LogOk "flutter pub get concluido"
 
-    $env:SERIOUS_PYTHON_SITE_PACKAGES = "$projeto\build\site-packages"
     LogSec "SERIOUS_PYTHON_SITE_PACKAGES: $env:SERIOUS_PYTHON_SITE_PACKAGES"
 
     $prev = $ErrorActionPreference
@@ -680,7 +624,7 @@ function Fase-FlutterBuild {
 
     $apkGerado = Buscar-ApkOrigem
     if (-not $apkGerado) {
-        throw "flutter build falhou (exit $exitCode). Verifique $logDir"
+        throw "flutter build falhou (exit $exitCode). Ver $logDir\flutter_build.log"
     }
     $dur = [int]((Get-Date) - $ini).TotalSeconds
     LogOk "flutter build OK em ${dur}s | APK: $apkGerado"
@@ -690,23 +634,31 @@ function Fase-FlutterBuild {
 function Fase-CopiarInstalar {
     Log "--- Copiando APK ---"
     $origem = Buscar-ApkOrigem
-    if (-not $origem) { LogAviso "APK nao encontrado -- pulando copia"; return }
-    $destPai = Split-Path $apkDestino
-    if (-not (Test-Path $destPai)) { New-Item -ItemType Directory -Path $destPai | Out-Null }
-    Copy-Item $origem $apkDestino -Force
-    $mb = [math]::Round((Get-Item $apkDestino).Length / 1MB, 1)
-    if ($mb -gt 80) { LogAviso "APK: $mb MB (acima de 80 MB -- investigar)" }
-    else            { LogOk    "APK: $mb MB | $apkDestino" }
+    if (-not $origem) {
+        # flutter build output nao existe (ex: flutter clean rodou sem rebuild)
+        # se o APK final ja existe em build\apk, usa direto sem copiar
+        if (Test-Path $apkDestino) {
+            LogSec "APK flutter nao encontrado -- usando build\apk existente"
+        } else {
+            LogAviso "APK nao encontrado -- execute Modo 1 primeiro"
+            return
+        }
+    } else {
+        $destPai = Split-Path $apkDestino
+        if (-not (Test-Path $destPai)) { New-Item -ItemType Directory -Path $destPai | Out-Null }
+        Copy-Item $origem $apkDestino -Force
+        $mb = [math]::Round((Get-Item $apkDestino).Length / 1MB, 1)
+        if ($mb -gt 80) { LogAviso "APK: $mb MB (acima de 80 MB -- investigar)" }
+        else            { LogOk    "APK: $mb MB | $apkDestino" }
+    }
 
     Log "--- Instalando no dispositivo ---"
     $prevAdb = $ErrorActionPreference
     $ErrorActionPreference = "Continue"
     $devOut  = & $adb devices 2>&1
-    $ErrorActionPreference = $prevAdb
     $devices = $devOut | Select-String "device$"
     if ($devices) {
         Log "  Instalando (preservando dados do app)..."
-        $ErrorActionPreference = "Continue"
         $instOut = & $adb install -r $apkDestino 2>&1
         $adbExit = $LASTEXITCODE
         $ErrorActionPreference = $prevAdb
@@ -720,7 +672,6 @@ function Fase-CopiarInstalar {
                    Where-Object { $_ -match "prontuario" } |
                    ForEach-Object { ($_ -replace "package:", "").Trim() } |
                    Select-Object -First 1
-            $ErrorActionPreference = $prevAdb
             if ($pkg) {
                 & $adb shell monkey -p $pkg -c android.intent.category.LAUNCHER 1 2>&1 | Out-Null
                 LogOk "App aberto: $pkg"
@@ -729,6 +680,7 @@ function Fase-CopiarInstalar {
             }
 
             Log "--- Aguardando 30s para capturar logcat ---"
+            $ErrorActionPreference = $prevAdb
             Write-Host ""
             Write-Host "  >>> APP ABERTO NO CELULAR -- aguardando 30 segundos... <<<" -ForegroundColor Cyan
             Write-Host ""
@@ -745,9 +697,11 @@ function Fase-CopiarInstalar {
             Write-Host "=== LOGCAT ===" -ForegroundColor Cyan
             Get-Content $logcatFile
         } else {
+            $ErrorActionPreference = $prevAdb
             LogAviso "adb install com erro -- verifique manualmente"
         }
     } else {
+        $ErrorActionPreference = $prevAdb
         LogAviso "Nenhum dispositivo ADB conectado -- instalacao pulada"
     }
 }
@@ -766,6 +720,7 @@ function Resumo-Final([string]$titulo, [datetime]$ini) {
     Log "  Editou .py               -> .\build_prontuario.ps1 -modo 2" "DarkGray"
     Log "  Mudou assets/pubspec     -> .\build_prontuario.ps1 -modo 3" "DarkGray"
     Log "  Novo pacote / primeiro   -> .\build_prontuario.ps1 -modo 1" "DarkGray"
+    Log "  Flet OK, flutter falhou  -> .\build_prontuario.ps1 -modo 5" "DarkGray"
 }
 
 # ==============================================================================
@@ -774,7 +729,7 @@ function Resumo-Final([string]$titulo, [datetime]$ini) {
 function Mostrar-Menu {
     Write-Host ""
     Write-Host "=================================================" -ForegroundColor Cyan
-    Write-Host "   PRONTUARIO MEDICO  --  BUILD v2" -ForegroundColor Cyan
+    Write-Host "   PRONTUARIO MEDICO  --  BUILD v3" -ForegroundColor Cyan
     Write-Host "=================================================" -ForegroundColor Cyan
     Write-Host ""
     Write-Host "  [1]  COMPLETO             ~20 min" -ForegroundColor White
@@ -791,9 +746,12 @@ function Mostrar-Menu {
     Write-Host "  [4]  SO INSTALAR E ABRIR  <1 min" -ForegroundColor Magenta
     Write-Host "       Celular conectado -- APK ja gerado" -ForegroundColor DarkGray
     Write-Host ""
+    Write-Host "  [5]  SO FLUTTER BUILD     ~2 min" -ForegroundColor Cyan
+    Write-Host "       flet build OK, flutter falhou -- retoma daqui" -ForegroundColor DarkGray
+    Write-Host ""
     Write-Host "  [0]  Cancelar" -ForegroundColor DarkGray
     Write-Host ""
-    $esc = Read-Host "Escolha [1/2/3/4/0]"
+    $esc = Read-Host "Escolha [1/2/3/4/5/0]"
     return $esc
 }
 
@@ -808,7 +766,7 @@ if (-not $modo) {
         Write-Host "Cancelado." -ForegroundColor DarkGray
         exit 0
     }
-    if ($modo -notin @("1","2","3","4")) {
+    if ($modo -notin @("1","2","3","4","5")) {
         Write-Host "[ERRO] Opcao invalida: $modo" -ForegroundColor Red
         exit 1
     }
@@ -824,7 +782,6 @@ if ($modo -eq "1") {
 
     Fase-CorrigirPubspec
     Fase-LimparPycache
-    Fase-PrepararBuild
     Fase-MoverPastas
 
     try {
@@ -835,7 +792,6 @@ if ($modo -eq "1") {
         Fase-CopiarInstalar
     } finally {
         Fase-RestaurarPastas
-        Fase-RestaurarBuild
     }
 
     Resumo-Final "MODO 1 (COMPLETO)" $inicio
@@ -851,15 +807,9 @@ elseif ($modo -eq "2") {
 
     Fase-VerificarBuildAnterior
     Fase-LimparPycache
-    Fase-PrepararBuild
-
-    try {
-        Fase-ReescreverAppZip
-        Fase-FlutterBuild
-        Fase-CopiarInstalar
-    } finally {
-        Fase-RestaurarBuild
-    }
+    Fase-ReescreverAppZip
+    Fase-FlutterBuild
+    Fase-CopiarInstalar
 
     Resumo-Final "MODO 2 (SO .PY)" $inicio
 }
@@ -875,7 +825,6 @@ elseif ($modo -eq "3") {
     Fase-VerificarBuildAnterior
     Fase-LimparPycache
     Fase-CorrigirPubspec
-    Fase-PrepararBuild
     Fase-MoverPastas
 
     try {
@@ -886,7 +835,6 @@ elseif ($modo -eq "3") {
         Fase-CopiarInstalar
     } finally {
         Fase-RestaurarPastas
-        Fase-RestaurarBuild
     }
 
     Resumo-Final "MODO 3 (ASSETS/PUBSPEC)" $inicio
@@ -918,4 +866,19 @@ elseif ($modo -eq "4") {
     Fase-CopiarInstalar
 
     Resumo-Final "MODO 4 (INSTALAR)" $inicio
+}
+
+# ==============================================================================
+# MODO 5 -- SO FLUTTER BUILD (flet build OK, flutter falhou)
+# ==============================================================================
+elseif ($modo -eq "5") {
+    Iniciar-Log "MODO5_FLUTTER_BUILD"
+    $inicio = Get-Date
+    Log "MODO 5 -- SO FLUTTER BUILD (~2 min)" "Cyan"
+
+    Fase-VerificarBuildAnterior
+    Fase-FlutterBuild
+    Fase-CopiarInstalar
+
+    Resumo-Final "MODO 5 (FLUTTER BUILD)" $inicio
 }

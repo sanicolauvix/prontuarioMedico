@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """
 alarmes_remedios.py
 Sistema de alertas de medicamentos:
