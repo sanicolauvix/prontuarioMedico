@@ -179,39 +179,131 @@ def _tela_principal(page: ft.Page, voltar_fn=None):
     card_claudia.on_click = lambda e: _lazy_fn("tela_parecer", "criar_tela_parecer")()
 
     # ══════════════════════════════════════════════════════════
-    # SCORE DE SAUDE
+    # MONITOR UTI -- canais vitais + score resumido
     # ══════════════════════════════════════════════════════════
-    barra_score   = ft.ProgressBar(value=0, color=AZUL, bgcolor=BD, height=8)
-    txt_score_num = ft.Text("--", size=22, weight=ft.FontWeight.W_900, color=AZUL)
-    txt_score_rot = ft.Text("/100", size=12, color=SEC)
-    txt_nota      = ft.Text("--", size=13, weight=ft.FontWeight.W_600, color=SEC)
-    txt_tendencia = ft.Text("", size=11, color=SEC)
-    txt_detalhes  = ft.Text("", size=10, color=MUT)
+    txt_score_num = ft.Text("--", size=13, weight=ft.FontWeight.W_700, color=AZUL)
+    txt_nota      = ft.Text("--", size=11, color=SEC)
+    txt_detalhes  = ft.Text("",   size=10, color=MUT)
 
-    card_score = ft.Container(
+    _UTI_CANAIS = [
+        ("Glicose",    "water_drop_rounded",            "#FF6B6B",
+         ["glicose", "glucose", "glicemia"]),
+        ("Ac.Urico",   "science_rounded",               "#FFD93D",
+         ["acido urico", "urico", "uratos"]),
+        ("Pressao",    "favorite_rounded",              "#4ECDC4",
+         ["sistolica", "pressao arterial"]),
+        ("Hormonios",  "psychology_alt_rounded",        "#A29BFE",
+         ["tsh", "t4 livre", "cortisol"]),
+        ("Vitaminas",  "wb_sunny_rounded",              "#FDCB6E",
+         ["vitamina d", "25-oh", "vitamina b12"]),
+        ("Inflamacao", "local_fire_department_rounded", "#FF7675",
+         ["pcr", "proteina c reativa", "vhs"]),
+    ]
+
+    def _avaliar_status_cor(valor_str, referencia_str):
+        try:
+            v = float(str(valor_str).replace(",", ".").strip())
+            ref = str(referencia_str or "").strip()
+            if " - " in ref:
+                lo, hi = [float(x) for x in ref.split(" - ", 1)]
+                if lo <= v <= hi:
+                    return VERD
+                m = (hi - lo) * 0.2
+                if (lo - m) <= v <= (hi + m):
+                    return AMAR
+                return VERM
+            elif ref.startswith("<"):
+                lim = float(ref[1:].strip())
+                if v < lim:
+                    return VERD
+                if v < lim * 1.25:
+                    return AMAR
+                return VERM
+            elif ref.startswith(">"):
+                lim = float(ref[1:].strip())
+                if v > lim:
+                    return VERD
+                if v > lim * 0.8:
+                    return AMAR
+                return VERM
+        except Exception:
+            pass
+        return AZUL
+
+    _uti_refs: list = []
+    _uti_row = ft.Row(scroll=ft.ScrollMode.AUTO, spacing=8)
+
+    for _lbl, _ico, _cor, _termos in _UTI_CANAIS:
+        _tv  = ft.Text("--", size=20, weight=ft.FontWeight.W_900,
+                       color=_cor, text_align=ft.TextAlign.CENTER)
+        _tu  = ft.Text("",   size=9, color=SEC, text_align=ft.TextAlign.CENTER)
+        _td  = ft.Text("",   size=9, color=MUT, text_align=ft.TextAlign.CENTER)
+        _dot = ft.Container(width=6, height=6, border_radius=3, bgcolor=MUT)
+        _card_uti = ft.Container(
+            content=ft.Column([
+                ft.Row([_dot], alignment=ft.MainAxisAlignment.CENTER),
+                ft.Container(height=1),
+                ft.Icon(_ico, size=13, color=_cor + "99"),
+                ft.Text(_lbl, size=9, color=SEC,
+                        text_align=ft.TextAlign.CENTER,
+                        weight=ft.FontWeight.W_600),
+                ft.Container(height=4),
+                _tv,
+                _tu,
+                ft.Container(height=2),
+                _td,
+            ], horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+               spacing=2, tight=True),
+            bgcolor="#080C11",
+            border=ft.border.all(1, _cor + "33"),
+            border_radius=12,
+            padding=ft.padding.symmetric(horizontal=10, vertical=10),
+            width=88,
+            ink=True,
+        )
+        _card_uti.on_click = lambda e: _lazy_fn(
+            "tela_marcadores", "criar_tela_marcadores")()
+        _uti_refs.append({
+            "val": _tv, "unit": _tu, "data": _td,
+            "dot": _dot, "card": _card_uti, "cor": _cor,
+            "termos": _termos,
+        })
+        _uti_row.controls.append(_card_uti)
+
+    _btn_marc = ft.Container(
+        content=ft.Row([
+            ft.Icon("bar_chart_rounded", size=12, color=AZUL),
+            ft.Text("Gerenciar", size=10, color=AZUL),
+        ], spacing=3, tight=True),
+        padding=ft.padding.symmetric(horizontal=8, vertical=4),
+        border_radius=8, bgcolor=AZUL + "18", ink=True,
+    )
+    _btn_marc.on_click = lambda e: _lazy_fn(
+        "tela_marcadores", "criar_tela_marcadores")()
+
+    card_monitor_uti = ft.Container(
         content=ft.Column([
             ft.Row([
-                ft.Icon("favorite_rounded", size=14, color=VERM),
-                ft.Text("SCORE DE SAUDE", size=10, weight=ft.FontWeight.W_700,
-                        color=SEC),
+                ft.Icon("monitor_heart_rounded", size=13, color="#FF7675"),
+                ft.Text("MONITOR VITAL", size=10,
+                        weight=ft.FontWeight.W_700, color=SEC),
                 ft.Container(expand=True),
-                txt_tendencia,
+                ft.Row([
+                    ft.Text("Score", size=10, color=MUT),
+                    txt_score_num,
+                    txt_nota,
+                ], spacing=4, tight=True),
+                _btn_marc,
             ], spacing=6),
-            ft.Container(height=6),
-            ft.Row([
-                ft.Row([txt_score_num, txt_score_rot], spacing=2, tight=True),
-                ft.Container(expand=True),
-                txt_nota,
-            ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
-            ft.Container(height=6),
-            barra_score,
+            ft.Container(height=8),
+            _uti_row,
             ft.Container(height=4),
             txt_detalhes,
         ], spacing=0),
         bgcolor=CARD,
         border=ft.border.all(1, BD),
         border_radius=14,
-        padding=ft.padding.symmetric(horizontal=16, vertical=14),
+        padding=ft.padding.symmetric(horizontal=12, vertical=12),
     )
 
     # ══════════════════════════════════════════════════════════
@@ -314,8 +406,8 @@ def _tela_principal(page: ft.Page, voltar_fn=None):
     def _conteudo_inicio():
         return [
             card_claudia,
-            _secao_titulo("SCORE DE SAUDE", "favorite_rounded", VERM),
-            card_score,
+            _secao_titulo("MONITOR VITAL", "monitor_heart_rounded", "#FF7675"),
+            card_monitor_uti,
             _secao_titulo("HOJE", "today_rounded", AMAR),
             chips_hoje,
             _secao_titulo("RESUMO", "insights_rounded", ROXO),
@@ -364,6 +456,9 @@ def _tela_principal(page: ft.Page, voltar_fn=None):
                     _btn_item("psychology_rounded", "Parecer IA",
                               "Analise com Claude", ROXO,
                               _lazy_fn("tela_parecer", "criar_tela_parecer")),
+                    _btn_item("biotech_rounded", "Marcadores",
+                              "Sinais vitais e historico", "#4ECDC4",
+                              _lazy_fn("tela_marcadores", "criar_tela_marcadores")),
                 ], spacing=0),
                 bgcolor=CARD,
                 border_radius=12,
@@ -551,13 +646,11 @@ def _tela_principal(page: ft.Page, voltar_fn=None):
         else:
             nota, cor_s = "Atencao", VERM
 
-        barra_score.value   = score_final / 100
-        barra_score.color   = cor_s
         txt_score_num.value = str(int(score_final))
         txt_score_num.color = cor_s
         txt_nota.value      = nota
         txt_nota.color      = cor_s
-        txt_detalhes.value  = f"Exames {score_ex:.0f}%  .  Remedios {score_ad:.0f}%"
+        txt_detalhes.value  = f"Ex {score_ex:.0f}%  .  Rem {score_ad:.0f}%"
 
         # Mini stats
         try:
@@ -614,6 +707,54 @@ def _tela_principal(page: ft.Page, voltar_fn=None):
             chips_hoje.controls.append(
                 _chip("Dia tranquilo", VERD, "check_circle_rounded", lambda: None)
             )
+
+        # Monitor UTI -- ultimo valor de cada canal
+        try:
+            conn_uti = _sq.connect(DB_PATH, timeout=30)
+            try:
+                for ref_u in _uti_refs:
+                    row = None
+                    for termo in ref_u["termos"]:
+                        row = conn_uti.execute("""
+                            SELECT r.valor, r.unidade, r.referencia, e.data_exame
+                            FROM resultados_estruturados r
+                            JOIN exames e ON r.exame_id = e.id
+                            WHERE LOWER(r.parametro) LIKE ?
+                              AND r.valor IS NOT NULL AND r.valor != ''
+                            ORDER BY e.data_exame DESC LIMIT 1
+                        """, (f"%{termo}%",)).fetchone()
+                        if row:
+                            break
+                    # leitura manual pode ser mais recente
+                    try:
+                        for termo in ref_u["termos"]:
+                            mrow = conn_uti.execute("""
+                                SELECT CAST(valor AS TEXT), unidade,
+                                       referencia, data_medicao
+                                FROM marcadores_leituras
+                                WHERE LOWER(parametro) LIKE ?
+                                ORDER BY data_medicao DESC LIMIT 1
+                            """, (f"%{termo}%",)).fetchone()
+                            if mrow:
+                                if not row or (mrow[3] or "") > (row[3] or ""):
+                                    row = mrow
+                                break
+                    except Exception:
+                        pass
+                    if row:
+                        val_s, unit_s, ref_s, data_s = row
+                        ref_u["val"].value  = (str(val_s) or "--")[:7]
+                        ref_u["unit"].value = (unit_s or "")[:6]
+                        if data_s and len(data_s) >= 10:
+                            d = data_s[:10]
+                            ref_u["data"].value = f"{d[8:10]}/{d[5:7]}"
+                        s_cor = _avaliar_status_cor(val_s, ref_s)
+                        ref_u["dot"].bgcolor  = s_cor
+                        ref_u["card"].border  = ft.border.all(1, s_cor + "55")
+            finally:
+                conn_uti.close()
+        except Exception as _ex_uti:
+            log.warning("[HUB] UTI monitor: %s", _ex_uti)
 
         # Sync bar estado inicial
         try:

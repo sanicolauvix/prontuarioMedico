@@ -103,6 +103,41 @@ def _migrar_campos_perfil():
             conn.close()
 
 
+def _migrar_principio_ativo():
+    try:
+        with sqlite3.connect(DB_PATH, timeout=30) as conn:
+            cols = [r[1] for r in conn.execute("PRAGMA table_info(remedios)").fetchall()]
+            if "principio_ativo" not in cols:
+                conn.execute("ALTER TABLE remedios ADD COLUMN principio_ativo TEXT")
+                print("[MODEL] coluna principio_ativo adicionada em remedios")
+    except Exception as ex:
+        print(f"[MODEL] _migrar_principio_ativo: {ex}")
+
+
+def _migrar_marcadores():
+    try:
+        with sqlite3.connect(DB_PATH, timeout=30) as conn:
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS marcadores_leituras (
+                    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                    parametro    TEXT NOT NULL,
+                    categoria    TEXT,
+                    valor        REAL,
+                    valor_txt    TEXT,
+                    unidade      TEXT,
+                    referencia   TEXT,
+                    data_medicao TEXT NOT NULL,
+                    hora_medicao TEXT,
+                    fonte        TEXT DEFAULT 'manual',
+                    dispositivo  TEXT,
+                    observacoes  TEXT,
+                    criado_em    TEXT DEFAULT (datetime('now'))
+                )
+            """)
+    except Exception as ex:
+        print(f"[MODEL] _migrar_marcadores: {ex}")
+
+
 def _migrar_pai_id():
     """Adiciona pai_id em resultados_estruturados para sub-resultados (ex: eRFG filho de Creatinina)."""
     try:
@@ -650,6 +685,25 @@ def criar_tabelas():
             criado_em   TEXT DEFAULT (datetime('now'))
         );
 
+        -- ────────────────────────────────────────────────────────
+        -- MARCADORES DE SAUDE (leituras manuais e bluetooth)
+        -- ────────────────────────────────────────────────────────
+        CREATE TABLE IF NOT EXISTS marcadores_leituras (
+            id           INTEGER PRIMARY KEY AUTOINCREMENT,
+            parametro    TEXT NOT NULL,
+            categoria    TEXT,
+            valor        REAL,
+            valor_txt    TEXT,
+            unidade      TEXT,
+            referencia   TEXT,
+            data_medicao TEXT NOT NULL,
+            hora_medicao TEXT,
+            fonte        TEXT DEFAULT 'manual',
+            dispositivo  TEXT,
+            observacoes  TEXT,
+            criado_em    TEXT DEFAULT (datetime('now'))
+        );
+
     """)
 
         conn.commit()
@@ -660,6 +714,8 @@ def criar_tabelas():
     _migrar_pai_id()
     _migrar_referencias_padrao()
     _migrar_medicos()
+    _migrar_principio_ativo()
+    _migrar_marcadores()
     # Registrar módulo no core
     try:
         _conn = sqlite3.connect(CORE_DB, timeout=30)
@@ -1708,14 +1764,16 @@ def listar_remedios(so_ativos=True) -> list[dict]:
         cur.execute(f"""
             SELECT r.id, r.nome, r.dosagem, r.frequencia, r.data_inicio, r.data_fim,
                    r.estoque_atual, r.estoque_minimo, r.observacoes, r.ativo,
-                   m.nome as medico
+                   m.nome as medico, r.medico_id,
+                   COALESCE(r.principio_ativo, '') as principio_ativo
             FROM remedios r
             LEFT JOIN medicos m ON m.id = r.medico_id
             {where}
             ORDER BY r.nome
         """)
         cols = ["id","nome","dosagem","frequencia","data_inicio","data_fim",
-                "estoque_atual","estoque_minimo","observacoes","ativo","medico"]
+                "estoque_atual","estoque_minimo","observacoes","ativo","medico",
+                "medico_id","principio_ativo"]
         rows = cur.fetchall()
         return [dict(zip(cols, r)) for r in rows]
     finally:
@@ -1730,23 +1788,25 @@ def salvar_remedio(dados: dict) -> int:
             cur.execute("""
                 UPDATE remedios SET nome=?, dosagem=?, frequencia=?, data_inicio=?,
                 data_fim=?, medico_id=?, receita_id=?, estoque_atual=?,
-                estoque_minimo=?, ativo=?, observacoes=? WHERE id=?
+                estoque_minimo=?, ativo=?, observacoes=?, principio_ativo=? WHERE id=?
             """, (dados["nome"], dados.get("dosagem"), dados.get("frequencia"),
                   dados.get("data_inicio"), dados.get("data_fim"),
                   dados.get("medico_id"), dados.get("receita_id"),
                   dados.get("estoque_atual", 0), dados.get("estoque_minimo", 5),
-                  dados.get("ativo", 1), dados.get("observacoes"), dados["id"]))
+                  dados.get("ativo", 1), dados.get("observacoes"),
+                  dados.get("principio_ativo"), dados["id"]))
             rid = dados["id"]
         else:
             cur.execute("""
                 INSERT INTO remedios (nome, dosagem, frequencia, data_inicio, data_fim,
-                medico_id, receita_id, estoque_atual, estoque_minimo, observacoes)
-                VALUES (?,?,?,?,?,?,?,?,?,?)
+                medico_id, receita_id, estoque_atual, estoque_minimo, observacoes,
+                principio_ativo)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?)
             """, (dados["nome"], dados.get("dosagem"), dados.get("frequencia"),
                   dados.get("data_inicio"), dados.get("data_fim"),
                   dados.get("medico_id"), dados.get("receita_id"),
                   dados.get("estoque_atual", 0), dados.get("estoque_minimo", 5),
-                  dados.get("observacoes")))
+                  dados.get("observacoes"), dados.get("principio_ativo")))
             rid = cur.lastrowid
         conn.commit()
         return rid

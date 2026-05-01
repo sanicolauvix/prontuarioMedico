@@ -1,19 +1,15 @@
 # -*- coding: utf-8 -*-
-"""
-tela_remedios.py — Koios Prontuário
-Controle completo de medicamentos.
-Padrão visual: idêntico a tela_exames.py (header + barra de abas + área de conteúdo)
-Abas: HOJE | REMÉDIOS | FARMÁCIAS
-"""
+# Prontuario | telas/tela_remedios.py
 import logging
 import re
 import flet as ft
 import threading
 import webbrowser
 from datetime import date, datetime, timedelta
+from shared.layout import Layout
 from dados.model_prontuario import (
     listar_remedios, salvar_remedio,
-    remedios_estoque_baixo, listar_medicos,
+    remedios_estoque_baixo, listar_medicos, salvar_medico,
     salvar_horarios_remedio, listar_horarios_remedio,
     registrar_tomada, listar_tomadas_hoje, resumo_adesao,
     atualizar_foto_remedio,
@@ -263,24 +259,32 @@ def _calcular_horarios(intervalo_h: int, hora_inicio: str) -> list[str]:
     return resultado
 
 
-# Tabela: (label, intervalo_horas)
-# intervalo > 0  → baseado em horas fixas, calcula horários automaticamente
-# intervalo = -1 → baseado em refeições/eventos, sem horário fixo
+# (label, intervalo_horas, icone)
+# intervalo > 0  → horário fixo, calcula automaticamente
+# intervalo = -1 → refeição/evento, sem horário fixo
 _FREQ_SUGESTOES = [
-    ("1× ao dia",             24),
-    ("2× ao dia",             12),
-    ("3× ao dia",              8),
-    ("4× ao dia",              6),
-    ("A cada 4h",              4),
-    ("A cada 6h",              6),
-    ("A cada 8h",              8),
-    ("A cada 12h",            12),
-    ("Em jejum",              -1),
-    ("Após café da manhã",    -1),
-    ("Após almoço",           -1),
-    ("Após jantar",           -1),
-    ("Após refeições",        -1),
-    ("Conforme necessidade",  -1),
+    # ── Por horario ──────────────────────────────────────────
+    ("1x ao dia",               24, "schedule_rounded"),
+    ("2x ao dia",               12, "schedule_rounded"),
+    ("3x ao dia",                8, "schedule_rounded"),
+    ("4x ao dia",                6, "schedule_rounded"),
+    ("A cada 4 horas",           4, "schedule_rounded"),
+    ("A cada 6 horas",           6, "schedule_rounded"),
+    ("A cada 8 horas",           8, "schedule_rounded"),
+    ("A cada 12 horas",         12, "schedule_rounded"),
+    # ── Por refeicao ─────────────────────────────────────────
+    ("Ao acordar",              -1, "wb_sunny_rounded"),
+    ("Em jejum (antes do cafe)",-1, "free_breakfast_rounded"),
+    ("Apos o cafe da manha",    -1, "free_breakfast_rounded"),
+    ("No lanche da manha",      -1, "lunch_dining_rounded"),
+    ("Antes do almoco",         -1, "restaurant_rounded"),
+    ("Apos o almoco",           -1, "restaurant_rounded"),
+    ("No lanche da tarde",      -1, "lunch_dining_rounded"),
+    ("Antes do jantar",         -1, "dinner_dining_rounded"),
+    ("Apos o jantar",           -1, "dinner_dining_rounded"),
+    ("Antes de dormir",         -1, "bedtime_rounded"),
+    ("Apos as refeicoes",       -1, "restaurant_rounded"),
+    ("Conforme necessidade",    -1, "healing_rounded"),
 ]
 
 _DOS_SUGESTOES = [
@@ -295,15 +299,88 @@ def _build_ficha_remedio(page, remedio, voltar_fn):
     """Ficha de cadastro/edição com estoque, horários, compras, adesão."""
     is_novo = remedio is None
 
-    # ── Médico (autocomplete) ─────────────────────────────
+    # ── Médico (autocomplete + cadastro rapido) ───────────
     medicos    = listar_medicos(so_ativos=True)
-    med_map    = {str(m["id"]): m["nome"] for m in medicos}
-    med_id_sel = [str(remedio.get("medico_id","")) if remedio else None]
+    _medicos   = list(medicos)  # copia mutavel local
+    med_id_sel = [str(remedio.get("medico_id","")) if remedio and remedio.get("medico_id") else None]
 
-    f_medico = _campo("Médico que prescreveu",
-                      med_map.get(med_id_sel[0], "") if med_id_sel[0] else "",
-                      hint="Digite para buscar…")
+    nome_med_ini = ""
+    if med_id_sel[0]:
+        for _m in _medicos:
+            if str(_m["id"]) == med_id_sel[0]:
+                nome_med_ini = _m["nome"]
+                break
+
+    f_medico = _campo("Medico prescritor",
+                      nome_med_ini,
+                      hint="Digite para buscar ou cadastrar…")
     sug_med  = ft.Column(spacing=2, visible=False)
+
+    def _cadastrar_medico_rapido(nome_inicial=""):
+        ref_ov = [None]
+        f_med_nome = _campo("Nome do medico *", nome_inicial)
+        f_med_esp  = _campo("Especialidade", hint="ex: Cardiologia, Clínico Geral…")
+
+        def _fechar(e=None):
+            if ref_ov[0] in page.overlay:
+                page.overlay.remove(ref_ov[0])
+            try: page.update()
+            except Exception: pass
+
+        def _salvar_med(e):
+            nome_str = (f_med_nome.value or "").strip()
+            if not nome_str:
+                return
+            novo_id = salvar_medico({
+                "id": None,
+                "nome": nome_str,
+                "especialidade": (f_med_esp.value or "").strip() or None,
+                "ativo": 1,
+            })
+            novo = {"id": novo_id, "nome": nome_str,
+                    "especialidade": (f_med_esp.value or "").strip()}
+            _medicos.append(novo)
+            f_medico.value = nome_str
+            med_id_sel[0]  = str(novo_id)
+            sug_med.controls.clear()
+            sug_med.visible = False
+            _fechar()
+
+        btn_c = ft.Container(
+            content=ft.Text("Cancelar", size=13, color=SEC),
+            padding=ft.padding.symmetric(horizontal=16, vertical=10),
+            border_radius=8, bgcolor=f"{SEC}22", ink=True,
+        )
+        btn_c.on_click = _fechar
+        btn_s = ft.Container(
+            content=ft.Text("Cadastrar", size=13, color=VERD,
+                            weight=ft.FontWeight.W_600),
+            padding=ft.padding.symmetric(horizontal=16, vertical=10),
+            border_radius=8, bgcolor=f"{VERD}22", ink=True,
+        )
+        btn_s.on_click = _salvar_med
+
+        ref_ov[0] = ft.Container(
+            content=ft.Container(
+                content=ft.Column([
+                    ft.Text("Novo Medico", size=15, color=TXT,
+                            weight=ft.FontWeight.W_700, text_align="center"),
+                    ft.Container(height=6),
+                    f_med_nome, f_med_esp,
+                    ft.Container(height=8),
+                    ft.Row([btn_c, btn_s], spacing=8,
+                           alignment=ft.MainAxisAlignment.CENTER),
+                ], spacing=10, tight=True),
+                bgcolor=CARD, border_radius=14,
+                padding=ft.padding.all(20), width=320,
+            ),
+            bgcolor="#CC000000", expand=True,
+            alignment=ft.Alignment(0, 0),
+        )
+        ref_ov[0].on_click = _fechar
+        page.overlay.append(ref_ov[0])
+        try: page.update()
+        except Exception: pass
 
     def _filtrar_med(e):
         termo = (f_medico.value or "").strip().upper()
@@ -313,32 +390,52 @@ def _build_ficha_remedio(page, remedio, voltar_fn):
             try: page.update()
             except Exception: pass
             return
-        encontrados = [m for m in medicos if termo in m["nome"].upper()][:6]
+        encontrados = [m for m in _medicos if termo in m["nome"].upper()][:6]
         for m in encontrados:
             def _sel(e, med=m):
                 f_medico.value = med["nome"]; med_id_sel[0] = str(med["id"])
                 sug_med.controls.clear(); sug_med.visible = False
                 try: page.update()
                 except Exception: pass
-            especialidade = m.get("especialidade") or ""
-            sug_med.controls.append(ft.Container(
+            esp = m.get("especialidade") or ""
+            item = ft.Container(
                 content=ft.Row([
                     ft.Icon("person_rounded", size=14, color=ROXO),
                     ft.Column([
                         ft.Text(m["nome"], size=13, color=TXT),
-                        ft.Text(especialidade, size=10, color=MUT) if especialidade else ft.Container(),
+                        ft.Text(esp, size=10, color=MUT) if esp else ft.Container(),
                     ], spacing=0, expand=True),
                 ], spacing=8),
                 bgcolor=BD, border_radius=6,
-                padding=ft.padding.symmetric(horizontal=12, vertical=8), on_click=_sel,
-                ink=True))
-        sug_med.visible = bool(encontrados)
+                padding=ft.padding.symmetric(horizontal=12, vertical=8),
+                ink=True,
+            )
+            item.on_click = _sel
+            sug_med.controls.append(item)
+        # botao "Cadastrar" se nao encontrado
+        btn_cad = ft.Container(
+            content=ft.Row([
+                ft.Icon("person_add_rounded", size=14, color=VERD),
+                ft.Text(f'Cadastrar "{(f_medico.value or "").strip()}"',
+                        size=12, color=VERD),
+            ], spacing=8),
+            bgcolor=f"{VERD}18", border_radius=6,
+            padding=ft.padding.symmetric(horizontal=12, vertical=9),
+            ink=True,
+        )
+        btn_cad.on_click = lambda e: _cadastrar_medico_rapido(
+            (f_medico.value or "").strip())
+        sug_med.controls.append(btn_cad)
+        sug_med.visible = True
         try: page.update()
         except Exception: pass
     f_medico.on_change = _filtrar_med
 
-    # ── Nome ──────────────────────────────────────────────
-    f_nome = _campo("Nome do medicamento *", remedio["nome"] if remedio else "")
+    # ── Nome + Principio Ativo ────────────────────────────
+    f_nome = _campo("Nome do remedio/suplemento *", remedio["nome"] if remedio else "")
+    f_pa   = _campo("Principio ativo (generico)",
+                    remedio.get("principio_ativo","") if remedio else "",
+                    hint="ex: losartana, omeprazol, whey protein…")
 
     # ── Dosagem (campo + dropdown de sugestões) ───────────
     f_dos = _campo("Dosagem", remedio.get("dosagem","") if remedio else "",
@@ -465,9 +562,8 @@ def _build_ficha_remedio(page, remedio, voltar_fn):
         except Exception: pass
 
     def _aplicar_freq(freq_label):
-        """Determina intervalo da frequência e reconstrói bloco de horários."""
         iv = None
-        for label, fiv in _FREQ_SUGESTOES:
+        for label, fiv, _ico in _FREQ_SUGESTOES:
             if label.lower() == freq_label.lower():
                 iv = fiv; break
         if iv is None:
@@ -481,23 +577,35 @@ def _build_ficha_remedio(page, remedio, voltar_fn):
     def _abrir_sug_freq(e):
         sug_freq.controls.clear()
         termo = (f_freq.value or "").strip().upper()
-        itens = [(lbl, iv) for lbl, iv in _FREQ_SUGESTOES
+        itens = [(lbl, iv, ico) for lbl, iv, ico in _FREQ_SUGESTOES
                  if not termo or termo in lbl.upper()]
-        for label, iv in itens:
+        ultimo_grupo = None
+        for label, iv, ico in itens:
+            grupo = "horario" if iv > 0 else "refeicao"
+            if grupo != ultimo_grupo:
+                ultimo_grupo = grupo
+                sep_lbl = "POR HORARIO" if grupo == "horario" else "POR REFEICAO"
+                sug_freq.controls.append(ft.Container(
+                    content=ft.Text(sep_lbl, size=9, color=MUT,
+                                    weight=ft.FontWeight.W_700),
+                    padding=ft.padding.only(left=12, top=6, bottom=2),
+                ))
             cor = CORAL if iv > 0 else SEC
             def _sel(e, lbl=label):
                 f_freq.value = lbl
                 sug_freq.controls.clear(); sug_freq.visible = False
                 _aplicar_freq(lbl)
-            sug_freq.controls.append(ft.Container(
+            item = ft.Container(
                 content=ft.Row([
-                    ft.Icon("schedule_rounded" if iv > 0 else "restaurant_rounded", size=14,
-                            color=cor),
+                    ft.Icon(ico, size=14, color=cor),
                     ft.Text(label, size=13, color=cor),
                 ], spacing=8),
                 bgcolor=BD, border_radius=6,
                 padding=ft.padding.symmetric(horizontal=12, vertical=9),
-                on_click=_sel, ink=True))
+                ink=True,
+            )
+            item.on_click = _sel
+            sug_freq.controls.append(item)
         sug_freq.visible = bool(sug_freq.controls)
         try: page.update()
         except Exception: pass
@@ -514,12 +622,31 @@ def _build_ficha_remedio(page, remedio, voltar_fn):
         _rebuild_bloco_horarios()
 
     # ── Período ───────────────────────────────────────────
-    f_ini = _campo("Início", remedio.get("data_inicio","") if remedio else "",
-                   hint="DD/MM/AAAA", largura=150)
-    f_fim = _campo("Fim", remedio.get("data_fim","") if remedio else "",
-                   hint="DD/MM/AAAA", largura=150)
+    _data_fim_raw = remedio.get("data_fim","") if remedio else ""
+    _continuo_ini = (_data_fim_raw == "continuo")
+
+    f_ini = _campo("Inicio", remedio.get("data_inicio","") if remedio else "",
+                   hint="DD/MM/AAAA", largura=140)
+    f_fim = _campo("Fim previsto", "" if _continuo_ini else _data_fim_raw,
+                   hint="DD/MM/AAAA", largura=140)
     _mask_data(f_ini)
     _mask_data(f_fim)
+
+    sw_continuo = ft.Switch(
+        label="Uso continuo",
+        value=_continuo_ini,
+        active_color=VERD,
+        label_style=ft.TextStyle(color=SEC, size=12),
+    )
+    row_fim = ft.Row([f_fim], visible=not _continuo_ini)
+
+    def _on_continuo(e):
+        row_fim.visible = not sw_continuo.value
+        if sw_continuo.value:
+            f_fim.value = ""
+        try: page.update()
+        except Exception: pass
+    sw_continuo.on_change = _on_continuo
 
     # ── Observações ───────────────────────────────────────
     f_obs  = _campo("Observações", remedio.get("observacoes","") if remedio else "",
@@ -734,16 +861,19 @@ def _build_ficha_remedio(page, remedio, voltar_fn):
             except Exception: pass
             return
 
+        data_fim_val = "continuo" if sw_continuo.value else (f_fim.value.strip() or None)
         dados = {
             "id": remedio["id"] if remedio else None,
-            "nome": f_nome.value.strip(), "dosagem": f_dos.value.strip() or None,
+            "nome": f_nome.value.strip(),
+            "dosagem": f_dos.value.strip() or None,
             "frequencia": f_freq.value.strip() or None,
             "data_inicio": f_ini.value.strip() or None,
-            "data_fim": f_fim.value.strip() or None,
+            "data_fim": data_fim_val,
             "medico_id": int(med_id_sel[0]) if med_id_sel[0] else None,
             "estoque_atual": est, "estoque_minimo": mn,
             "observacoes": f_obs.value.strip() or None,
             "ativo": 1 if sw_ativo.value else 0,
+            "principio_ativo": f_pa.value.strip() or None,
         }
         rid = salvar_remedio(dados)
 
@@ -756,46 +886,31 @@ def _build_ficha_remedio(page, remedio, voltar_fn):
         voltar_fn()
 
     # ── Layout da ficha ───────────────────────────────────
-    titulo = "Novo Remédio" if is_novo else "Editar Remédio"
-    larg = page.width or 0
+    titulo = "Novo Remedio/Suplemento" if is_novo else "Editar"
+    larg   = page.width or 0
+    lay    = Layout(page)
 
-    cabecalho = ft.Container(
+    btn_salvar_ficha = ft.Container(
         content=ft.Row([
-            ft.Container(
-                content=ft.Row([
-                    ft.Icon("arrow_back_rounded", size=16),
-                    ft.Text("Voltar", size=13),
-                ], spacing=4, tight=True),
-                padding=ft.padding.symmetric(horizontal=8, vertical=8),
-                ink=True,
-                on_click=lambda e: voltar_fn(),
-            ),
-            ft.Row([
-                ft.Icon("medication_rounded", size=18, color=AMAR),
-                ft.Text(titulo, size=16, weight=ft.FontWeight.W_700, color=TXT),
-            ], spacing=8, tight=True),
-            ft.Container(expand=True),
-            ft.FilledButton(
-                content=ft.Row([
-                    ft.Icon("save_rounded", size=16),
-                    ft.Text("Salvar", size=13),
-                ], spacing=6, tight=True),
-                style=ft.ButtonStyle(
-                    bgcolor=VERD,
-                    shape=ft.RoundedRectangleBorder(radius=8),
-                    padding=ft.padding.symmetric(horizontal=18, vertical=10),
-                ),
-                on_click=_salvar,
-            ),
-        ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
-        padding=ft.padding.symmetric(horizontal=16, vertical=12),
-        border=ft.Border(bottom=ft.BorderSide(1, BD)),
+            ft.Icon("save_rounded", size=14, color=VERD),
+            ft.Text("Salvar", size=13, color=VERD),
+        ], spacing=4, tight=True),
+        padding=ft.padding.symmetric(horizontal=12, vertical=8),
+        border_radius=8, ink=True,
+    )
+    btn_salvar_ficha.on_click = _salvar
+    cabecalho = lay.criar_cabecalho(
+        titulo, voltar_fn,
+        icone_titulo="medication_rounded",
+        cor_titulo=AMAR,
+        acoes=[btn_salvar_ficha],
     )
 
     campos_col = ft.Column([
-        # ── NOME ──────────────────────────────────────────
-        _label_sec("IDENTIFICAÇÃO"),
+        # ── NOME + PRINCIPIO ATIVO ────────────────────────
+        _label_sec("IDENTIFICACAO"),
         f_nome,
+        f_pa,
 
         # ── DOSAGEM ───────────────────────────────────────
         ft.Container(height=4),
@@ -810,13 +925,15 @@ def _build_ficha_remedio(page, remedio, voltar_fn):
 
         # ── MÉDICO ────────────────────────────────────────
         ft.Container(height=4),
-        _label_sec("MÉDICO QUE PRESCREVEU"),
+        _label_sec("MEDICO PRESCRITOR"),
         ft.Column([f_medico, sug_med], spacing=0),
 
         # ── PERÍODO ───────────────────────────────────────
         ft.Container(height=4),
-        _label_sec("PERÍODO DE USO"),
-        ft.Row([f_ini, f_fim], spacing=8),
+        _label_sec("PERIODO DE USO"),
+        ft.Row([sw_continuo], spacing=8),
+        ft.Row([f_ini], spacing=8),
+        row_fim,
 
         # ── ESTOQUE ───────────────────────────────────────
         ft.Container(height=4),
@@ -838,19 +955,11 @@ def _build_ficha_remedio(page, remedio, voltar_fn):
         ft.Container(height=8), sw_ativo, txt_erro,
     ], spacing=6, scroll=ft.ScrollMode.AUTO)
 
-    if larg > 500:
-        corpo_campos = ft.Row([
-            ft.Container(expand=True),
-            ft.Container(content=campos_col, width=480, padding=ft.padding.all(16)),
-            ft.Container(expand=True),
-        ], expand=True)
-    else:
-        corpo_campos = ft.Container(
-            content=campos_col, padding=ft.padding.all(16), expand=True)
-
-    corpo_ficha = ft.Column([cabecalho, corpo_campos], expand=True, spacing=0)
-
-    return ft.Container(bgcolor=BG, expand=True, content=corpo_ficha)
+    corpo_ficha = lay.criar_corpo(
+        cabecalho, campos_col,
+        padding_area=ft.padding.all(16),
+    )
+    return lay.wrap(ft.Container(bgcolor=BG, expand=True, content=corpo_ficha))
 
 
 # ══════════════════════════════════════════════════════════════
@@ -904,9 +1013,13 @@ def _lista_remedios(page, abrir_ficha_fn):
                         ft.Column([
                             ft.Text(r["nome"], size=13, color=TXT, weight=ft.FontWeight.W_600),
                             ft.Row([
+                                ft.Text(r.get("principio_ativo") or "", size=10, color=MUT),
+                            ], spacing=4) if r.get("principio_ativo") else ft.Container(),
+                            ft.Row([
                                 ft.Text(r.get("dosagem") or "", size=11, color=SEC),
                                 ft.Text("·" if r.get("dosagem") and r.get("frequencia") else "", size=11, color=MUT),
                                 ft.Text(r.get("frequencia") or "", size=11, color=SEC),
+                                ft.Text("· Continuo", size=10, color=VERD) if r.get("data_fim") == "continuo" else ft.Container(),
                             ], spacing=4),
                             ft.Text(r.get("medico") or "", size=10, color=ROXO),
                         ], spacing=2, expand=True),
@@ -947,7 +1060,7 @@ def _lista_remedios(page, abrir_ficha_fn):
                 ft.FilledButton(
                     content=ft.Row([
                         ft.Icon("add_rounded", size=16),
-                        ft.Text("Novo Remédio", size=13),
+                        ft.Text("Novo", size=13),
                     ], spacing=6, tight=True),
                     style=ft.ButtonStyle(
                         bgcolor=VERD,
@@ -1298,44 +1411,21 @@ def criar_tela_remedios(page: ft.Page, voltar_fn):
     _rebuild_abas()
     _rebuild_conteudo()
 
-    cabecalho = ft.Container(
-        content=ft.Row([
-            ft.Container(
-                content=ft.Row([
-                    ft.Icon("arrow_back_rounded", size=16),
-                    ft.Text("Voltar", size=13),
-                ], spacing=4, tight=True),
-                padding=ft.padding.symmetric(horizontal=8, vertical=8),
-                ink=True,
-                on_click=lambda e: voltar_fn(),
-            ),
-            ft.Row([
-                ft.Icon("medication_rounded", size=20, color=AMAR),
-                ft.Text("Remédios", size=18,
-                        weight=ft.FontWeight.W_700, color=TXT),
-            ], spacing=8, tight=True),
-            ft.Container(expand=True),
-        ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
-        padding=ft.padding.symmetric(horizontal=16, vertical=14),
-        border=ft.Border(bottom=ft.BorderSide(1, BD)),
+    lay = Layout(page)
+    cabecalho = lay.criar_cabecalho(
+        "Remedio / Suplemento", voltar_fn,
+        icone_titulo="medication_rounded",
+        cor_titulo=AMAR,
     )
 
     corpo = ft.Column([
+        ft.Container(height=lay.spacer_topo, bgcolor=BG),
         cabecalho,
         ft.Container(content=barra_abas,
                      border=ft.Border(bottom=ft.BorderSide(1, BD))),
         ft.Container(content=area, padding=ft.padding.all(16), expand=True),
-    ], expand=True)
+    ], expand=True, spacing=0)
 
-    if larg > 500:
-        conteudo_final = ft.Row([
-            ft.Container(expand=True),
-            ft.Container(content=corpo, width=480),
-            ft.Container(expand=True),
-        ], expand=True)
-    else:
-        conteudo_final = corpo
-
-    tela_principal = ft.Container(bgcolor=BG, expand=True, content=conteudo_final)
+    tela_principal = lay.wrap(ft.Container(bgcolor=BG, expand=True, content=corpo))
     logger.info("[REMEDIOS] tela_principal montada, retornando")
     return tela_principal
