@@ -437,6 +437,45 @@ def _build_ficha_remedio(page, remedio, voltar_fn):
                     remedio.get("principio_ativo","") if remedio else "",
                     hint="ex: losartana, omeprazol, whey protein…")
 
+    # ── Tipo (remedio / suplemento) + Prescrito ───────────
+    _tipo_ini      = remedio.get("tipo","remedio") == "suplemento" if remedio else False
+    _prescrito_ini = bool(remedio.get("prescrito", 0)) if remedio else False
+
+    sw_tipo = ft.Switch(
+        label="Suplemento (nao prescrito por medico por default)",
+        value=_tipo_ini, active_color=ROXO, label_style=ft.TextStyle(color=SEC, size=12),
+    )
+    sw_prescrito = ft.Switch(
+        label="Prescrito pelo medico",
+        value=_prescrito_ini, active_color=AZUL, label_style=ft.TextStyle(color=SEC, size=12),
+    )
+    bloco_medico = ft.Container(
+        content=ft.Column([
+            ft.Container(height=4),
+            _label_sec("MEDICO PRESCRITOR"),
+            ft.Column([f_medico, sug_med], spacing=0),
+        ], spacing=6),
+        visible=_prescrito_ini,
+    )
+
+    def _on_prescrito(e):
+        bloco_medico.visible = sw_prescrito.value
+        # Se desativar prescrito, limpar medico
+        if not sw_prescrito.value:
+            f_medico.value = ""
+            med_id_sel[0] = None
+        try: page.update()
+        except Exception: pass
+    sw_prescrito.on_change = _on_prescrito
+
+    def _on_tipo(e):
+        # Suplemento raramente e prescrito — sugerir desligar prescrito
+        if sw_tipo.value and sw_prescrito.value:
+            pass  # manter a escolha do usuario
+        try: page.update()
+        except Exception: pass
+    sw_tipo.on_change = _on_tipo
+
     # ── Dosagem (campo + dropdown de sugestões) ───────────
     f_dos = _campo("Dosagem", remedio.get("dosagem","") if remedio else "",
                    hint="ex: 500mg, 1 comprimido, 5ml…")
@@ -869,11 +908,13 @@ def _build_ficha_remedio(page, remedio, voltar_fn):
             "frequencia": f_freq.value.strip() or None,
             "data_inicio": f_ini.value.strip() or None,
             "data_fim": data_fim_val,
-            "medico_id": int(med_id_sel[0]) if med_id_sel[0] else None,
+            "medico_id": int(med_id_sel[0]) if med_id_sel[0] and sw_prescrito.value else None,
             "estoque_atual": est, "estoque_minimo": mn,
             "observacoes": f_obs.value.strip() or None,
             "ativo": 1 if sw_ativo.value else 0,
             "principio_ativo": f_pa.value.strip() or None,
+            "tipo": "suplemento" if sw_tipo.value else "remedio",
+            "prescrito": 1 if sw_prescrito.value else 0,
         }
         rid = salvar_remedio(dados)
 
@@ -911,6 +952,8 @@ def _build_ficha_remedio(page, remedio, voltar_fn):
         _label_sec("IDENTIFICACAO"),
         f_nome,
         f_pa,
+        ft.Row([sw_tipo], spacing=8),
+        ft.Row([sw_prescrito], spacing=8),
 
         # ── DOSAGEM ───────────────────────────────────────
         ft.Container(height=4),
@@ -923,10 +966,8 @@ def _build_ficha_remedio(page, remedio, voltar_fn):
         ft.Column([f_freq, sug_freq], spacing=0),
         bloco_horarios,
 
-        # ── MÉDICO ────────────────────────────────────────
-        ft.Container(height=4),
-        _label_sec("MEDICO PRESCRITOR"),
-        ft.Column([f_medico, sug_med], spacing=0),
+        # ── MÉDICO (visivel so se prescrito) ──────────────
+        bloco_medico,
 
         # ── PERÍODO ───────────────────────────────────────
         ft.Container(height=4),
@@ -1011,7 +1052,14 @@ def _lista_remedios(page, abrir_ficha_fn):
                             bgcolor=f"{cor}1A", border_radius=10, width=44, height=44,
                             alignment=ft.alignment.Alignment(0, 0)),
                         ft.Column([
-                            ft.Text(r["nome"], size=13, color=TXT, weight=ft.FontWeight.W_600),
+                            ft.Row([
+                                ft.Text(r["nome"], size=13, color=TXT, weight=ft.FontWeight.W_600),
+                                ft.Container(
+                                    content=ft.Text("SUPL", size=8, color=ROXO, weight=ft.FontWeight.W_700),
+                                    bgcolor=f"{ROXO}22", border_radius=4,
+                                    padding=ft.padding.symmetric(horizontal=4, vertical=1),
+                                ) if r.get("tipo") == "suplemento" else ft.Container(),
+                            ], spacing=6, tight=True),
                             ft.Row([
                                 ft.Text(r.get("principio_ativo") or "", size=10, color=MUT),
                             ], spacing=4) if r.get("principio_ativo") else ft.Container(),

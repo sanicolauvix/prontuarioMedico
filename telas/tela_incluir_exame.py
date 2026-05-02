@@ -1373,46 +1373,19 @@ def criar_tela_incluir_exame(page: ft.Page, voltar_fn):
     # ══════════════════════════════════════════════════════════
     area.controls.extend(_tela_selecao())
 
-    btn_voltar = ft.Container(
-        content=ft.Row([
-            ft.Icon("arrow_back_rounded", size=14, color=SEC),
-            ft.Text("Voltar", size=12, color=SEC),
-        ], spacing=4, tight=True),
-        padding=ft.padding.symmetric(horizontal=8, vertical=8),
-        ink=True,
-        on_click=lambda e: voltar_fn(),
+    from shared.layout import Layout
+    lay = Layout(page)
+    cabecalho = lay.criar_cabecalho(
+        "Incluir Exame", voltar_fn,
+        icone_titulo="upload_file_rounded",
+        cor_titulo=AZUL,
     )
-
     corpo = ft.Column([
-        ft.Container(
-            content=ft.Row([
-                btn_voltar,
-                ft.Row([
-                    ft.Icon("upload_file_rounded", size=20, color=AZUL),
-                    ft.Text("Incluir Exame", size=18,
-                            weight=ft.FontWeight.W_700, color=TXT),
-                ], spacing=8, tight=True),
-                ft.Container(expand=True),
-            ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
-            padding=ft.padding.symmetric(horizontal=16, vertical=14),
-            border=ft.Border(bottom=ft.BorderSide(1, BD)),
-        ),
-        ft.Container(
-            content=area,
-            padding=ft.padding.all(16),
-            expand=True,
-        ),
-    ], expand=True)
+        ft.Container(height=lay.spacer_topo, bgcolor=BG),
+        cabecalho,
+        ft.Container(content=area, padding=ft.padding.all(16), expand=True),
+    ], expand=True, spacing=0)
 
-    if larg > 500:
-        conteudo_final = ft.Row([
-            ft.Container(expand=True),
-            ft.Container(content=corpo, width=480),
-            ft.Container(expand=True),
-        ], expand=True)
-    else:
-        conteudo_final = corpo
-
-    return ft.Container(bgcolor=BG, expand=True, content=conteudo_final)
+    return ft.Container(bgcolor=BG, expand=True, content=lay.wrap(corpo))
 # Alias para compatibilidade com código legado
 tela_incluir_exame = criar_tela_incluir_exame

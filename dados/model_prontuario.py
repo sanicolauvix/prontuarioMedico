@@ -138,6 +138,62 @@ def _migrar_marcadores():
         print(f"[MODEL] _migrar_marcadores: {ex}")
 
 
+def _migrar_tipo_prescrito():
+    """Adiciona tipo (remedio/suplemento) e prescrito (0/1) em remedios."""
+    try:
+        with sqlite3.connect(DB_PATH, timeout=30) as conn:
+            cols = [r[1] for r in conn.execute("PRAGMA table_info(remedios)").fetchall()]
+            if "tipo" not in cols:
+                conn.execute("ALTER TABLE remedios ADD COLUMN tipo TEXT DEFAULT 'remedio'")
+                print("[MODEL] coluna tipo adicionada em remedios")
+            if "prescrito" not in cols:
+                conn.execute("ALTER TABLE remedios ADD COLUMN prescrito INTEGER DEFAULT 0")
+                print("[MODEL] coluna prescrito adicionada em remedios")
+    except Exception as ex:
+        print(f"[MODEL] _migrar_tipo_prescrito: {ex}")
+
+
+def _criar_rotinas():
+    """Cria tabelas de rotinas diarias (templates, momentos, itens)."""
+    try:
+        with sqlite3.connect(DB_PATH, timeout=30) as conn:
+            conn.executescript("""
+                CREATE TABLE IF NOT EXISTS rotinas_templates (
+                    id        INTEGER PRIMARY KEY AUTOINCREMENT,
+                    nome      TEXT NOT NULL,
+                    icone     TEXT DEFAULT 'today_rounded',
+                    cor       TEXT DEFAULT '#58A6FF',
+                    padrao    INTEGER DEFAULT 0,
+                    ativo     INTEGER DEFAULT 1,
+                    criado_em TEXT DEFAULT (datetime('now'))
+                );
+
+                CREATE TABLE IF NOT EXISTS momentos_rotina (
+                    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                    template_id INTEGER NOT NULL REFERENCES rotinas_templates(id) ON DELETE CASCADE,
+                    nome        TEXT NOT NULL,
+                    tipo        TEXT DEFAULT 'outro',
+                    horario     TEXT,
+                    ordem       INTEGER DEFAULT 0,
+                    criado_em   TEXT DEFAULT (datetime('now'))
+                );
+
+                CREATE TABLE IF NOT EXISTS itens_momento (
+                    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                    momento_id INTEGER NOT NULL REFERENCES momentos_rotina(id) ON DELETE CASCADE,
+                    tipo       TEXT NOT NULL DEFAULT 'alimento',
+                    descricao  TEXT NOT NULL,
+                    detalhe    TEXT,
+                    horario    TEXT,
+                    remedio_id INTEGER REFERENCES remedios(id),
+                    ordem      INTEGER DEFAULT 0,
+                    criado_em  TEXT DEFAULT (datetime('now'))
+                );
+            """)
+    except Exception as ex:
+        print(f"[MODEL] _criar_rotinas: {ex}")
+
+
 def _migrar_pai_id():
     """Adiciona pai_id em resultados_estruturados para sub-resultados (ex: eRFG filho de Creatinina)."""
     try:
@@ -716,6 +772,8 @@ def criar_tabelas():
     _migrar_medicos()
     _migrar_principio_ativo()
     _migrar_marcadores()
+    _migrar_tipo_prescrito()
+    _criar_rotinas()
     # Registrar módulo no core
     try:
         _conn = sqlite3.connect(CORE_DB, timeout=30)
@@ -1765,7 +1823,9 @@ def listar_remedios(so_ativos=True) -> list[dict]:
             SELECT r.id, r.nome, r.dosagem, r.frequencia, r.data_inicio, r.data_fim,
                    r.estoque_atual, r.estoque_minimo, r.observacoes, r.ativo,
                    m.nome as medico, r.medico_id,
-                   COALESCE(r.principio_ativo, '') as principio_ativo
+                   COALESCE(r.principio_ativo, '') as principio_ativo,
+                   COALESCE(r.tipo, 'remedio') as tipo,
+                   COALESCE(r.prescrito, 0) as prescrito
             FROM remedios r
             LEFT JOIN medicos m ON m.id = r.medico_id
             {where}
@@ -1773,7 +1833,7 @@ def listar_remedios(so_ativos=True) -> list[dict]:
         """)
         cols = ["id","nome","dosagem","frequencia","data_inicio","data_fim",
                 "estoque_atual","estoque_minimo","observacoes","ativo","medico",
-                "medico_id","principio_ativo"]
+                "medico_id","principio_ativo","tipo","prescrito"]
         rows = cur.fetchall()
         return [dict(zip(cols, r)) for r in rows]
     finally:
@@ -1788,25 +1848,29 @@ def salvar_remedio(dados: dict) -> int:
             cur.execute("""
                 UPDATE remedios SET nome=?, dosagem=?, frequencia=?, data_inicio=?,
                 data_fim=?, medico_id=?, receita_id=?, estoque_atual=?,
-                estoque_minimo=?, ativo=?, observacoes=?, principio_ativo=? WHERE id=?
+                estoque_minimo=?, ativo=?, observacoes=?, principio_ativo=?,
+                tipo=?, prescrito=? WHERE id=?
             """, (dados["nome"], dados.get("dosagem"), dados.get("frequencia"),
                   dados.get("data_inicio"), dados.get("data_fim"),
                   dados.get("medico_id"), dados.get("receita_id"),
                   dados.get("estoque_atual", 0), dados.get("estoque_minimo", 5),
                   dados.get("ativo", 1), dados.get("observacoes"),
-                  dados.get("principio_ativo"), dados["id"]))
+                  dados.get("principio_ativo"),
+                  dados.get("tipo", "remedio"), dados.get("prescrito", 0),
+                  dados["id"]))
             rid = dados["id"]
         else:
             cur.execute("""
                 INSERT INTO remedios (nome, dosagem, frequencia, data_inicio, data_fim,
                 medico_id, receita_id, estoque_atual, estoque_minimo, observacoes,
-                principio_ativo)
-                VALUES (?,?,?,?,?,?,?,?,?,?,?)
+                principio_ativo, tipo, prescrito)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
             """, (dados["nome"], dados.get("dosagem"), dados.get("frequencia"),
                   dados.get("data_inicio"), dados.get("data_fim"),
                   dados.get("medico_id"), dados.get("receita_id"),
                   dados.get("estoque_atual", 0), dados.get("estoque_minimo", 5),
-                  dados.get("observacoes"), dados.get("principio_ativo")))
+                  dados.get("observacoes"), dados.get("principio_ativo"),
+                  dados.get("tipo", "remedio"), dados.get("prescrito", 0)))
             rid = cur.lastrowid
         conn.commit()
         return rid
@@ -2917,6 +2981,153 @@ def tags_frequentes(dias=90, top=10):
     except Exception as ex:
         _logger_model.error("tags_frequentes: %s", str(ex), exc_info=True)
         return []
+
+
+# ══════════════════════════════════════════════════════════════
+# HELPERS — ROTINAS DIARIAS
+# ══════════════════════════════════════════════════════════════
+
+def listar_templates(so_ativos=True) -> list[dict]:
+    try:
+        with sqlite3.connect(DB_PATH, timeout=10) as conn:
+            where = "WHERE ativo=1" if so_ativos else ""
+            rows = conn.execute(f"""
+                SELECT t.id, t.nome, t.icone, t.cor, t.padrao, t.ativo,
+                       COUNT(m.id) as total_momentos
+                FROM rotinas_templates t
+                LEFT JOIN momentos_rotina m ON m.template_id = t.id
+                {where}
+                GROUP BY t.id ORDER BY t.padrao DESC, t.nome
+            """).fetchall()
+            cols = ["id","nome","icone","cor","padrao","ativo","total_momentos"]
+            return [dict(zip(cols, r)) for r in rows]
+    except Exception as ex:
+        print(f"[MODEL] listar_templates: {ex}")
+        return []
+
+
+def salvar_template(dados: dict) -> int:
+    try:
+        with sqlite3.connect(DB_PATH, timeout=10) as conn:
+            if dados.get("id"):
+                conn.execute("""UPDATE rotinas_templates SET nome=?, icone=?, cor=?, padrao=?, ativo=?
+                    WHERE id=?""",
+                    (dados["nome"], dados.get("icone","today_rounded"),
+                     dados.get("cor","#58A6FF"), 1 if dados.get("padrao") else 0,
+                     1 if dados.get("ativo", True) else 0, dados["id"]))
+                return dados["id"]
+            else:
+                cur = conn.execute("""INSERT INTO rotinas_templates (nome,icone,cor,padrao,ativo)
+                    VALUES (?,?,?,?,?)""",
+                    (dados["nome"], dados.get("icone","today_rounded"),
+                     dados.get("cor","#58A6FF"), 1 if dados.get("padrao") else 0, 1))
+                return cur.lastrowid
+    except Exception as ex:
+        print(f"[MODEL] salvar_template: {ex}")
+        return 0
+
+
+def excluir_template(tid: int) -> None:
+    try:
+        with sqlite3.connect(DB_PATH, timeout=10) as conn:
+            conn.execute("DELETE FROM rotinas_templates WHERE id=?", (tid,))
+    except Exception as ex:
+        print(f"[MODEL] excluir_template: {ex}")
+
+
+def listar_momentos(template_id: int) -> list[dict]:
+    try:
+        with sqlite3.connect(DB_PATH, timeout=10) as conn:
+            rows = conn.execute("""
+                SELECT m.id, m.nome, m.tipo, m.horario, m.ordem,
+                       COUNT(i.id) as total_itens
+                FROM momentos_rotina m
+                LEFT JOIN itens_momento i ON i.momento_id = m.id
+                WHERE m.template_id=?
+                GROUP BY m.id ORDER BY m.ordem, m.horario
+            """, (template_id,)).fetchall()
+            cols = ["id","nome","tipo","horario","ordem","total_itens"]
+            return [dict(zip(cols, r)) for r in rows]
+    except Exception as ex:
+        print(f"[MODEL] listar_momentos: {ex}")
+        return []
+
+
+def salvar_momento(dados: dict) -> int:
+    try:
+        with sqlite3.connect(DB_PATH, timeout=10) as conn:
+            if dados.get("id"):
+                conn.execute("""UPDATE momentos_rotina SET nome=?, tipo=?, horario=?, ordem=?
+                    WHERE id=?""",
+                    (dados["nome"], dados.get("tipo","outro"),
+                     dados.get("horario"), dados.get("ordem", 0), dados["id"]))
+                return dados["id"]
+            else:
+                cur = conn.execute("""INSERT INTO momentos_rotina (template_id,nome,tipo,horario,ordem)
+                    VALUES (?,?,?,?,?)""",
+                    (dados["template_id"], dados["nome"], dados.get("tipo","outro"),
+                     dados.get("horario"), dados.get("ordem", 0)))
+                return cur.lastrowid
+    except Exception as ex:
+        print(f"[MODEL] salvar_momento: {ex}")
+        return 0
+
+
+def excluir_momento(mid: int) -> None:
+    try:
+        with sqlite3.connect(DB_PATH, timeout=10) as conn:
+            conn.execute("DELETE FROM momentos_rotina WHERE id=?", (mid,))
+    except Exception as ex:
+        print(f"[MODEL] excluir_momento: {ex}")
+
+
+def listar_itens(momento_id: int) -> list[dict]:
+    try:
+        with sqlite3.connect(DB_PATH, timeout=10) as conn:
+            rows = conn.execute("""
+                SELECT i.id, i.tipo, i.descricao, i.detalhe, i.horario, i.ordem,
+                       r.nome as remedio_nome, r.dosagem as remedio_dosagem
+                FROM itens_momento i
+                LEFT JOIN remedios r ON r.id = i.remedio_id
+                WHERE i.momento_id=? ORDER BY i.ordem, i.id
+            """, (momento_id,)).fetchall()
+            cols = ["id","tipo","descricao","detalhe","horario","ordem",
+                    "remedio_nome","remedio_dosagem"]
+            return [dict(zip(cols, r)) for r in rows]
+    except Exception as ex:
+        print(f"[MODEL] listar_itens: {ex}")
+        return []
+
+
+def salvar_item(dados: dict) -> int:
+    try:
+        with sqlite3.connect(DB_PATH, timeout=10) as conn:
+            if dados.get("id"):
+                conn.execute("""UPDATE itens_momento SET tipo=?, descricao=?, detalhe=?,
+                    horario=?, remedio_id=?, ordem=? WHERE id=?""",
+                    (dados.get("tipo","alimento"), dados["descricao"],
+                     dados.get("detalhe"), dados.get("horario"),
+                     dados.get("remedio_id"), dados.get("ordem", 0), dados["id"]))
+                return dados["id"]
+            else:
+                cur = conn.execute("""INSERT INTO itens_momento
+                    (momento_id,tipo,descricao,detalhe,horario,remedio_id,ordem)
+                    VALUES (?,?,?,?,?,?,?)""",
+                    (dados["momento_id"], dados.get("tipo","alimento"), dados["descricao"],
+                     dados.get("detalhe"), dados.get("horario"),
+                     dados.get("remedio_id"), dados.get("ordem", 0)))
+                return cur.lastrowid
+    except Exception as ex:
+        print(f"[MODEL] salvar_item: {ex}")
+        return 0
+
+
+def excluir_item(iid: int) -> None:
+    try:
+        with sqlite3.connect(DB_PATH, timeout=10) as conn:
+            conn.execute("DELETE FROM itens_momento WHERE id=?", (iid,))
+    except Exception as ex:
+        print(f"[MODEL] excluir_item: {ex}")
 
 
 if __name__ == "__main__":

@@ -14,6 +14,9 @@ BG     = "#0D1117"
 TXT    = "#E6EDF3"
 MUT    = "#8B949E"
 
+# Flag de modulo: persiste entre reconexoes do WebSocket (app voltando do background)
+_app_ja_iniciou = [False]
+
 
 def main(page: ft.Page):
     page.title      = "Prontuario Medico"
@@ -64,12 +67,23 @@ def main(page: ft.Page):
     ))
 
     def _abrir_prontuario():
+        _app_ja_iniciou[0] = True
         try:
             from app import criar_tela_prontuario
             _nav(criar_tela_prontuario(page, voltar_fn=None))
         except Exception as ex:
             import traceback
             _tela_erro(f"Erro ao abrir prontuario:\n{traceback.format_exc()[-400:]}")
+
+    # Reconexao apos background: pular splash, ir direto para o app
+    if _app_ja_iniciou[0]:
+        try:
+            from shared.auth import verificar_sessao_ativa
+            if verificar_sessao_ativa():
+                _abrir_prontuario()
+                return
+        except Exception:
+            pass
 
     def _iniciar():
         try:
