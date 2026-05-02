@@ -1,8 +1,10 @@
 # -*- coding: utf-8 -*-
-"""prontuario/telas/tela_perfil.py — Perfil do usuário."""
-
+# Prontuario | telas/tela_perfil.py
 import flet as ft
 import logging
+import threading
+
+from shared.layout import Layout
 
 BG   = "#0D1117"
 CARD = "#161B22"
@@ -141,35 +143,209 @@ def criar_tela_perfil(page: ft.Page, voltar_fn=None):
             logging.exception("[PERFIL] Erro ao salvar")
         _atualizar_ui()
 
-    # ── Header ────────────────────────────────────────────────────
-    header = ft.Container(
+    # ── Backup / Restore ─────────────────────────────────────────
+    txt_backup_status = ft.Text("", size=12, color=SEC)
+    txt_backup_hist   = ft.Text("", size=11, color=MUT)
+    progress_backup   = ft.ProgressBar(visible=False, color=AZUL, bgcolor=BD)
+
+    def _upd_backup():
+        if _montado[0]:
+            try: page.update()
+            except Exception: pass
+
+    def _carregar_hist_backup():
+        try:
+            from backup.drive_backup import carregar_historico
+            hist = carregar_historico()
+            if hist:
+                ult = hist[0]
+                txt_backup_hist.value = f"Ultimo: {ult.get('data_fmt', '—')}  ({ult.get('enviados',0)} banco(s))"
+            else:
+                txt_backup_hist.value = "Nenhum backup registrado."
+        except Exception:
+            txt_backup_hist.value = ""
+        _upd_backup()
+
+    def _fazer_backup(e):
+        progress_backup.visible = True
+        txt_backup_status.value = "Conectando ao Drive..."
+        txt_backup_status.color = AZUL
+        _upd_backup()
+
+        def _run():
+            try:
+                from backup.drive_backup import fazer_backup
+                ok, msg = fazer_backup(
+                    forcar=True,
+                    callback_progresso=lambda m: (
+                        setattr(txt_backup_status, "value", m[:70]),
+                        _upd_backup(),
+                    ),
+                )
+                txt_backup_status.value = msg[:70]
+                txt_backup_status.color = VERD if ok else VERM
+                if ok:
+                    _carregar_hist_backup()
+            except Exception as ex:
+                txt_backup_status.value = f"Erro: {str(ex)[:60]}"
+                txt_backup_status.color = VERM
+            finally:
+                progress_backup.visible = False
+                _upd_backup()
+
+        threading.Thread(target=_run, daemon=True).start()
+
+    def _restaurar(e):
+        ref_ov = [None]
+
+        def _fechar(ev=None):
+            if ref_ov[0] in page.overlay:
+                page.overlay.remove(ref_ov[0])
+            try: page.update()
+            except Exception: pass
+
+        def _confirmar(ev):
+            _fechar()
+            progress_backup.visible = True
+            txt_backup_status.value = "Restaurando..."
+            txt_backup_status.color = AMAR
+            _upd_backup()
+
+            def _run():
+                try:
+                    from backup.drive_backup import restaurar_backup_completo
+                    ok, msg = restaurar_backup_completo(
+                        callback_progresso=lambda m: (
+                            setattr(txt_backup_status, "value", m[:70]),
+                            _upd_backup(),
+                        ),
+                    )
+                    txt_backup_status.value = msg[:70]
+                    txt_backup_status.color = VERD if ok else VERM
+                    if ok:
+                        _carregar_hist_backup()
+                except Exception as ex:
+                    txt_backup_status.value = f"Erro: {str(ex)[:60]}"
+                    txt_backup_status.color = VERM
+                finally:
+                    progress_backup.visible = False
+                    _upd_backup()
+
+            threading.Thread(target=_run, daemon=True).start()
+
+        btn_cancel = ft.Container(
+            content=ft.Text("Cancelar", size=13, color=SEC),
+            padding=ft.padding.symmetric(horizontal=16, vertical=10),
+            border_radius=8, bgcolor=f"{SEC}22", ink=True,
+        )
+        btn_cancel.on_click = _fechar
+
+        btn_ok = ft.Container(
+            content=ft.Text("Restaurar", size=13, color=VERM,
+                            weight=ft.FontWeight.W_600),
+            padding=ft.padding.symmetric(horizontal=16, vertical=10),
+            border_radius=8, bgcolor=f"{VERM}22", ink=True,
+        )
+        btn_ok.on_click = _confirmar
+
+        ref_ov[0] = ft.Container(
+            content=ft.Container(
+                content=ft.Column([
+                    ft.Text("Restaurar Backup?", size=15, color=TXT,
+                            weight=ft.FontWeight.W_700, text_align="center"),
+                    ft.Container(height=8),
+                    ft.Text(
+                        "O banco local sera substituido pelo backup mais recente do Drive.\n"
+                        "Esta acao nao pode ser desfeita.",
+                        size=13, color=SEC, text_align="center",
+                    ),
+                    ft.Container(height=20),
+                    ft.Row([btn_cancel, btn_ok], spacing=8,
+                           alignment=ft.MainAxisAlignment.CENTER),
+                ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, tight=True),
+                bgcolor=CARD, border_radius=14,
+                padding=ft.padding.all(24), width=300,
+            ),
+            bgcolor="#CC000000", expand=True,
+            alignment=ft.Alignment(0, 0),
+        )
+        ref_ov[0].on_click = _fechar
+        page.overlay.append(ref_ov[0])
+        try: page.update()
+        except Exception: pass
+
+    def _abrir_tela_backup():
+        tela_pai = page.controls[0]
+
+        def _voltar_bk():
+            page.controls.clear()
+            page.controls.append(tela_pai)
+            try: page.update()
+            except Exception: pass
+
+        from telas_sistema.tela_backup import criar_tela_backup
+        page.controls.clear()
+        page.controls.append(criar_tela_backup(page, _voltar_bk))
+        try: page.update()
+        except Exception: pass
+
+    btn_fazer_backup = ft.Container(
         content=ft.Row([
-            ft.Container(
-                content=ft.Row([
-                    ft.Icon("arrow_back_rounded", size=16, color=SEC),
-                    ft.Text("Voltar", size=13, color=SEC),
-                ], spacing=4, tight=True),
-                padding=ft.padding.symmetric(horizontal=8, vertical=8),
-                ink=True,
-                on_click=lambda e: voltar_fn() if voltar_fn else None,
-            ),
-            ft.Row([
-                ft.Icon("manage_accounts_rounded", size=18, color=AZUL),
-                ft.Text("Perfil", size=16, weight=ft.FontWeight.W_700, color=TXT),
-            ], spacing=8, tight=True),
+            ft.Icon("cloud_upload_rounded", size=15, color=BG),
+            ft.Text("Fazer Backup", size=13, color=BG, weight=ft.FontWeight.W_600),
+        ], spacing=6, tight=True),
+        bgcolor=AZUL, border_radius=8, ink=True,
+        padding=ft.padding.symmetric(horizontal=14, vertical=10),
+        expand=True, alignment=ft.alignment.Alignment(0, 0),
+    )
+    btn_fazer_backup.on_click = _fazer_backup
+
+    btn_restaurar = ft.Container(
+        content=ft.Row([
+            ft.Icon("cloud_download_rounded", size=15, color=VERM),
+            ft.Text("Restaurar", size=13, color=VERM),
+        ], spacing=6, tight=True),
+        bgcolor=f"{VERM}18", border_radius=8, ink=True,
+        padding=ft.padding.symmetric(horizontal=14, vertical=10),
+        border=ft.Border(
+            top=ft.BorderSide(1, f"{VERM}44"), bottom=ft.BorderSide(1, f"{VERM}44"),
+            left=ft.BorderSide(1, f"{VERM}44"), right=ft.BorderSide(1, f"{VERM}44"),
+        ),
+        expand=True, alignment=ft.alignment.Alignment(0, 0),
+    )
+    btn_restaurar.on_click = _restaurar
+
+    btn_ver_backup = ft.Container(
+        content=ft.Row([
+            ft.Icon("history_rounded", size=14, color=SEC),
+            ft.Text("Historico completo", size=12, color=SEC),
             ft.Container(expand=True),
-            ft.Container(
-                content=ft.Row([
-                    ft.Icon("save_outlined_rounded", size=14, color=AZUL),
-                    ft.Text("Salvar", size=13, color=AZUL),
-                ], spacing=4, tight=True),
-                padding=ft.padding.symmetric(horizontal=8, vertical=8),
-                ink=True,
-                on_click=_salvar,
-            ),
-        ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
-        padding=ft.padding.symmetric(horizontal=16, vertical=12),
-        border=ft.Border(bottom=ft.BorderSide(1, BD)),
+            ft.Icon("chevron_right_rounded", size=14, color=MUT),
+        ], spacing=6),
+        ink=True,
+    )
+    btn_ver_backup.on_click = lambda e: _abrir_tela_backup()
+
+    _carregar_hist_backup()
+
+    # ── Header padrao ────────────────────────────────────────────
+    lay = Layout(page)
+
+    btn_salvar_hdr = ft.Container(
+        content=ft.Row([
+            ft.Icon("save_rounded", size=14, color=AZUL),
+            ft.Text("Salvar", size=13, color=AZUL),
+        ], spacing=4, tight=True),
+        padding=ft.padding.symmetric(horizontal=8, vertical=8),
+        border_radius=8, ink=True,
+    )
+    btn_salvar_hdr.on_click = _salvar
+
+    header = lay.criar_cabecalho(
+        "Perfil", voltar_fn or (lambda: None),
+        icone_titulo="manage_accounts_rounded",
+        cor_titulo=AZUL,
+        acoes=[btn_salvar_hdr],
     )
 
     def _secao(titulo):
@@ -217,10 +393,19 @@ def criar_tela_perfil(page: ft.Page, voltar_fn=None):
             f_tel,
         ]),
         txt_status,
+        ft.Container(height=8),
+        _secao("BACKUP & SINCRONIZACAO"),
+        _card_section([
+            ft.Row([btn_fazer_backup, btn_restaurar], spacing=8),
+            progress_backup,
+            txt_backup_status,
+            txt_backup_hist,
+            ft.Divider(color=BD, height=1),
+            btn_ver_backup,
+        ]),
+        ft.Container(height=16),
     ]
 
-    corpo = ft.Column([header, area], spacing=0, expand=True)
-    wrapper = ft.Column(expand=True)
-    wrapper.controls.append(ft.Container(bgcolor=BG, expand=True, content=corpo))
+    corpo = lay.criar_corpo(header, area)
     _montado[0] = True
-    return wrapper
+    return ft.Container(bgcolor=BG, expand=True, content=corpo)
