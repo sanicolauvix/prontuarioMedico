@@ -507,164 +507,173 @@ def _parse_referencia(ref_str: str):
     return None, None
 
 
-def _gerar_grafico_matplotlib(historicos: list):
-    """
-    Retorna (b64_str, points_meta, fig_w_px, fig_h_px).
-    Tamanho fixo sem bbox_inches=tight para coordenadas precisas.
-    """
-    import matplotlib
-    matplotlib.use("Agg")
-    import matplotlib.pyplot as plt
-    import matplotlib.lines as mlines
-    import io, base64
+def _gerar_grafico_flet(historicos: list) -> ft.Control:
+    """Grafico nativo Flet — sem dependencias externas, funciona no Android."""
     from datetime import datetime
 
-    BG   = "#0D1117"; CARD = "#161B22"; BD = "#21262D"
-    TXT  = "#E6EDF3"; SEC  = "#8B949E"
     CORES_EX = ["#58A6FF", "#3FB950", "#F0883E", "#BC8CFF", "#D29922"]
     NIVEL_COR = {
-        "critico_baixo":    "#FF4444", "baixo":            "#F0883E",
-        "otimo":            "#3FB950", "alto":             "#F0883E",
-        "critico_alto":     "#FF4444", "sem_referencia":   "#58A6FF",
-        "nao_identificado": "#8B949E",
+        "critico_baixo": "#FF4444", "baixo": "#F0883E",
+        "otimo": "#3FB950",         "alto":  "#F0883E",
+        "critico_alto": "#FF4444",
     }
 
     def _pd(d):
         for fmt in ("%Y-%m-%d", "%d/%m/%Y"):
-            try: return datetime.strptime((d or "")[:10], fmt)
-            except: pass
-        return datetime.min
+            try:
+                return datetime.strptime((d or "")[:10], fmt)
+            except Exception:
+                pass
+        return None
 
-    # Preparar séries
+    # Preparar series
     series = []
     for idx, (ex, hist) in enumerate(historicos):
         ent = sorted(
-            [h for h in hist if _valor_float(h.get("valor")) is not None and h.get("data")],
-            key=lambda h: _pd(h["data"])
+            [h for h in hist
+             if _valor_float(h.get("valor")) is not None
+             and h.get("data") and _pd(h["data"])],
+            key=lambda h: _pd(h["data"]),
         )
-        if not ent: continue
+        if not ent:
+            continue
         ref_min = ref_max = None
         for h in ent:
             rm, rx = _parse_referencia(h.get("referencia", ""))
             if rm is not None or rx is not None:
-                ref_min, ref_max = rm, rx; break
-        uni = ex.get("unidade") or (ent[0].get("unidade") if ent else "") or ""
-        series.append({"ex": ex, "ent": ent, "cor": CORES_EX[idx % len(CORES_EX)],
-                        "ref_min": ref_min, "ref_max": ref_max,
-                        "uni": uni, "nome": ex.get("nome_oficial", "")})
-    if not series: return "", [], 0, 0
+                ref_min, ref_max = rm, rx
+                break
+        series.append({
+            "ex": ex, "ent": ent,
+            "cor": CORES_EX[idx % len(CORES_EX)],
+            "ref_min": ref_min, "ref_max": ref_max,
+            "uni": ex.get("unidade") or (ent[0].get("unidade") if ent else "") or "",
+            "nome": ex.get("nome_oficial", ""),
+        })
 
-    todas_datas = sorted({_pd(h["data"]) for s in series for h in s["ent"]})
+    if not series:
+        return ft.Text("Sem valores numericos.", size=12, color="#484F58")
+
+    # Eixo X: todas as datas ordenadas
+    todas_datas = sorted({
+        _pd(h["data"])
+        for s in series for h in s["ent"] if _pd(h["data"])
+    })
+    if not todas_datas:
+        return ft.Text("Sem datas validas.", size=12, color="#484F58")
+
     didx = {d: i for i, d in enumerate(todas_datas)}
-    mesma_uni = len({s["uni"] for s in series}) == 1
 
-    # Tamanho fixo — sem bbox_inches=tight
-    FIG_W = 8.0; FIG_H = 4.4; DPI = 110
-    fig_w_px = int(FIG_W * DPI)  # 880
-    fig_h_px = int(FIG_H * DPI)  # 484
+    # Escala Y global (inclui limites de referencia)
+    todos_ys = [
+        _valor_float(h["valor"])
+        for s in series for h in s["ent"]
+        if _valor_float(h["valor"]) is not None
+    ]
+    y_min = min(todos_ys) if todos_ys else 0.0
+    y_max = max(todos_ys) if todos_ys else 100.0
+    for s in series:
+        if s["ref_min"] is not None:
+            y_min = min(y_min, s["ref_min"])
+        if s["ref_max"] is not None:
+            y_max = max(y_max, s["ref_max"])
+    y_pad = max((y_max - y_min) * 0.18, 1.0)
 
-    fig, ax = plt.subplots(figsize=(FIG_W, FIG_H), facecolor=BG)
-    fig.subplots_adjust(left=0.09, right=0.88 if not mesma_uni else 0.97,
-                        top=0.92, bottom=0.24)
-    ax.set_facecolor(CARD)
-    for sp in ax.spines.values(): sp.set_color(BD)
-    ax.tick_params(colors=SEC, labelsize=9)
+    # Construir series do grafico
+    chart_series = []
+    for s in series:
+        points = []
+        for h in s["ent"]:
+            d = _pd(h["data"])
+            v = _valor_float(h["valor"])
+            if d is None or v is None:
+                continue
+            nivel = h.get("nivel", "")
+            cor_pt = NIVEL_COR.get(nivel, s["cor"])
+            uni_str = h.get("unidade") or s["uni"]
+            data_str = (h.get("data") or "")[:10]
+            points.append(ft.LineChartDataPoint(
+                x=float(didx[d]),
+                y=float(v),
+                tooltip=f"{h.get('valor','')} {uni_str}\n{data_str}",
+                point=ft.ChartCirclePoint(radius=5, color=cor_pt,
+                                          stroke_color="#0D1117", stroke_width=1.5),
+                selected_point=ft.ChartCirclePoint(radius=7, color=cor_pt,
+                                                   stroke_color="#0D1117", stroke_width=2),
+            ))
 
-    axes_list = [ax]
-    for i in range(1, len(series)):
-        if not mesma_uni:
-            a2 = ax.twinx()
-            if i > 1: a2.spines["right"].set_position(("outward", 55*(i-1)))
-            a2.set_facecolor("none")
-            for sp in a2.spines.values(): sp.set_color(BD)
-            a2.tick_params(colors=series[i]["cor"], labelsize=8)
-            axes_list.append(a2)
-        else:
-            axes_list.append(ax)
+        if not points:
+            continue
 
-    legend_items = []
-    # Salva dados de plotagem para mapear coordenadas depois
-    plot_data = []  # [(cur_ax, xs, ys, s)]
+        chart_series.append(ft.LineChartData(
+            data_points=points,
+            color=s["cor"],
+            stroke_width=2.4,
+            curved=False,
+            stroke_cap_round=True,
+        ))
 
-    for i, s in enumerate(series):
-        cur = axes_list[i]; cor = s["cor"]
-        ent = s["ent"]; uni = s["uni"]
-        xs  = [didx[_pd(h["data"])] for h in ent]
-        ys  = [_valor_float(h["valor"]) for h in ent]
-        niv = [h.get("nivel", "sem_referencia") for h in ent]
-        cpt = [NIVEL_COR.get(n, cor) for n in niv]
+        # Linhas de referencia (tracejadas) como serie separada
+        if s["ref_min"] is not None and s["ref_max"] is not None:
+            n = float(len(todas_datas) - 1)
+            for ref_y, suffix in [(s["ref_min"], "min"), (s["ref_max"], "max")]:
+                chart_series.append(ft.LineChartData(
+                    data_points=[
+                        ft.LineChartDataPoint(x=0.0, y=float(ref_y)),
+                        ft.LineChartDataPoint(x=n,   y=float(ref_y)),
+                    ],
+                    color=s["cor"] + "55",
+                    stroke_width=1.0,
+                    dash_pattern=[5, 5],
+                    curved=False,
+                ))
 
-        if (mesma_uni or i == 0) and s["ref_min"] and s["ref_max"]:
-            cur.axhspan(s["ref_min"], s["ref_max"], alpha=0.07, color=cor, zorder=0)
-            cur.axhline(s["ref_min"], color=cor, lw=0.7, ls="--", alpha=0.45, zorder=1)
-            cur.axhline(s["ref_max"], color=cor, lw=0.7, ls="--", alpha=0.45, zorder=1)
+    if not chart_series:
+        return ft.Text("Sem pontos para exibir.", size=12, color="#484F58")
 
-        cur.plot(xs, ys, color=cor, lw=2.2, alpha=0.85, zorder=2, solid_capstyle="round")
+    # Rotulos do eixo X
+    x_labels = [
+        ft.ChartAxisLabel(
+            value=float(i),
+            label=ft.Container(
+                content=ft.Text(d.strftime("%d/%m"), size=9, color="#8B949E"),
+                padding=ft.padding.only(top=4),
+            ),
+        )
+        for i, d in enumerate(todas_datas)
+    ]
 
-        for j, (x, y, cp, nivel, h) in enumerate(zip(xs, ys, cpt, niv, ent)):
-            cur.scatter(x, y, color=cp, s=70, zorder=4, edgecolors=BG, linewidths=1.5)
-            cur.annotate(str(h.get("valor", "")), (x, y),
-                textcoords="offset points", xytext=(0, 11 if i%2==0 else -17),
-                ha="center", fontsize=8, color=cp, fontweight="bold", zorder=5)
-            if nivel in ("critico_baixo", "critico_alto"):
-                cur.annotate("⚠", (x, y), textcoords="offset points",
-                    xytext=(8, 0), ha="left", fontsize=8, color="#FF4444", zorder=5)
+    chart = ft.LineChart(
+        data_series=chart_series,
+        bgcolor="#161B22",
+        tooltip_bgcolor="#161B22",
+        tooltip_rounded_radius=6,
+        border=ft.Border(
+            bottom=ft.BorderSide(1, "#21262D"),
+            left=ft.BorderSide(1, "#21262D"),
+        ),
+        horizontal_grid_lines=ft.ChartGridLines(
+            color="#21262D", width=0.5, dash_pattern=[4, 4],
+        ),
+        vertical_grid_lines=ft.ChartGridLines(color="#00000000"),
+        left_axis=ft.ChartAxis(labels_size=44, show_labels=True),
+        bottom_axis=ft.ChartAxis(labels=x_labels, labels_size=30),
+        min_y=y_min - y_pad,
+        max_y=y_max + y_pad,
+        min_x=-0.3,
+        max_x=float(len(todas_datas) - 1) + 0.3,
+        expand=True,
+        interactive=True,
+    )
 
-        if not mesma_uni and i > 0: cur.set_ylabel(uni, color=cor, fontsize=9)
-        elif i == 0: cur.set_ylabel(uni, color=SEC, fontsize=9)
-
-        ref_txt = ""
-        if s["ref_min"] and s["ref_max"]:
-            ref_txt = f"  [ref {s['ref_min']}–{s['ref_max']} {uni}]"
-        legend_items.append(mlines.Line2D([], [], color=cor, lw=2,
-            marker="o", markersize=6, label=f"{s['nome']}{ref_txt}"))
-
-        plot_data.append((cur, xs, ys, s, ent))
-
-    ax.set_xlim(-0.5, len(todas_datas) - 0.5)
-    ax.set_xticks(range(len(todas_datas)))
-    ax.set_xticklabels([d.strftime("%d/%m/%y") for d in todas_datas],
-        rotation=35, ha="right", fontsize=8.5, color=SEC)
-    ax.yaxis.grid(True, color=BD, lw=0.5, alpha=0.6, zorder=0)
-    ax.set_axisbelow(True)
-    ax.yaxis.set_tick_params(labelcolor=SEC if mesma_uni else series[0]["cor"])
-
-    nc = min(len(legend_items), 2)
-    fig.legend(handles=legend_items, loc="lower center",
-        bbox_to_anchor=(0.5, 0.01), ncol=nc, fontsize=9,
-        facecolor=CARD, edgecolor=BD, labelcolor=TXT, framealpha=0.9, handlelength=1.8)
-
-    # ── Calcular coordenadas de pixel de cada ponto ANTES de salvar ─────────
-    fig.canvas.draw()
-    points_meta = []
-    for (cur, xs, ys, s, ent) in plot_data:
-        for x, y, h in zip(xs, ys, ent):
-            # transData converte coordenadas de dados → pixels de display
-            # display: origem embaixo-esquerda
-            x_disp, y_disp = cur.transData.transform((x, y))
-            # imagem PNG: origem em cima-esquerda → inverter Y
-            x_img = x_disp
-            y_img = fig_h_px - y_disp
-            points_meta.append({
-                "x_px": x_img, "y_px": y_img,
-                "nome":       s["nome"],
-                "cor":        s["cor"],
-                "valor":      h.get("valor", ""),
-                "unidade":    h.get("unidade") or s["uni"],
-                "data":       (h.get("data") or "")[:10],
-                "nivel":      h.get("nivel", ""),
-                "referencia": h.get("referencia", ""),
-                "laboratorio":h.get("laboratorio", ""),
-                "drive_id":   h.get("drive_id", ""),
-            })
-
-    # Salvar com tamanho fixo
-    buf = io.BytesIO()
-    fig.savefig(buf, format="png", dpi=DPI, facecolor=BG)
-    plt.close(fig)
-    buf.seek(0)
-    b64 = base64.b64encode(buf.getvalue()).decode()
-    return b64, points_meta, fig_w_px, fig_h_px
+    return ft.Container(
+        content=chart,
+        height=260,
+        bgcolor="#161B22",
+        border_radius=8,
+        padding=ft.padding.symmetric(horizontal=4, vertical=8),
+        border=ft.border.all(1, "#21262D"),
+    )
 
 
 def renderizar_grafico_combinado(page: ft.Page, exames_selecionados: list) -> ft.Control:
@@ -680,19 +689,6 @@ def renderizar_grafico_combinado(page: ft.Page, exames_selecionados: list) -> ft
     if not historicos:
         return ft.Text("Nenhum dado para exibir.", size=12, color="#484F58")
 
-    try:
-        b64, points_meta, fig_w_px, fig_h_px = _gerar_grafico_matplotlib(historicos)
-    except Exception as ex:
-        logging.error(f"[GRAFICO] {ex}")
-        return ft.Text(f"Gráfico indisponível: {ex}", size=11, color="#F0883E")
-
-    if not b64:
-        return ft.Text("Sem valores numéricos.", size=12, color="#484F58")
-
-    DISPLAY_W = 540
-    scale     = DISPLAY_W / fig_w_px
-    DISPLAY_H = int(fig_h_px * scale)
-
     CORES_EX = ["#58A6FF", "#3FB950", "#F0883E", "#BC8CFF", "#D29922"]
     NIVEL_COR = {
         "critico_baixo": "#FF4444", "baixo": "#F0883E",
@@ -701,17 +697,13 @@ def renderizar_grafico_combinado(page: ft.Page, exames_selecionados: list) -> ft
         "nao_identificado": "#8B949E",
     }
     NIVEL_LABEL = {
-        "critico_baixo": "Crítico ↓", "baixo": "Baixo ↓",
-        "otimo": "Ótimo ✓",           "alto":  "Alto ↑",
-        "critico_alto": "Crítico ↑",  "sem_referencia": "—",
+        "critico_baixo": "Critico v", "baixo": "Baixo v",
+        "otimo": "Otimo ok",          "alto":  "Alto ^",
+        "critico_alto": "Critico ^",  "sem_referencia": "—",
         "nao_identificado": "?",
     }
 
-    # ── Vista A: Gráfico ──────────────────────────────────────────────────────
-    img_grafico = ft.Image(
-        src_base64=b64, width=DISPLAY_W, height=DISPLAY_H,
-        fit=ft.ImageFit.FILL,
-    )
+    grafico_ctrl = _gerar_grafico_flet(historicos)
 
     # Chips de legenda clicáveis (um por exame)
     def _fazer_chip(idx, ex, hist):
@@ -749,17 +741,7 @@ def renderizar_grafico_combinado(page: ft.Page, exames_selecionados: list) -> ft
     )
 
     vista_grafico = ft.Column([
-        ft.Container(
-            content=img_grafico,
-            bgcolor="#0D1117", border_radius=8, padding=4,
-            border=ft.Border(
-                top=ft.BorderSide(1, "#21262D"),
-                bottom=ft.BorderSide(1, "#21262D"),
-                left=ft.BorderSide(1, "#21262D"),
-                right=ft.BorderSide(1, "#21262D"),
-            ),
-            clip_behavior=ft.ClipBehavior.ANTI_ALIAS,
-        ),
+        grafico_ctrl,
         ft.Container(
             content=ft.Column([
                 ft.Text("Clique num exame para ver os detalhes:",
@@ -2072,6 +2054,21 @@ def _conteudo_exames(page):
             def _cancelar(e2):
                 _fechar()
 
+            _btn_cancelar_exc = ft.Container(
+                content=ft.Text("Cancelar", size=13, color="#8B949E"),
+                padding=ft.padding.symmetric(horizontal=14, vertical=9),
+                border_radius=8, bgcolor="#8B949E22", ink=True,
+            )
+            _btn_cancelar_exc.on_click = _cancelar
+
+            _btn_excluir_ok = ft.Container(
+                content=ft.Text("Excluir", size=13, color="#F85149",
+                                weight=ft.FontWeight.W_600),
+                padding=ft.padding.symmetric(horizontal=14, vertical=9),
+                border_radius=8, bgcolor="#F8514922", ink=True,
+            )
+            _btn_excluir_ok.on_click = _confirmar
+
             overlay_ref[0] = ft.Container(
                 content=ft.Container(
                     content=ft.Column([
@@ -2082,12 +2079,8 @@ def _conteudo_exames(page):
                                 color="#8B949E", size=13),
                         ft.Container(height=16),
                         ft.Row([
-                            ft.OutlinedButton("Cancelar", on_click=_cancelar,
-                                style=ft.ButtonStyle(side=ft.BorderSide(1,"#30363D"),
-                                    color="#8B949E", shape=ft.RoundedRectangleBorder(radius=8))),
-                            ft.FilledButton("Excluir", on_click=_confirmar,
-                                style=ft.ButtonStyle(bgcolor="#F85149",
-                                    shape=ft.RoundedRectangleBorder(radius=8))),
+                            _btn_cancelar_exc,
+                            _btn_excluir_ok,
                         ], alignment=ft.MainAxisAlignment.END, spacing=8),
                     ], tight=True),
                     bgcolor="#161B22", border_radius=12, padding=ft.padding.all(24), width=320,
