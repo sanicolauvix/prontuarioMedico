@@ -868,17 +868,21 @@ def _build_ficha_remedio(page, remedio, voltar_fn):
                 try: page.update()
                 except Exception: pass
 
+        _btn_compra = ft.Container(
+            content=ft.Row([
+                ft.Icon("shopping_cart_rounded", size=14, color=BG),
+                ft.Text("Registrar", size=12, color=BG),
+            ], spacing=4, tight=True),
+            bgcolor=AMAR, border_radius=8, ink=True,
+            padding=ft.padding.symmetric(horizontal=14, vertical=8),
+        )
+        _btn_compra.on_click = _salvar_compra_rapida
+
         btn_registrar_compra = _card_border(AMAR, ft.Column([
             _label_sec("REGISTRAR COMPRA", AMAR),
             ft.Row([f_cqtd, f_cval, dd_farm], spacing=6),
             ft.Row([
-                ft.FilledButton(content=ft.Row([
-                    ft.Icon("shopping_cart_rounded", size=14),
-                    ft.Text("Registrar", size=12)], spacing=4, tight=True),
-                    style=ft.ButtonStyle(bgcolor=AMAR,
-                        shape=ft.RoundedRectangleBorder(radius=8),
-                        padding=ft.padding.symmetric(horizontal=14, vertical=8)),
-                    on_click=_salvar_compra_rapida),
+                _btn_compra,
                 txt_compra_ok,
             ], spacing=8),
         ], spacing=6))
@@ -901,6 +905,12 @@ def _build_ficha_remedio(page, remedio, voltar_fn):
             return
 
         data_fim_val = "continuo" if sw_continuo.value else (f_fim.value.strip() or None)
+
+        # Auto-cadastra medico digitado mas nao selecionado da lista
+        if sw_prescrito.value and not med_id_sel[0] and (f_medico.value or "").strip():
+            novo_mid = salvar_medico({"nome": f_medico.value.strip()})
+            med_id_sel[0] = novo_mid
+
         dados = {
             "id": remedio["id"] if remedio else None,
             "nome": f_nome.value.strip(),
@@ -927,25 +937,25 @@ def _build_ficha_remedio(page, remedio, voltar_fn):
         voltar_fn()
 
     # ── Layout da ficha ───────────────────────────────────
-    titulo = "Novo Remedio/Suplemento" if is_novo else "Editar"
-    larg   = page.width or 0
+    titulo = "Nova Medicacao" if is_novo else "Editar Medicacao"
     lay    = Layout(page)
 
-    btn_salvar_ficha = ft.Container(
-        content=ft.Row([
-            ft.Icon("save_rounded", size=14, color=VERD),
-            ft.Text("Salvar", size=13, color=VERD),
-        ], spacing=4, tight=True),
-        padding=ft.padding.symmetric(horizontal=12, vertical=8),
-        border_radius=8, ink=True,
-    )
-    btn_salvar_ficha.on_click = _salvar
     cabecalho = lay.criar_cabecalho(
         titulo, voltar_fn,
         icone_titulo="medication_rounded",
         cor_titulo=AMAR,
-        acoes=[btn_salvar_ficha],
     )
+
+    btn_salvar_fundo = ft.Container(
+        content=ft.Row([
+            ft.Icon("save_rounded", size=16, color=BG),
+            ft.Text("Salvar", size=14, color=BG, weight=ft.FontWeight.W_600),
+        ], spacing=6, tight=True, alignment=ft.MainAxisAlignment.CENTER),
+        bgcolor=VERD, border_radius=10, ink=True,
+        padding=ft.padding.symmetric(vertical=14),
+        alignment=ft.alignment.Alignment(0, 0),
+    )
+    btn_salvar_fundo.on_click = _salvar
 
     campos_col = ft.Column([
         # ── NOME + PRINCIPIO ATIVO ────────────────────────
@@ -994,6 +1004,9 @@ def _build_ficha_remedio(page, remedio, voltar_fn):
         ft.Container(height=4),
         _label_sec("OBSERVAÇÕES"), f_obs,
         ft.Container(height=8), sw_ativo, txt_erro,
+        ft.Container(height=16),
+        btn_salvar_fundo,
+        ft.Container(height=16),
     ], spacing=6, scroll=ft.ScrollMode.AUTO)
 
     corpo_ficha = lay.criar_corpo(
@@ -1100,21 +1113,22 @@ def _lista_remedios(page, abrir_ficha_fn):
 
     _carregar()
 
+    _btn_novo_rem = ft.Container(
+        content=ft.Row([
+            ft.Icon("add_rounded", size=16, color=BG),
+            ft.Text("Novo", size=13, color=BG),
+        ], spacing=6, tight=True),
+        bgcolor=VERD, border_radius=8, ink=True,
+        padding=ft.padding.symmetric(horizontal=14, vertical=10),
+    )
+    _btn_novo_rem.on_click = lambda e: abrir_ficha_fn(None)
+
     return [
         ft.Container(
             content=ft.Row([
                 sw,
                 ft.Container(expand=True),
-                ft.FilledButton(
-                    content=ft.Row([
-                        ft.Icon("add_rounded", size=16),
-                        ft.Text("Novo", size=13),
-                    ], spacing=6, tight=True),
-                    style=ft.ButtonStyle(
-                        bgcolor=VERD,
-                        shape=ft.RoundedRectangleBorder(radius=8),
-                        padding=ft.padding.symmetric(horizontal=14, vertical=10)),
-                    on_click=lambda e: abrir_ficha_fn(None)),
+                _btn_novo_rem,
             ], vertical_alignment=ft.CrossAxisAlignment.CENTER),
             padding=ft.padding.only(bottom=8)),
         lista,
@@ -1223,20 +1237,21 @@ def _conteudo_farmacias(page):
 
             threading.Thread(target=_run, daemon=True).start()
 
+        _btn_ia = ft.Container(
+            content=ft.Row([
+                ft.Icon("psychology_rounded", size=14, color=BG),
+                ft.Text("Analisar com IA", size=12, color=BG),
+            ], spacing=4, tight=True),
+            bgcolor=ROXO, border_radius=8, ink=True,
+            padding=ft.padding.symmetric(horizontal=14, vertical=8),
+        )
+        _btn_ia.on_click = _analisar_resposta
+
         lista.controls.append(_card_border(ROXO, ft.Column([
             _label_sec("ANALISAR RESPOSTA DE ORÇAMENTO", ROXO),
             f_resposta,
             ft.Row([
-                ft.FilledButton(
-                    content=ft.Row([
-                        ft.Icon("psychology_rounded", size=14),
-                        ft.Text("Analisar com IA", size=12),
-                    ], spacing=4, tight=True),
-                    style=ft.ButtonStyle(
-                        bgcolor=ROXO,
-                        shape=ft.RoundedRectangleBorder(radius=8),
-                        padding=ft.padding.symmetric(horizontal=14, vertical=8)),
-                    on_click=_analisar_resposta),
+                _btn_ia,
                 txt_ia_status,
             ], spacing=8),
             resultado_ia,
@@ -1316,6 +1331,16 @@ def _conteudo_farmacias(page):
             })
             _carregar()
 
+        _btn_salvar_farm = ft.Container(
+            content=ft.Row([
+                ft.Icon("save_rounded", size=16, color=BG),
+                ft.Text("Salvar", size=13, color=BG),
+            ], spacing=6, tight=True),
+            bgcolor=VERD, border_radius=8, ink=True,
+            padding=ft.padding.symmetric(horizontal=14, vertical=10),
+        )
+        _btn_salvar_farm.on_click = _salvar_farm
+
         lista.controls.clear()
         lista.controls.append(ft.Container(
             bgcolor=BG, expand=True,
@@ -1331,16 +1356,7 @@ def _conteudo_farmacias(page):
                         on_click=lambda e: _carregar()),
                     ft.Text("Nova Farmácia" if is_nova else "Editar Farmácia",
                             size=16, weight=ft.FontWeight.W_700, color=TXT, expand=True),
-                    ft.FilledButton(
-                        content=ft.Row([
-                            ft.Icon("save_rounded", size=16),
-                            ft.Text("Salvar", size=13),
-                        ], spacing=6, tight=True),
-                        style=ft.ButtonStyle(
-                            bgcolor=VERD,
-                            shape=ft.RoundedRectangleBorder(radius=8),
-                            padding=ft.padding.symmetric(horizontal=14, vertical=10)),
-                        on_click=_salvar_farm),
+                    _btn_salvar_farm,
                 ], vertical_alignment=ft.CrossAxisAlignment.CENTER),
                 f_n, f_e, ft.Row([f_t, f_w], spacing=8), f_s, f_a,
                 ft.Row([sw_del, sw_pref], spacing=16), f_obs_f,
@@ -1351,20 +1367,21 @@ def _conteudo_farmacias(page):
 
     _carregar()
 
+    _btn_nova_farm = ft.Container(
+        content=ft.Row([
+            ft.Icon("add_rounded", size=16, color=BG),
+            ft.Text("Nova Farmacia", size=13, color=BG),
+        ], spacing=6, tight=True),
+        bgcolor=AZUL, border_radius=8, ink=True,
+        padding=ft.padding.symmetric(horizontal=14, vertical=10),
+    )
+    _btn_nova_farm.on_click = lambda e: _abrir_ficha_farm(None)
+
     return [
         ft.Container(
             content=ft.Row([
                 ft.Container(expand=True),
-                ft.FilledButton(
-                    content=ft.Row([
-                        ft.Icon("add_rounded", size=16),
-                        ft.Text("Nova Farmácia", size=13),
-                    ], spacing=6, tight=True),
-                    style=ft.ButtonStyle(
-                        bgcolor=AZUL,
-                        shape=ft.RoundedRectangleBorder(radius=8),
-                        padding=ft.padding.symmetric(horizontal=14, vertical=10)),
-                    on_click=lambda e: _abrir_ficha_farm(None)),
+                _btn_nova_farm,
             ]),
             padding=ft.padding.symmetric(horizontal=0, vertical=4)),
         lista,

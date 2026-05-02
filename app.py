@@ -319,8 +319,8 @@ def _tela_principal(page: ft.Page, voltar_fn=None):
                                 text_align=ft.TextAlign.CENTER)
     txt_stat_exames   = ft.Text("--", size=18, weight=ft.FontWeight.W_700, color=ROXO)
 
-    def _mini_stat(val_ctrl, label, cor, icone):
-        return ft.Container(
+    def _mini_stat(val_ctrl, label, cor, icone, fn=None):
+        c = ft.Container(
             content=ft.Column([
                 ft.Icon(icone, size=16, color=cor),
                 val_ctrl,
@@ -334,10 +334,15 @@ def _tela_principal(page: ft.Page, voltar_fn=None):
             padding=10,
             expand=True,
             alignment=ft.alignment.Alignment(0, 0),
+            ink=bool(fn),
         )
+        if fn:
+            c.on_click = lambda e: fn()
+        return c
 
     mini_stats = ft.Row([
-        _mini_stat(txt_stat_remedios, "Remedios",       AMAR, "medication_rounded"),
+        _mini_stat(txt_stat_remedios, "Remedios", AMAR, "medication_rounded",
+                   _lazy_fn("tela_remedios", "criar_tela_remedios")),
         _mini_stat(txt_stat_consulta, "Prox.\nConsulta", AZUL, "event_note_rounded"),
         _mini_stat(txt_stat_exames,   "Exames/mes",     ROXO, "biotech_rounded"),
     ], spacing=8)
@@ -447,7 +452,7 @@ def _tela_principal(page: ft.Page, voltar_fn=None):
                               "Historico de consultas", VERD,
                               _lazy_fn("tela_consultas_medicas",
                                        "criar_tela_consultas_medicas")),
-                    _btn_item("medication_rounded", "Medicamentos/Supl",
+                    _btn_item("medication_rounded", "Medicacao",
                               "Remedios e suplementos", AMAR,
                               _lazy_fn("tela_remedios", "criar_tela_remedios")),
                     _btn_item("calendar_today_rounded", "Rotinas Diarias",
@@ -691,6 +696,23 @@ def _tela_principal(page: ft.Page, voltar_fn=None):
         except Exception:
             pend, cons = 0, 0
 
+        # Medicos cadastrados apenas com nome (pendente completar)
+        med_incompletos = 0
+        try:
+            conn_mi = _sq.connect(DB_PATH, timeout=30)
+            try:
+                med_incompletos = conn_mi.execute("""
+                    SELECT COUNT(*) FROM medicos
+                    WHERE (crm IS NULL OR crm = '')
+                      AND especialidade_id IS NULL
+                      AND (telefone IS NULL OR telefone = '')
+                      AND ativo = 1
+                """).fetchone()[0]
+            finally:
+                conn_mi.close()
+        except Exception:
+            med_incompletos = 0
+
         chips_hoje.controls.clear()
         if pend > 0:
             chips_hoje.controls.append(
@@ -703,7 +725,13 @@ def _tela_principal(page: ft.Page, voltar_fn=None):
                       _lazy_fn("tela_consultas_medicas",
                                "criar_tela_consultas_medicas"))
             )
-        if not pend and not cons:
+        if med_incompletos > 0:
+            chips_hoje.controls.append(
+                _chip(f"{med_incompletos} medico(s) incompleto(s)", ROXO,
+                      "person_add_rounded",
+                      _lazy_fn("tela_medicos", "criar_tela_medicos"))
+            )
+        if not pend and not cons and not med_incompletos:
             chips_hoje.controls.append(
                 _chip("Dia tranquilo", VERD, "check_circle_rounded", lambda: None)
             )

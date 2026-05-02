@@ -115,6 +115,23 @@ def _fmt_data(d: str) -> str:
     return ""
 
 
+def _e_fora_range(val: float, ref: str) -> bool:
+    if not ref or val is None:
+        return False
+    ref = ref.strip()
+    try:
+        if ref.startswith("<"):
+            return float(val) >= float(ref[1:])
+        if ref.startswith(">"):
+            return float(val) <= float(ref[1:])
+        if "-" in ref:
+            lo, hi = ref.split("-", 1)
+            return not (float(lo) <= float(val) <= float(hi))
+    except Exception:
+        pass
+    return False
+
+
 def criar_tela_marcadores(page: ft.Page, voltar_fn) -> ft.Container:
     from dados.model_prontuario import DB_PATH
 
@@ -285,6 +302,97 @@ def criar_tela_marcadores(page: ft.Page, voltar_fn) -> ft.Container:
         except Exception:
             pass
 
+    # ── Overlay: Claudia pergunta contexto apos leitura anormal ────
+    def _claudia_perguntar_contexto(param, val, unidade, ref, leitura_id):
+        ref_ov = [None]
+
+        def _fechar(e=None):
+            if ref_ov[0] in page.overlay:
+                page.overlay.remove(ref_ov[0])
+            try:
+                page.update()
+            except Exception:
+                pass
+
+        tf_ctx = ft.TextField(
+            label="O que estava acontecendo antes?",
+            hint_text="Ex: acabei de comer, estresse no trabalho, medicacao nova...",
+            bgcolor=CARD, border_color=BD2, focused_border_color=ROXO,
+            label_style=ft.TextStyle(color=SEC, size=11),
+            text_style=ft.TextStyle(color=TXT),
+            border_radius=8, multiline=True, min_lines=2, max_lines=3,
+        )
+
+        def _salvar_ctx(e):
+            ctx = (tf_ctx.value or "").strip()
+            if ctx and leitura_id:
+                try:
+                    conn = sqlite3.connect(DB_PATH, timeout=30)
+                    try:
+                        conn.execute(
+                            "UPDATE marcadores_leituras SET contexto = ? WHERE id = ?",
+                            (ctx, leitura_id))
+                        conn.commit()
+                    finally:
+                        conn.close()
+                except Exception as ex:
+                    log.warning("[MARC] salvar_ctx: %s", ex)
+            _fechar()
+
+        btn_pular = ft.Container(
+            content=ft.Text("Pular", size=12, color=SEC),
+            padding=ft.padding.symmetric(horizontal=14, vertical=9),
+            border_radius=8, bgcolor=f"{SEC}22", ink=True,
+        )
+        btn_pular.on_click = _fechar
+
+        btn_ctx = ft.Container(
+            content=ft.Text("Salvar contexto", size=12, color=ROXO,
+                            weight=ft.FontWeight.W_600),
+            padding=ft.padding.symmetric(horizontal=14, vertical=9),
+            border_radius=8, bgcolor=f"{ROXO}22", ink=True,
+        )
+        btn_ctx.on_click = _salvar_ctx
+
+        val_str = f"{val:.1f}" if isinstance(val, float) else str(val)
+        unit_str = f" {unidade}" if unidade else ""
+
+        ref_ov[0] = ft.Container(
+            content=ft.Container(
+                content=ft.Column([
+                    ft.Row([
+                        ft.Icon("psychology_rounded", size=18, color=ROXO),
+                        ft.Text("Claudia", size=14, color=ROXO,
+                                weight=ft.FontWeight.W_700),
+                    ], spacing=6),
+                    ft.Container(height=4),
+                    ft.Text(
+                        f"Registrei {val_str}{unit_str} para {param}.",
+                        size=13, color=TXT, weight=ft.FontWeight.W_600,
+                    ),
+                    ft.Text(
+                        f"Valor fora do esperado ({ref}).",
+                        size=12, color=VERM,
+                    ),
+                    ft.Container(height=8),
+                    tf_ctx,
+                    ft.Container(height=12),
+                    ft.Row([btn_pular, btn_ctx], spacing=8,
+                           alignment=ft.MainAxisAlignment.END),
+                ], tight=True, spacing=4),
+                bgcolor=CARD, border_radius=14,
+                padding=ft.padding.all(20), width=320,
+            ),
+            bgcolor="#CC000000", expand=True,
+            alignment=ft.Alignment(0, 0),
+        )
+        ref_ov[0].on_click = _fechar
+        page.overlay.append(ref_ov[0])
+        try:
+            page.update()
+        except Exception:
+            pass
+
     # ── Overlay: adicionar leitura manual ───────────────────────
     def _abrir_form():
         ref_ov = [None]
@@ -380,19 +488,24 @@ def criar_tela_marcadores(page: ft.Page, voltar_fn) -> ft.Container:
                     break
             try:
                 val_num = float(val_str.replace(",", "."))
+                leitura_id = None
                 conn = sqlite3.connect(DB_PATH, timeout=30)
                 try:
-                    conn.execute("""
+                    cur = conn.execute("""
                         INSERT INTO marcadores_leituras
                             (parametro, categoria, valor, unidade, referencia,
                              data_medicao, fonte)
                         VALUES (?, ?, ?, ?, ?, ?, 'manual')
                     """, (param_sel, cat_sel, val_num, unidade, ref_txt, data_str))
+                    leitura_id = cur.lastrowid
                     conn.commit()
                 finally:
                     conn.close()
                 _fechar()
                 _carregar()
+                if _e_fora_range(val_num, ref_txt):
+                    _claudia_perguntar_contexto(
+                        param_sel, val_num, unidade, ref_txt, leitura_id)
             except Exception as ex:
                 log.exception("[MARC] salvar: %s", ex)
 

@@ -7,6 +7,7 @@ Padrão visual: idêntico a tela_exames.py (header + barra de abas + área de co
 import logging
 import threading
 import flet as ft
+from shared.layout import Layout
 from dados.model_prontuario import (
     listar_medicos, salvar_medico, listar_especialidades, exames_do_medico,
 )
@@ -330,89 +331,58 @@ def _tela_ficha_medico(page: ft.Page, medico, voltar_fn):
         })
         voltar_fn()
 
-    cabecalho = ft.Container(
+    lay = Layout(page)
+
+    btn_salvar_med = ft.Container(
         content=ft.Row([
-            ft.Container(
-                content=ft.Row([
-                    ft.Icon("arrow_back_rounded", size=16),
-                    ft.Text("Voltar", size=13),
-                ], spacing=4, tight=True),
-                padding=ft.padding.symmetric(horizontal=8, vertical=8),
-                ink=True,
-                on_click=lambda e: voltar_fn(),
-            ),
-            ft.Row([
-                ft.Icon("person_rounded", size=18, color=ROXO),
-                ft.Text(titulo, size=18, weight=ft.FontWeight.W_700, color=TXT),
-            ], spacing=8, tight=True),
-            ft.Container(expand=True),
-            ft.FilledButton(
-                content=ft.Row([
-                    ft.Icon("save_rounded", size=16),
-                    ft.Text("Salvar", size=13, weight=ft.FontWeight.W_600),
-                ], spacing=6, tight=True),
-                style=ft.ButtonStyle(
-                    bgcolor=ROXO,
-                    shape=ft.RoundedRectangleBorder(radius=8),
-                    padding=ft.padding.symmetric(horizontal=18, vertical=10),
-                ),
-                on_click=salvar,
-            ),
-        ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
-        padding=ft.padding.symmetric(horizontal=16, vertical=14),
-        border=ft.Border(bottom=ft.BorderSide(1, BD)),
+            ft.Icon("save_rounded", size=16, color=BG),
+            ft.Text("Salvar Medico", size=14, color=BG, weight=ft.FontWeight.W_600),
+        ], spacing=6, tight=True, alignment=ft.MainAxisAlignment.CENTER),
+        bgcolor=ROXO, border_radius=10, ink=True,
+        padding=ft.padding.symmetric(vertical=14),
+        alignment=ft.alignment.Alignment(0, 0),
+    )
+    btn_salvar_med.on_click = salvar
+
+    cabecalho = lay.criar_cabecalho(
+        titulo, voltar_fn,
+        icone_titulo="person_rounded",
+        cor_titulo=ROXO,
     )
 
-    corpo = ft.Column([
-        cabecalho,
-        ft.Container(
-            content=ft.Column([
-                _label_sec("IDENTIFICAÇÃO"),
-                foto_row,
-                f_nome,
-                ft.Row([f_crm, f_uf], spacing=8),
-                ft.Column([
-                    ft.Text("Especialidade", size=10, color=MUT,
-                            weight=ft.FontWeight.W_700),
-                    esp_chip,
-                    f_esp_txt,
-                    sugestoes_col,
-                ], spacing=4),
-                ft.Container(height=6),
-                _label_sec("CONTATO"),
-                f_tel,
-                f_email,
-                f_end,
-                ft.Container(height=6),
-                _label_sec("OBSERVAÇÕES"),
-                f_obs,
-                ft.Container(height=6),
-                sw_ativo,
-                txt_erro,
-                ft.Container(height=8),
-                exames_section,
-                ft.Container(height=20),
-            ], spacing=8, scroll=ft.ScrollMode.AUTO),
-            padding=ft.padding.symmetric(horizontal=16, vertical=12),
-            expand=True,
-        ),
-    ], expand=True, spacing=0)
+    campos_col = ft.Column([
+        _label_sec("IDENTIFICAÇÃO"),
+        foto_row,
+        f_nome,
+        ft.Row([f_crm, f_uf], spacing=8),
+        ft.Column([
+            ft.Text("Especialidade", size=10, color=MUT,
+                    weight=ft.FontWeight.W_700),
+            esp_chip,
+            f_esp_txt,
+            sugestoes_col,
+        ], spacing=4),
+        ft.Container(height=6),
+        _label_sec("CONTATO"),
+        f_tel,
+        f_email,
+        f_end,
+        ft.Container(height=6),
+        _label_sec("OBSERVAÇÕES"),
+        f_obs,
+        ft.Container(height=6),
+        sw_ativo,
+        txt_erro,
+        ft.Container(height=16),
+        btn_salvar_med,
+        ft.Container(height=8),
+        exames_section,
+        ft.Container(height=20),
+    ], spacing=8, scroll=ft.ScrollMode.AUTO)
 
-    try:
-        larg = page.width or 800
-    except Exception:
-        larg = 800
-
-    if larg > 500:
-        conteudo_final = ft.Row([
-            ft.Container(expand=True),
-            ft.Container(content=corpo, width=480),
-            ft.Container(expand=True),
-        ], expand=True)
-    else:
-        conteudo_final = corpo
-
-    return ft.Container(bgcolor=BG, expand=True, content=conteudo_final)
+    corpo = lay.criar_corpo(cabecalho, campos_col,
+                            padding_area=ft.padding.symmetric(horizontal=16, vertical=12))
+    return lay.wrap(ft.Container(bgcolor=BG, expand=True, content=corpo))
 
 
 # ══════════════════════════════════════════════════════════════
@@ -534,21 +504,20 @@ def criar_tela_medicos(page: ft.Page, voltar_fn):
     txt_busca.on_change = lambda e: carregar(txt_busca.value or "")
 
     def _conteudo_medicos():
+        _btn_novo_med = ft.Container(
+            content=ft.Row([
+                ft.Icon("add_rounded", size=16, color=BG),
+                ft.Text("Novo", size=13, color=BG),
+            ], spacing=6, tight=True),
+            bgcolor=ROXO, border_radius=8, ink=True,
+            padding=ft.padding.symmetric(horizontal=14, vertical=10),
+        )
+        _btn_novo_med.on_click = lambda e: _abrir_ficha(None)
+
         return [
             ft.Row([
                 txt_busca,
-                ft.FilledButton(
-                    content=ft.Row([
-                        ft.Icon("add_rounded", size=16),
-                        ft.Text("Novo", size=13),
-                    ], spacing=6, tight=True),
-                    style=ft.ButtonStyle(
-                        bgcolor=ROXO,
-                        shape=ft.RoundedRectangleBorder(radius=8),
-                        padding=ft.padding.symmetric(horizontal=14, vertical=10),
-                    ),
-                    on_click=lambda e: _abrir_ficha(None),
-                ),
+                _btn_novo_med,
             ], spacing=8, vertical_alignment=ft.CrossAxisAlignment.CENTER),
             lista,
         ]

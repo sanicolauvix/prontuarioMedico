@@ -138,6 +138,19 @@ def _migrar_marcadores():
         print(f"[MODEL] _migrar_marcadores: {ex}")
 
 
+def _migrar_marcadores_contexto():
+    """Adiciona coluna contexto em marcadores_leituras (captura de contexto Claudia)."""
+    try:
+        with sqlite3.connect(DB_PATH, timeout=30) as conn:
+            cols = [r[1] for r in conn.execute(
+                "PRAGMA table_info(marcadores_leituras)").fetchall()]
+            if "contexto" not in cols:
+                conn.execute(
+                    "ALTER TABLE marcadores_leituras ADD COLUMN contexto TEXT")
+    except Exception as ex:
+        print(f"[MODEL] _migrar_marcadores_contexto: {ex}")
+
+
 def _migrar_tipo_prescrito():
     """Adiciona tipo (remedio/suplemento) e prescrito (0/1) em remedios."""
     try:
@@ -772,6 +785,7 @@ def criar_tabelas():
     _migrar_medicos()
     _migrar_principio_ativo()
     _migrar_marcadores()
+    _migrar_marcadores_contexto()
     _migrar_tipo_prescrito()
     _criar_rotinas()
     # Registrar módulo no core
