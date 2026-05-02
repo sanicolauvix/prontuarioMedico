@@ -53,6 +53,8 @@ def main(page: ft.Page):
             padding=32,
         ))
 
+    _splash_status = ft.Text("Iniciando...", size=13, color=MUT)
+
     _nav(ft.Container(
         bgcolor=BG, expand=True,
         content=ft.Column([
@@ -60,7 +62,7 @@ def main(page: ft.Page):
             ft.Row([ft.ProgressRing(color=ACENTO)],
                    alignment=ft.MainAxisAlignment.CENTER),
             ft.Container(height=12),
-            ft.Row([ft.Text("Iniciando...", size=13, color=MUT)],
+            ft.Row([_splash_status],
                    alignment=ft.MainAxisAlignment.CENTER),
             ft.Container(expand=True),
         ], expand=True),
@@ -85,10 +87,22 @@ def main(page: ft.Page):
         except Exception:
             pass
 
+    def _set_splash(msg: str) -> None:
+        _splash_status.value = msg
+        try:
+            page.update()
+        except Exception:
+            pass
+
     def _iniciar():
         try:
             from shared.auth import verificar_sessao_ativa
             if verificar_sessao_ativa():
+                try:
+                    from backup.drive_backup import sincronizar_ao_iniciar
+                    sincronizar_ao_iniciar(callback_progresso=_set_splash)
+                except Exception:
+                    pass
                 _abrir_prontuario()
                 return
         except Exception:
@@ -98,6 +112,11 @@ def main(page: ft.Page):
             from telas_shared.tela_login import criar_tela_login
 
             def _on_login():
+                try:
+                    from backup.drive_backup import sincronizar_ao_iniciar
+                    sincronizar_ao_iniciar()
+                except Exception:
+                    pass
                 _abrir_prontuario()
 
             _nav(criar_tela_login(page, on_login_sucesso=_on_login))
