@@ -714,30 +714,34 @@ def _build_ficha_remedio(page, remedio, voltar_fn):
         ft.Container(width=8), f_min,
     ], spacing=4, vertical_alignment=ft.CrossAxisAlignment.CENTER)
 
-    # ── Galeria de fotos ──────────────────────────────────
-    _fotos_novas   = []   # [(path_abs, legenda)] aguardando salvar
-    galeria_col    = ft.Column(spacing=8)
-    fotos_salvas   = listar_fotos_remedio(remedio["id"]) if remedio and remedio.get("id") else []
+    # ── Galeria de fotos (separada por tipo) ─────────────
+    # _fotos_novas: [(path_rel, legenda, tipo, data_validade)]
+    _fotos_novas  = []
+    galeria_rem   = ft.Column(spacing=8)   # tipo='remedio'
+    galeria_rec   = ft.Column(spacing=8)   # tipo='receita'
+    _id_salvas    = listar_fotos_remedio(remedio["id"]) if remedio and remedio.get("id") else []
+    fotos_salvas_rem = [f for f in _id_salvas if (f.get("tipo") or "remedio") == "remedio"]
+    fotos_salvas_rec = [f for f in _id_salvas if (f.get("tipo") or "remedio") == "receita"]
 
-    def _rebuild_galeria():
+    def _mini_grid(fotos_salvas_list, fotos_novas_list, galeria_col, tipo_filtro):
         galeria_col.controls.clear()
-        todas = list(fotos_salvas) + [{"id": None, "path": p, "legenda": lg}
-                                       for p, lg in _fotos_novas]
+        todas = list(fotos_salvas_list) + [
+            {"id": None, "path": p, "legenda": lg, "tipo": tp, "data_validade": dv}
+            for p, lg, tp, dv in fotos_novas_list if tp == tipo_filtro
+        ]
         if not todas:
-            galeria_col.controls.append(
-                ft.Text("Nenhuma foto ainda.", size=11, color=MUT))
-            try: page.update()
-            except Exception: pass
+            galeria_col.controls.append(ft.Text("Nenhuma foto.", size=11, color=MUT))
             return
         linha = ft.Row(wrap=True, spacing=8, run_spacing=8)
         for foto in todas:
-            def _excluir(e, f=foto):
+            def _excluir(e, f=foto, sl=fotos_salvas_list):
                 if f.get("id"):
                     excluir_foto_remedio(f["id"])
-                    fotos_salvas[:] = [x for x in fotos_salvas if x.get("id") != f["id"]]
+                    sl[:] = [x for x in sl if x.get("id") != f["id"]]
                 else:
-                    _fotos_novas[:] = [(p, l) for p, l in _fotos_novas if p != f["path"]]
-                _rebuild_galeria()
+                    _fotos_novas[:] = [(p, l, t, d) for p, l, t, d in _fotos_novas
+                                       if p != f["path"]]
+                _rebuild_galerias()
             linha.controls.append(ft.Stack([
                 ft.Container(
                     content=ft.Image(
@@ -750,28 +754,47 @@ def _build_ficha_remedio(page, remedio, voltar_fn):
                     content=ft.Icon("close_rounded", size=14, color=TXT),
                     bgcolor="#CC000000", border_radius=ft.border_radius.only(
                         top_right=8, bottom_left=8),
-                    padding=2,
-                    right=0, top=0,
+                    padding=2, right=0, top=0,
                     on_click=_excluir, ink=True),
             ]))
         galeria_col.controls.append(linha)
+
+    def _rebuild_galerias():
+        _mini_grid(fotos_salvas_rem, _fotos_novas, galeria_rem, "remedio")
+        _mini_grid(fotos_salvas_rec, _fotos_novas, galeria_rec, "receita")
         try: page.update()
         except Exception: pass
 
-    def _on_foto_selecionada(path_abs):
+    def _on_foto_remedio(path_abs):
         path_rel = processar_foto(path_abs, "fotos_remedios")
         if path_rel:
-            _fotos_novas.append((path_rel, ""))
-            _rebuild_galeria()
+            _fotos_novas.append((path_rel, "", "remedio", None))
+            _rebuild_galerias()
+
+    def _on_foto_receita(path_abs):
+        path_rel = processar_foto(path_abs, "fotos_remedios")
+        if path_rel:
+            _fotos_novas.append((path_rel, "", "receita", f_validade_receita.value.strip() or None))
+            _rebuild_galerias()
+
+    f_validade_receita = _campo("Validade da receita (DD/MM/AAAA)", largura=220,
+                                hint="DD/MM/AAAA")
 
     btn_add_foto = criar_btn_seletor_foto(
         page=page,
-        on_arquivo=_on_foto_selecionada,
-        titulo_menu="Foto da receita / caixa",
+        on_arquivo=_on_foto_remedio,
+        titulo_menu="Foto do remedio / caixa",
         label_btn="Adicionar foto",
     )
 
-    _rebuild_galeria()
+    btn_add_receita = criar_btn_seletor_foto(
+        page=page,
+        on_arquivo=_on_foto_receita,
+        titulo_menu="Foto da receita",
+        label_btn="Adicionar receita",
+    )
+
+    _rebuild_galerias()
 
     # ── Switch ativo ──────────────────────────────────────
     sw_ativo = ft.Switch(label="Ativo",
@@ -931,8 +954,8 @@ def _build_ficha_remedio(page, remedio, voltar_fn):
         horas = [h.strip() for h in (f_horarios.value or "").split(",") if h.strip()]
         salvar_horarios_remedio(rid, horas)
 
-        for path_rel, legenda in _fotos_novas:
-            adicionar_foto_remedio(rid, path_rel, legenda)
+        for path_rel, legenda, tipo_foto, data_val in _fotos_novas:
+            adicionar_foto_remedio(rid, path_rel, legenda, tipo_foto, data_val)
 
         voltar_fn()
 
@@ -991,11 +1014,18 @@ def _build_ficha_remedio(page, remedio, voltar_fn):
         _label_sec("ESTOQUE ATUAL  ·  ALERTA MÍNIMO"),
         ctrl_est,
 
-        # ── GALERIA DE FOTOS ──────────────────────────────
+        # ── FOTOS DO REMEDIO/CAIXA ────────────────────────
         ft.Container(height=4),
-        _label_sec("FOTOS DA RECEITA / CAIXA"),
+        _label_sec("FOTO DO REMEDIO / CAIXA"),
         btn_add_foto,
-        galeria_col,
+        galeria_rem,
+
+        # ── RECEITAS/PRESCRICOES ──────────────────────────
+        ft.Container(height=4),
+        _label_sec("RECEITAS / PRESCRICOES"),
+        f_validade_receita,
+        btn_add_receita,
+        galeria_rec,
 
         # ── ADESÃO / COMPRAS / OBSERVAÇÕES ───────────────
         ft.Container(height=4), widget_adesao,
@@ -1021,13 +1051,44 @@ def _build_ficha_remedio(page, remedio, voltar_fn):
 # ══════════════════════════════════════════════════════════════
 
 def _lista_remedios(page, abrir_ficha_fn):
-    """Retorna lista de controles para a aba Remédios."""
+    """Retorna lista de controles para a aba Remedios."""
     lista     = ft.Column(spacing=8)
     so_ativos = [True]
+    tipo_sel  = [None]   # None=Todos, "remedio", "suplemento"
+
+    _TIPOS = [
+        (None,         "Todos"),
+        ("remedio",    "Remedio"),
+        ("suplemento", "Supl"),
+    ]
+
+    chips_row = ft.Row(spacing=6, wrap=False)
+
+    def _rebuild_chips():
+        chips_row.controls.clear()
+        for tp, label in _TIPOS:
+            ativo = tipo_sel[0] == tp
+            cor   = AZUL if ativo else MUT
+            chips_row.controls.append(ft.Container(
+                content=ft.Text(label, size=11, color=cor, weight=ft.FontWeight.W_600),
+                bgcolor=f"{AZUL}22" if ativo else BD,
+                border_radius=12,
+                padding=ft.padding.symmetric(horizontal=10, vertical=5),
+                border=ft.Border(
+                    top=ft.BorderSide(1, cor), bottom=ft.BorderSide(1, cor),
+                    left=ft.BorderSide(1, cor), right=ft.BorderSide(1, cor)),
+                ink=True,
+                on_click=lambda e, t=tp: _set_tipo(t),
+            ))
+
+    def _set_tipo(tp):
+        tipo_sel[0] = tp
+        _rebuild_chips()
+        _carregar()
 
     def _carregar():
         lista.controls.clear()
-        remedios = listar_remedios(so_ativos=so_ativos[0])
+        remedios = listar_remedios(so_ativos=so_ativos[0], tipo=tipo_sel[0])
         baixos   = remedios_estoque_baixo()
 
         if baixos:
@@ -1042,7 +1103,7 @@ def _lista_remedios(page, abrir_ficha_fn):
             lista.controls.append(ft.Container(
                 content=ft.Column([
                     ft.Icon("medication_rounded", size=40, color=MUT),
-                    ft.Text("Nenhum remédio cadastrado.", color=SEC, size=13),
+                    ft.Text("Nenhum remedio cadastrado.", color=SEC, size=13),
                 ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=8),
                 padding=40))
             try: page.update()
@@ -1052,18 +1113,39 @@ def _lista_remedios(page, abrir_ficha_fn):
         for r in remedios:
             est = r.get("estoque_atual",0) or 0; mn = r.get("estoque_minimo",5) or 5
             cor = _cor_estoque(est, mn); ativo = r.get("ativo",1)
+            foto = r.get("foto_thumb")
+            med_txt  = r.get("medico") or ""
+            prescrito = r.get("prescrito", 0)
 
             def _mk(rem=r):
                 def _fn(e): abrir_ficha_fn(rem)
                 return _fn
 
+            if foto:
+                icone_widget = ft.Container(
+                    content=ft.Image(
+                        src=foto.replace("\\", "/"),
+                        width=44, height=44, fit=ft.ImageFit.COVER),
+                    width=44, height=44, border_radius=10,
+                    clip_behavior=ft.ClipBehavior.ANTI_ALIAS,
+                    border=ft.border.all(1, BD))
+            else:
+                icone_widget = ft.Container(
+                    content=ft.Icon("medication_rounded", size=22, color=cor),
+                    bgcolor=f"{cor}1A", border_radius=10, width=44, height=44,
+                    alignment=ft.alignment.Alignment(0, 0))
+
+            if prescrito and med_txt:
+                med_row = ft.Text(med_txt, size=10, color=ROXO)
+            elif not prescrito:
+                med_row = ft.Text("Sem prescricao medica", size=10, color=MUT)
+            else:
+                med_row = ft.Container()
+
             lista.controls.append(ft.Container(
                 content=ft.Column([
                     ft.Row([
-                        ft.Container(
-                            content=ft.Icon("medication_rounded", size=22, color=cor),
-                            bgcolor=f"{cor}1A", border_radius=10, width=44, height=44,
-                            alignment=ft.alignment.Alignment(0, 0)),
+                        icone_widget,
                         ft.Column([
                             ft.Row([
                                 ft.Text(r["nome"], size=13, color=TXT, weight=ft.FontWeight.W_600),
@@ -1082,7 +1164,7 @@ def _lista_remedios(page, abrir_ficha_fn):
                                 ft.Text(r.get("frequencia") or "", size=11, color=SEC),
                                 ft.Text("· Continuo", size=10, color=VERD) if r.get("data_fim") == "continuo" else ft.Container(),
                             ], spacing=4),
-                            ft.Text(r.get("medico") or "", size=10, color=ROXO),
+                            med_row,
                         ], spacing=2, expand=True),
                         ft.Column([
                             ft.Text(str(est), size=16, color=cor, weight=ft.FontWeight.W_700),
@@ -1106,11 +1188,12 @@ def _lista_remedios(page, abrir_ficha_fn):
         try: page.update()
         except Exception: pass
 
-    sw = ft.Switch(label="Só ativos", value=so_ativos[0], active_color=VERD,
+    sw = ft.Switch(label="So ativos", value=so_ativos[0], active_color=VERD,
                    label_style=ft.TextStyle(color=SEC, size=12))
     def _toggle(e): so_ativos[0] = sw.value; _carregar()
     sw.on_change = _toggle
 
+    _rebuild_chips()
     _carregar()
 
     _btn_novo_rem = ft.Container(
@@ -1125,11 +1208,14 @@ def _lista_remedios(page, abrir_ficha_fn):
 
     return [
         ft.Container(
-            content=ft.Row([
-                sw,
-                ft.Container(expand=True),
-                _btn_novo_rem,
-            ], vertical_alignment=ft.CrossAxisAlignment.CENTER),
+            content=ft.Column([
+                ft.Row([
+                    chips_row,
+                    ft.Container(expand=True),
+                    _btn_novo_rem,
+                ], vertical_alignment=ft.CrossAxisAlignment.CENTER),
+                ft.Row([sw], vertical_alignment=ft.CrossAxisAlignment.CENTER),
+            ], spacing=4),
             padding=ft.padding.only(bottom=8)),
         lista,
     ]

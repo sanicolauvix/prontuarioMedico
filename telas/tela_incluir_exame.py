@@ -1331,12 +1331,13 @@ def criar_tela_incluir_exame(page: ft.Page, voltar_fn):
                     ft.Container(height=6),
                     ft.FilledButton(
                         content=ft.Row([
-                            ft.Icon("save_rounded", size=16),
+                            ft.Icon("save_rounded", size=16, color="#0D1117"),
                             ft.Text("Salvar só no banco (sem Drive)", size=13,
-                                    weight=ft.FontWeight.W_600),
+                                    color="#0D1117", weight=ft.FontWeight.W_600),
                         ], spacing=8, tight=True),
                         style=ft.ButtonStyle(
                             bgcolor=VERD,
+                            color="#0D1117",
                             shape=ft.RoundedRectangleBorder(radius=8),
                             padding=ft.padding.symmetric(horizontal=20, vertical=12),
                         ),

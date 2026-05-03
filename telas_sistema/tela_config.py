@@ -2,6 +2,7 @@
 # Prontuario Medico | telas_sistema/tela_config.py
 import threading
 import flet as ft
+from shared.layout import Layout
 
 BG   = "#0D1117"
 CARD = "#161B22"
@@ -18,6 +19,7 @@ ROXO = "#BC8CFF"
 
 
 def criar_tela_config(page: ft.Page, voltar_fn=None, aba_inicial: int = 0):
+    lay       = Layout(page)
     aba_ativa = [aba_inicial]
     _montado  = [False]
 
@@ -268,6 +270,126 @@ def criar_tela_config(page: ft.Page, voltar_fn=None, aba_inicial: int = 0):
         )
         btn_limpar_key.on_click = _limpar_key
 
+        # ── Caminhos Claudia ─────────────────────────────────────
+        try:
+            from dados.model_prontuario import get_config as _gc
+            _cerebro_salvo  = _gc("claudia_cerebro_path",  "")
+            _paciente_salvo = _gc("claudia_paciente_md",   "")
+        except Exception:
+            _cerebro_salvo = _paciente_salvo = ""
+
+        f_cerebro  = ft.TextField(
+            label="Pasta do cérebro da Claudia",
+            hint_text=r"Ex: C:\Users\user\Meu Drive\Claude\cerebro_claude",
+            value=_cerebro_salvo,
+            bgcolor=CARD, border_color=BD2, focused_border_color=ROXO,
+            label_style=ft.TextStyle(color=SEC, size=11),
+            text_style=ft.TextStyle(color=TXT, size=12),
+            border_radius=8, expand=True,
+        )
+        f_paciente = ft.TextField(
+            label="Arquivo .md do paciente",
+            hint_text=r"Ex: C:\pessoal\python\prontuario\claudia\references\paciente.md",
+            value=_paciente_salvo,
+            bgcolor=CARD, border_color=BD2, focused_border_color=ROXO,
+            label_style=ft.TextStyle(color=SEC, size=11),
+            text_style=ft.TextStyle(color=TXT, size=12),
+            border_radius=8, expand=True,
+        )
+        _fb_cerebro  = ft.Text(
+            ("Salvo." if _cerebro_salvo  else "Não configurado."),
+            size=11, color=(VERD if _cerebro_salvo  else MUT),
+        )
+        _fb_paciente = ft.Text(
+            ("Salvo." if _paciente_salvo else "Não configurado."),
+            size=11, color=(VERD if _paciente_salvo else MUT),
+        )
+
+        _TOPIC_CFG = "_config_caminho"
+
+        def _on_picker_result(msg):
+            if not isinstance(msg, dict) or msg.get("_t") != _TOPIC_CFG:
+                return
+            campo    = f_cerebro  if msg["campo"] == "cerebro"  else f_paciente
+            feedback = _fb_cerebro if msg["campo"] == "cerebro" else _fb_paciente
+            campo.value    = msg["caminho"]
+            feedback.value = "Caminho selecionado — clique em Salvar."
+            feedback.color = AZUL
+            _ui()
+
+        page.pubsub.subscribe(_on_picker_result)
+
+        def _picker_pasta(campo_id):
+            def _run():
+                try:
+                    import tkinter as _tk
+                    from tkinter import filedialog as _fd
+                    root = _tk.Tk(); root.withdraw()
+                    root.attributes("-topmost", True)
+                    caminho = _fd.askdirectory(title="Selecionar pasta do cérebro")
+                    root.destroy()
+                    if caminho:
+                        page.pubsub.send_all(
+                            {"_t": _TOPIC_CFG, "campo": campo_id, "caminho": caminho})
+                except Exception:
+                    pass
+            import threading as _t
+            _t.Thread(target=_run, daemon=True).start()
+
+        def _picker_arquivo(campo_id):
+            def _run():
+                try:
+                    import tkinter as _tk
+                    from tkinter import filedialog as _fd
+                    root = _tk.Tk(); root.withdraw()
+                    root.attributes("-topmost", True)
+                    caminho = _fd.askopenfilename(
+                        title="Selecionar arquivo do paciente",
+                        filetypes=[("Markdown", "*.md"), ("Todos", "*.*")],
+                    )
+                    root.destroy()
+                    if caminho:
+                        page.pubsub.send_all(
+                            {"_t": _TOPIC_CFG, "campo": campo_id, "caminho": caminho})
+                except Exception:
+                    pass
+            import threading as _t
+            _t.Thread(target=_run, daemon=True).start()
+
+        def _salvar_caminho(chave, campo, feedback):
+            val = (campo.value or "").strip()
+            try:
+                from dados.model_prontuario import set_config as _sc
+                _sc(chave, val)
+                feedback.value = "Salvo." if val else "Removido."
+                feedback.color = VERD if val else MUT
+            except Exception as ex:
+                feedback.value = f"Erro: {ex}"
+                feedback.color = VERM
+            _ui()
+
+        def _mk_btn(label, cor, fn):
+            b = ft.Container(
+                content=ft.Text(label, size=12, color=cor, weight=ft.FontWeight.W_600),
+                bgcolor=cor + "18",
+                border=ft.border.all(1, cor + "55"),
+                border_radius=8, ink=True,
+                padding=ft.padding.symmetric(horizontal=12, vertical=9),
+            )
+            b.on_click = fn
+            return b
+
+        btn_pasta_cerebro   = _mk_btn("Procurar", AZUL,
+                                      lambda e: _picker_pasta("cerebro"))
+        btn_salvar_cerebro  = _mk_btn("Salvar",   ROXO,
+                                      lambda e: _salvar_caminho("claudia_cerebro_path",
+                                                                 f_cerebro, _fb_cerebro))
+        btn_arquivo_pac     = _mk_btn("Procurar", AZUL,
+                                      lambda e: _picker_arquivo("paciente"))
+        btn_salvar_paciente = _mk_btn("Salvar",   ROXO,
+                                      lambda e: _salvar_caminho("claudia_paciente_md",
+                                                                 f_paciente, _fb_paciente))
+
         return [
             # ── Perfil ────────────────────────────────────────────
             ft.Container(
@@ -339,6 +461,35 @@ def criar_tela_config(page: ft.Page, voltar_fn=None, aba_inicial: int = 0):
                                 size=10, color=MUT,
                             ),
                         ], spacing=0),
+                        bgcolor=CARD, border_radius=10,
+                        border=ft.border.all(1, ROXO + "44"),
+                        padding=ft.padding.all(16),
+                    ),
+                    # ── Caminhos ──────────────────────────────────
+                    ft.Container(height=4),
+                    ft.Container(
+                        content=ft.Column([
+                            ft.Text(
+                                "Caminhos usados pela Claudia para ler contexto clínico.",
+                                size=11, color=SEC,
+                            ),
+                            ft.Container(height=10),
+                            # Cérebro
+                            ft.Text("Cérebro da Claudia (pasta)", size=11,
+                                    color=MUT, weight=ft.FontWeight.W_600),
+                            ft.Container(height=4),
+                            ft.Row([f_cerebro, btn_pasta_cerebro, btn_salvar_cerebro],
+                                   spacing=8, vertical_alignment=ft.CrossAxisAlignment.CENTER),
+                            _fb_cerebro,
+                            ft.Container(height=10),
+                            # Paciente
+                            ft.Text("Arquivo do paciente (.md)", size=11,
+                                    color=MUT, weight=ft.FontWeight.W_600),
+                            ft.Container(height=4),
+                            ft.Row([f_paciente, btn_arquivo_pac, btn_salvar_paciente],
+                                   spacing=8, vertical_alignment=ft.CrossAxisAlignment.CENTER),
+                            _fb_paciente,
+                        ], spacing=4),
                         bgcolor=CARD, border_radius=10,
                         border=ft.border.all(1, ROXO + "44"),
                         padding=ft.padding.all(16),
@@ -474,6 +625,7 @@ def criar_tela_config(page: ft.Page, voltar_fn=None, aba_inicial: int = 0):
     threading.Thread(target=_carregar_historico, daemon=True).start()
 
     corpo = ft.Column([
+        ft.Container(height=lay.spacer_topo, bgcolor=BG),
         header,
         ft.Container(
             content=barra_abas,

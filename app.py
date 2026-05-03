@@ -72,7 +72,7 @@ def _tela_principal(page: ft.Page, voltar_fn=None):
     import sqlite3 as _sq
     from dados.model_prontuario import (
         carregar_perfil, listar_remedios, listar_consultas,
-        listar_tomadas_hoje, resumo_adesao,
+        listar_tomadas_hoje, resumo_adesao, listar_templates,
     )
 
     aba_ativa = [0]
@@ -176,7 +176,7 @@ def _tela_principal(page: ft.Page, voltar_fn=None):
         padding=ft.padding.symmetric(horizontal=16, vertical=14),
         ink=True,
     )
-    card_claudia.on_click = lambda e: _lazy_fn("tela_parecer", "criar_tela_parecer")()
+    card_claudia.on_click = lambda e: _lazy_fn("tela_claudia", "criar_tela_claudia")()
 
     # ══════════════════════════════════════════════════════════
     # MONITOR UTI -- canais vitais + score resumido
@@ -184,6 +184,83 @@ def _tela_principal(page: ft.Page, voltar_fn=None):
     txt_score_num = ft.Text("--", size=13, weight=ft.FontWeight.W_700, color=AZUL)
     txt_nota      = ft.Text("--", size=11, color=SEC)
     txt_detalhes  = ft.Text("",   size=10, color=MUT)
+    _score_cache  = [{}]  # armazena ultimo calculo para o overlay
+
+    def _mostrar_score_breakdown(e=None):
+        d = _score_cache[0]
+        if not d:
+            return
+        cor = d.get("cor", AZUL)
+
+        def _fechar(ev=None):
+            if ref[0] in page.overlay:
+                page.overlay.remove(ref[0])
+            try: page.update()
+            except Exception: pass
+
+        def _barra(label, val, peso, cor_b):
+            return ft.Column([
+                ft.Row([
+                    ft.Text(label, size=12, color=TXT, expand=True),
+                    ft.Text(f"{val:.0f}%", size=12, color=cor_b,
+                            weight=ft.FontWeight.W_700),
+                    ft.Text(f"x{peso:.0f}%", size=10, color=MUT),
+                ], spacing=8),
+                ft.Container(
+                    content=ft.ProgressBar(
+                        value=val/100, color=cor_b, bgcolor=BD, height=6),
+                    border_radius=3),
+            ], spacing=4)
+
+        _COR_EX = VERD if d.get("exames",0) >= 90 else (AMAR if d.get("exames",0) >= 70 else VERM)
+        _COR_AD = VERD if d.get("adesao",0) >= 80 else (AMAR if d.get("adesao",0) >= 50 else VERM)
+        _COR_CO = VERD if d.get("consultas",0) >= 80 else (AMAR if d.get("consultas",0) >= 50 else VERM)
+
+        btn_fechar = ft.Container(
+            content=ft.Text("Fechar", size=13, color=AZUL, weight=ft.FontWeight.W_600),
+            padding=ft.padding.symmetric(horizontal=20, vertical=10),
+            border_radius=8, bgcolor=AZUL + "22", ink=True,
+            border=ft.border.all(1, AZUL + "66"),
+        )
+        btn_fechar.on_click = _fechar
+
+        ref = [None]
+        ref[0] = ft.Container(
+            content=ft.Container(
+                content=ft.Column([
+                    ft.Row([
+                        ft.Text("Score de Saude", size=15, color=TXT,
+                                weight=ft.FontWeight.W_700, expand=True),
+                        ft.Text(f"{d['final']:.0f}", size=28, color=cor,
+                                weight=ft.FontWeight.W_900),
+                    ], spacing=8),
+                    ft.Text(d.get("nota",""), size=12, color=cor),
+                    ft.Container(height=12),
+                    ft.Text("COMPOSICAO", size=10, color=MUT,
+                            weight=ft.FontWeight.W_700),
+                    ft.Container(height=6),
+                    _barra(f"Exames ({d.get('n_exames',0)} resultados)",
+                           d.get("exames",0), 60, _COR_EX),
+                    ft.Container(height=8),
+                    _barra(f"Adesao a remedios ({d.get('n_remedios',0)} ativos)",
+                           d.get("adesao",0), 30, _COR_AD),
+                    ft.Container(height=8),
+                    _barra("Consultas (ultimos 90 dias)",
+                           d.get("consultas",0), 10, _COR_CO),
+                    ft.Container(height=4),
+                    ft.Text("Formula: Exames x60%  +  Adesao x30%  +  Consultas x10%",
+                            size=9, color=MUT, text_align=ft.TextAlign.CENTER),
+                    ft.Container(height=16),
+                    ft.Row([btn_fechar], alignment=ft.MainAxisAlignment.CENTER),
+                ], tight=True),
+                bgcolor=CARD, border_radius=14, padding=ft.padding.all(24), width=320,
+            ),
+            bgcolor="#CC000000", expand=True, alignment=ft.Alignment(0, 0),
+        )
+        ref[0].on_click = _fechar
+        page.overlay.append(ref[0])
+        try: page.update()
+        except Exception: pass
 
     _UTI_CANAIS = [
         ("Glicose",    "water_drop_rounded",            "#FF6B6B",
@@ -233,11 +310,22 @@ def _tela_principal(page: ft.Page, voltar_fn=None):
     _uti_refs: list = []
     _uti_row = ft.Row(scroll=ft.ScrollMode.AUTO, spacing=8)
 
+    def _abrir_grafico_canal(lbl, termos, cor):
+        from telas.tela_grafico_marcador import criar_tela_grafico_marcador
+        _navegar(page,
+                 lambda p, v: criar_tela_grafico_marcador(p, v, lbl, termos, cor),
+                 _voltar_hub)
+
+    def _mk_click_uti(lbl, termos, cor):
+        def _h(e): _abrir_grafico_canal(lbl, termos, cor)
+        return _h
+
     for _lbl, _ico, _cor, _termos in _UTI_CANAIS:
-        _tv  = ft.Text("--", size=20, weight=ft.FontWeight.W_900,
+        _tv  = ft.Text("--", size=18, weight=ft.FontWeight.W_900,
                        color=_cor, text_align=ft.TextAlign.CENTER)
-        _tu  = ft.Text("",   size=9, color=SEC, text_align=ft.TextAlign.CENTER)
-        _td  = ft.Text("",   size=9, color=MUT, text_align=ft.TextAlign.CENTER)
+        _tu  = ft.Text("",   size=8,  color=SEC, text_align=ft.TextAlign.CENTER)
+        _td  = ft.Text("",   size=8,  color=MUT, text_align=ft.TextAlign.CENTER)
+        _tm  = ft.Text("",   size=8,  color=MUT, text_align=ft.TextAlign.CENTER)
         _dot = ft.Container(width=6, height=6, border_radius=3, bgcolor=MUT)
         _card_uti = ft.Container(
             content=ft.Column([
@@ -247,13 +335,13 @@ def _tela_principal(page: ft.Page, voltar_fn=None):
                 ft.Text(_lbl, size=9, color=SEC,
                         text_align=ft.TextAlign.CENTER,
                         weight=ft.FontWeight.W_600),
-                ft.Container(height=4),
+                ft.Container(height=3),
                 _tv,
                 _tu,
-                ft.Container(height=2),
                 _td,
+                _tm,
             ], horizontal_alignment=ft.CrossAxisAlignment.CENTER,
-               spacing=2, tight=True),
+               spacing=1, tight=True),
             bgcolor="#080C11",
             border=ft.border.all(1, _cor + "33"),
             border_radius=12,
@@ -261,12 +349,11 @@ def _tela_principal(page: ft.Page, voltar_fn=None):
             width=88,
             ink=True,
         )
-        _card_uti.on_click = lambda e: _lazy_fn(
-            "tela_marcadores", "criar_tela_marcadores")()
+        _card_uti.on_click = _mk_click_uti(_lbl, _termos, _cor)
         _uti_refs.append({
-            "val": _tv, "unit": _tu, "data": _td,
+            "val": _tv, "unit": _tu, "data": _td, "media": _tm,
             "dot": _dot, "card": _card_uti, "cor": _cor,
-            "termos": _termos,
+            "termos": _termos, "lbl": _lbl,
         })
         _uti_row.controls.append(_card_uti)
 
@@ -281,6 +368,17 @@ def _tela_principal(page: ft.Page, voltar_fn=None):
     _btn_marc.on_click = lambda e: _lazy_fn(
         "tela_marcadores", "criar_tela_marcadores")()
 
+    _row_score = ft.Container(
+        content=ft.Row([
+            ft.Text("Score", size=10, color=MUT),
+            txt_score_num,
+            txt_nota,
+            ft.Icon("info_outline_rounded", size=11, color=MUT),
+        ], spacing=4, tight=True),
+        border_radius=8, ink=True, padding=ft.padding.symmetric(horizontal=4, vertical=2),
+    )
+    _row_score.on_click = _mostrar_score_breakdown
+
     card_monitor_uti = ft.Container(
         content=ft.Column([
             ft.Row([
@@ -288,11 +386,7 @@ def _tela_principal(page: ft.Page, voltar_fn=None):
                 ft.Text("MONITOR VITAL", size=10,
                         weight=ft.FontWeight.W_700, color=SEC),
                 ft.Container(expand=True),
-                ft.Row([
-                    ft.Text("Score", size=10, color=MUT),
-                    txt_score_num,
-                    txt_nota,
-                ], spacing=4, tight=True),
+                _row_score,
                 _btn_marc,
             ], spacing=6),
             ft.Container(height=8),
@@ -314,10 +408,13 @@ def _tela_principal(page: ft.Page, voltar_fn=None):
     # ══════════════════════════════════════════════════════════
     # MINI STATS
     # ══════════════════════════════════════════════════════════
-    txt_stat_remedios = ft.Text("--", size=18, weight=ft.FontWeight.W_700, color=AMAR)
-    txt_stat_consulta = ft.Text("--", size=12, weight=ft.FontWeight.W_700, color=AZUL,
-                                text_align=ft.TextAlign.CENTER)
-    txt_stat_exames   = ft.Text("--", size=18, weight=ft.FontWeight.W_700, color=ROXO)
+    txt_stat_remedios  = ft.Text("--", size=18, weight=ft.FontWeight.W_700, color=AMAR)
+    txt_stat_consulta  = ft.Text("--", size=12, weight=ft.FontWeight.W_700, color=AZUL,
+                                 text_align=ft.TextAlign.CENTER)
+    txt_stat_rotinas   = ft.Text("--", size=14, weight=ft.FontWeight.W_700, color=VERD,
+                                 text_align=ft.TextAlign.CENTER)
+    txt_prox_rotina    = ft.Text("",   size=9,  color=SEC,
+                                 text_align=ft.TextAlign.CENTER, max_lines=1)
 
     def _mini_stat(val_ctrl, label, cor, icone, fn=None):
         c = ft.Container(
@@ -340,11 +437,33 @@ def _tela_principal(page: ft.Page, voltar_fn=None):
             c.on_click = lambda e: fn()
         return c
 
+    def _mini_stat_rotinas():
+        c = ft.Container(
+            content=ft.Column([
+                ft.Icon("calendar_today_rounded", size=16, color=VERD),
+                txt_stat_rotinas,
+                txt_prox_rotina,
+                ft.Text("Rotinas", size=9, color=SEC, text_align=ft.TextAlign.CENTER),
+            ], alignment=ft.MainAxisAlignment.CENTER,
+               horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+               spacing=2),
+            bgcolor=CARD,
+            border=ft.border.all(1, BD),
+            border_radius=10,
+            padding=10,
+            expand=True,
+            alignment=ft.alignment.Alignment(0, 0),
+            ink=True,
+        )
+        c.on_click = lambda e: _lazy_fn("tela_rotinas", "criar_tela_rotinas")()
+        return c
+
     mini_stats = ft.Row([
         _mini_stat(txt_stat_remedios, "Remedios", AMAR, "medication_rounded",
                    _lazy_fn("tela_remedios", "criar_tela_remedios")),
-        _mini_stat(txt_stat_consulta, "Prox.\nConsulta", AZUL, "event_note_rounded"),
-        _mini_stat(txt_stat_exames,   "Exames/mes",     ROXO, "biotech_rounded"),
+        _mini_stat(txt_stat_consulta, "Prox.\nCompromisso", AZUL, "event_note_rounded",
+                   _lazy_fn("tela_compromissos", "criar_tela_compromissos")),
+        _mini_stat_rotinas(),
     ], spacing=8)
 
     # ══════════════════════════════════════════════════════════
@@ -353,11 +472,60 @@ def _tela_principal(page: ft.Page, voltar_fn=None):
     ico_sync = ft.Icon("cloud_done_rounded", size=14, color=MUT)
     txt_sync = ft.Text("Sincronizacao nao configurada", size=11, color=MUT)
 
+    _countdown_ativo = [False]
+
+    def _parar_countdown():
+        _countdown_ativo[0] = False
+
+    def _iniciar_countdown():
+        _countdown_ativo[0] = True
+        def _run():
+            import time
+            while _countdown_ativo[0]:
+                try:
+                    from backup import backup_watcher as _bw
+                    inst = _bw._instancia
+                    if inst and inst.status == "pendente":
+                        restante = inst.proximo_backup_em
+                        txt_sync.value = f"Backup em {restante}"
+                        txt_sync.color = AMAR
+                        ico_sync.color = AMAR
+                        ico_sync.name = "cloud_sync_rounded"
+                        _atualizar_ui()
+                except Exception:
+                    pass
+                time.sleep(1)
+        threading.Thread(target=_run, daemon=True).start()
+
     def _on_backup_status(topic, msg):
-        txt = (msg.get("msg", "") if isinstance(msg, dict) else str(msg))
-        txt_sync.value = (txt[:60] if txt else "Backup automatico ativo")
-        txt_sync.color = VERD
-        ico_sync.color = VERD
+        if not isinstance(msg, dict):
+            msg = {"fase": "msg", "msg": str(msg)}
+        fase = msg.get("fase", "msg")
+        if fase == "pendente":
+            _iniciar_countdown()
+            return
+        _parar_countdown()
+        if fase == "executando":
+            txt_sync.value = "Fazendo backup..."
+            txt_sync.color = AZUL
+            ico_sync.color = AZUL
+            ico_sync.name = "cloud_upload_rounded"
+        elif fase == "concluido":
+            txt_sync.value = "Backup concluido"
+            txt_sync.color = VERD
+            ico_sync.color = VERD
+            ico_sync.name = "cloud_done_rounded"
+        elif fase == "erro":
+            txt_sync.value = f"Erro: {msg.get('msg', '')[:50]}"
+            txt_sync.color = VERM
+            ico_sync.color = VERM
+            ico_sync.name = "cloud_off_rounded"
+        else:
+            txt = msg.get("msg", "")
+            txt_sync.value = txt[:60] if txt else "Backup automatico ativo"
+            txt_sync.color = VERD
+            ico_sync.color = VERD
+            ico_sync.name = "cloud_done_rounded"
         _atualizar_ui()
 
     page.pubsub.subscribe_topic("_backup_status", _on_backup_status)
@@ -448,19 +616,19 @@ def _tela_principal(page: ft.Page, voltar_fn=None):
         return [
             ft.Container(
                 content=ft.Column([
-                    _btn_item("event_note_rounded", "Consultas",
-                              "Historico de consultas", VERD,
-                              _lazy_fn("tela_consultas_medicas",
-                                       "criar_tela_consultas_medicas")),
+                    _btn_item("event_note_rounded", "Compromissos",
+                              "Consultas, coletas e fisioterapia", VERD,
+                              _lazy_fn("tela_compromissos",
+                                       "criar_tela_compromissos")),
                     _btn_item("medication_rounded", "Medicacao",
                               "Remedios e suplementos", AMAR,
                               _lazy_fn("tela_remedios", "criar_tela_remedios")),
                     _btn_item("calendar_today_rounded", "Rotinas Diarias",
                               "Habitos e alimentacao", VERD,
                               _lazy_fn("tela_rotinas", "criar_tela_rotinas")),
-                    _btn_item("psychology_rounded", "Parecer IA",
-                              "Analise com Claude", ROXO,
-                              _lazy_fn("tela_parecer", "criar_tela_parecer")),
+                    _btn_item("psychology_rounded", "Claudia IA",
+                              "Conversar com Claudia", ROXO,
+                              _lazy_fn("tela_claudia", "criar_tela_claudia")),
                     _btn_item("biotech_rounded", "Marcadores",
                               "Sinais vitais e historico", "#4ECDC4",
                               _lazy_fn("tela_marcadores", "criar_tela_marcadores")),
@@ -550,6 +718,9 @@ def _tela_principal(page: ft.Page, voltar_fn=None):
                 _item("people_rounded", "Medicos",
                       "Cadastro e historico", ROXO,
                       _lazy_fn("tela_medicos", "criar_tela_medicos")),
+                _item("local_hospital_rounded", "Clinicas",
+                      "Locais de atendimento", AZUL,
+                      _lazy_fn("tela_clinicas", "criar_tela_clinicas")),
                 _item("link_rounded", "Links Medico",
                       "Tokens de acesso", AZUL,
                       _lazy_fn("tela_links_medico", "criar_tela_links_medico")),
@@ -656,6 +827,12 @@ def _tela_principal(page: ft.Page, voltar_fn=None):
         txt_nota.value      = nota
         txt_nota.color      = cor_s
         txt_detalhes.value  = f"Ex {score_ex:.0f}%  .  Rem {score_ad:.0f}%"
+        # Armazena breakdown para o overlay de detalhes
+        _score_cache[0] = {
+            "final": score_final, "nota": nota, "cor": cor_s,
+            "exames": score_ex, "adesao": score_ad, "consultas": score_co,
+            "n_exames": len(rows), "n_remedios": len(remedios_ativos),
+        }
 
         # Mini stats
         try:
@@ -667,20 +844,21 @@ def _tela_principal(page: ft.Page, voltar_fn=None):
             proxima = agendadas[0]["data"] if agendadas else None
             d_txt = (proxima[8:10] + "/" + proxima[5:7]) if proxima else "Nenhuma"
 
-            conn = _sq.connect(DB_PATH, timeout=30)
             try:
-                mes = date.today().strftime("%Y-%m")
-                n_ex = conn.execute(
-                    "SELECT COUNT(*) FROM exames "
-                    "WHERE strftime('%Y-%m', data_exame) = ?",
-                    (mes,),
-                ).fetchone()[0]
-            finally:
-                conn.close()
+                templates = listar_templates()
+                n_rot = len(templates)
+                # Nome da primeira rotina padrao (ou a primeira disponivel)
+                padrao = next((t for t in templates if t.get("padrao")), None)
+                if not padrao and templates:
+                    padrao = templates[0]
+                txt_prox_rotina.value = padrao["nome"] if padrao else ""
+            except Exception:
+                n_rot = 0
+                txt_prox_rotina.value = ""
 
             txt_stat_remedios.value = str(len(remedios_ativos))
             txt_stat_consulta.value = d_txt
-            txt_stat_exames.value   = str(n_ex)
+            txt_stat_rotinas.value  = f"{n_rot}" if n_rot else "--"
         except Exception as ex:
             log.exception("[HUB] Erro stats: %s", ex)
 
@@ -714,16 +892,12 @@ def _tela_principal(page: ft.Page, voltar_fn=None):
             med_incompletos = 0
 
         chips_hoje.controls.clear()
-        if pend > 0:
-            chips_hoje.controls.append(
-                _chip(f"{pend} remedio(s)", AMAR, "medication_rounded",
-                      _lazy_fn("tela_remedios", "criar_tela_remedios"))
-            )
+        # Somente compromissos externos — remedios sao alertados via alarme
         if cons > 0:
             chips_hoje.controls.append(
-                _chip(f"{cons} consulta(s)", AZUL, "event_note_rounded",
-                      _lazy_fn("tela_consultas_medicas",
-                               "criar_tela_consultas_medicas"))
+                _chip(f"{cons} compromisso(s)", AZUL, "event_note_rounded",
+                      _lazy_fn("tela_compromissos",
+                               "criar_tela_compromissos"))
             )
         if med_incompletos > 0:
             chips_hoje.controls.append(
@@ -731,12 +905,13 @@ def _tela_principal(page: ft.Page, voltar_fn=None):
                       "person_add_rounded",
                       _lazy_fn("tela_medicos", "criar_tela_medicos"))
             )
-        if not pend and not cons and not med_incompletos:
+        if not cons and not med_incompletos:
             chips_hoje.controls.append(
-                _chip("Dia tranquilo", VERD, "check_circle_rounded", lambda: None)
+                _chip("Sem compromissos hoje", VERD, "check_circle_rounded",
+                      lambda: None)
             )
 
-        # Monitor UTI -- ultimo valor de cada canal
+        # Monitor UTI -- ultimo valor + media dos ultimos 30 de cada canal
         try:
             conn_uti = _sq.connect(DB_PATH, timeout=30)
             try:
@@ -779,6 +954,39 @@ def _tela_principal(page: ft.Page, voltar_fn=None):
                         s_cor = _avaliar_status_cor(val_s, ref_s)
                         ref_u["dot"].bgcolor  = s_cor
                         ref_u["card"].border  = ft.border.all(1, s_cor + "55")
+                    # media dos ultimos 30 valores
+                    try:
+                        vals30 = []
+                        for termo in ref_u["termos"]:
+                            r30 = conn_uti.execute("""
+                                SELECT r.valor FROM resultados_estruturados r
+                                JOIN exames e ON r.exame_id = e.id
+                                WHERE LOWER(r.parametro) LIKE ?
+                                  AND r.valor IS NOT NULL AND r.valor != ''
+                                ORDER BY e.data_exame DESC LIMIT 30
+                            """, (f"%{termo}%",)).fetchall()
+                            for (v,) in r30:
+                                try: vals30.append(float(str(v).replace(",", ".")))
+                                except Exception: pass
+                            try:
+                                m30 = conn_uti.execute("""
+                                    SELECT CAST(valor AS TEXT)
+                                    FROM marcadores_leituras
+                                    WHERE LOWER(parametro) LIKE ?
+                                    ORDER BY data_medicao DESC LIMIT 30
+                                """, (f"%{termo}%",)).fetchall()
+                                for (v,) in m30:
+                                    try: vals30.append(float(str(v).replace(",", ".")))
+                                    except Exception: pass
+                            except Exception:
+                                pass
+                            if vals30:
+                                break
+                        if vals30:
+                            med = sum(vals30) / len(vals30)
+                            ref_u["media"].value = f"med:{med:.1f}"
+                    except Exception:
+                        pass
             finally:
                 conn_uti.close()
         except Exception as _ex_uti:
@@ -895,7 +1103,8 @@ def _tela_principal(page: ft.Page, voltar_fn=None):
                         watcher = BackupWatcher()
                         watcher.iniciar(
                             callback_ui=lambda m: page.pubsub.send_all_on_topic(
-                                "_backup_status", {"msg": m}
+                                "_backup_status",
+                                m if isinstance(m, dict) else {"fase": "msg", "msg": m}
                             )
                         )
                     except Exception:

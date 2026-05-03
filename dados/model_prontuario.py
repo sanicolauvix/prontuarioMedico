@@ -39,6 +39,38 @@ CORE_DB = _os.path.join(_DB_DIR, "koios.db")              # Koios/database/koios
 DB_PATH = _os.path.join(_HERE_MODEL, "prontuario.db")     # prontuario/dados/prontuario.db
 
 
+# ── Backup auto-notify ───────────────────────────────────────────────────────
+# Qualquer conn.commit() em DB_PATH chama _notify() automaticamente.
+# notify_db_changed() e no-op se o watcher nao estiver rodando (startup).
+
+def _notify() -> None:
+    try:
+        from backup.backup_watcher import notify_db_changed
+        notify_db_changed()
+    except Exception:
+        pass
+
+
+class _ProntuarioConn(sqlite3.Connection):
+    def commit(self):
+        super().commit()
+        _notify()
+
+
+_orig_sqlite3_connect = sqlite3.connect
+
+
+def _prontuario_connect(*args, **kwargs):
+    db = args[0] if args else kwargs.get("database", "")
+    if db == DB_PATH and "factory" not in kwargs:
+        kwargs["factory"] = _ProntuarioConn
+    return _orig_sqlite3_connect(*args, **kwargs)
+
+
+sqlite3.connect = _prontuario_connect
+# ─────────────────────────────────────────────────────────────────────────────
+
+
 def _migrar_medicos():
     """Adiciona colunas 'especialidade' e 'medico_solicit' se não existirem."""
     try:
@@ -164,6 +196,50 @@ def _migrar_tipo_prescrito():
                 print("[MODEL] coluna prescrito adicionada em remedios")
     except Exception as ex:
         print(f"[MODEL] _migrar_tipo_prescrito: {ex}")
+
+
+def _migrar_remedio_fotos():
+    """Adiciona tipo (remedio/receita) e data_validade em remedio_fotos."""
+    try:
+        with sqlite3.connect(DB_PATH, timeout=30) as conn:
+            cols = [r[1] for r in conn.execute("PRAGMA table_info(remedio_fotos)").fetchall()]
+            if "tipo" not in cols:
+                conn.execute("ALTER TABLE remedio_fotos ADD COLUMN tipo TEXT DEFAULT 'remedio'")
+                print("[MODEL] coluna tipo adicionada em remedio_fotos")
+            if "data_validade" not in cols:
+                conn.execute("ALTER TABLE remedio_fotos ADD COLUMN data_validade TEXT")
+                print("[MODEL] coluna data_validade adicionada em remedio_fotos")
+    except Exception as ex:
+        print(f"[MODEL] _migrar_remedio_fotos: {ex}")
+
+
+def _migrar_consulta_pauta():
+    """Adiciona coluna pauta (JSON) em consultas para itens a tratar."""
+    try:
+        with sqlite3.connect(DB_PATH, timeout=30) as conn:
+            cols = [r[1] for r in conn.execute("PRAGMA table_info(consultas)").fetchall()]
+            if "pauta" not in cols:
+                conn.execute("ALTER TABLE consultas ADD COLUMN pauta TEXT")
+                print("[MODEL] coluna pauta adicionada em consultas")
+    except Exception as ex:
+        print(f"[MODEL] _migrar_consulta_pauta: {ex}")
+
+
+def _migrar_compromisso():
+    """Adiciona tipo_compromisso e clinica_id em consultas (renomeada para compromissos)."""
+    try:
+        with sqlite3.connect(DB_PATH, timeout=30) as conn:
+            cols = [r[1] for r in conn.execute("PRAGMA table_info(consultas)").fetchall()]
+            if "tipo_compromisso" not in cols:
+                conn.execute(
+                    "ALTER TABLE consultas ADD COLUMN tipo_compromisso TEXT DEFAULT 'consulta'"
+                )
+                print("[MODEL] coluna tipo_compromisso adicionada em consultas")
+            if "clinica_id" not in cols:
+                conn.execute("ALTER TABLE consultas ADD COLUMN clinica_id INTEGER")
+                print("[MODEL] coluna clinica_id adicionada em consultas")
+    except Exception as ex:
+        print(f"[MODEL] _migrar_compromisso: {ex}")
 
 
 def _criar_rotinas():
@@ -653,6 +729,22 @@ def criar_tabelas():
         );
 
         -- ────────────────────────────────────────────────────────
+        -- CLÍNICAS / LOCAIS DE ATENDIMENTO
+        -- ────────────────────────────────────────────────────────
+        CREATE TABLE IF NOT EXISTS clinicas (
+            id            INTEGER PRIMARY KEY AUTOINCREMENT,
+            nome          TEXT NOT NULL,
+            tipo          TEXT DEFAULT 'clinica',
+            telefone      TEXT,
+            email         TEXT,
+            website       TEXT,
+            endereco_json TEXT,
+            observacoes   TEXT,
+            ativo         INTEGER DEFAULT 1,
+            criado_em     TEXT DEFAULT (datetime('now'))
+        );
+
+        -- ────────────────────────────────────────────────────────
         -- LINKS DE ACESSO MÉDICO
         -- ────────────────────────────────────────────────────────
         CREATE TABLE IF NOT EXISTS links_medico (
@@ -787,6 +879,9 @@ def criar_tabelas():
     _migrar_marcadores()
     _migrar_marcadores_contexto()
     _migrar_tipo_prescrito()
+    _migrar_remedio_fotos()
+    _migrar_consulta_pauta()
+    _migrar_compromisso()
     _criar_rotinas()
     # Registrar módulo no core
     try:
@@ -1729,21 +1824,31 @@ def excluir_especialidade(esp_id: int) -> bool:
 # HELPERS — CONSULTAS
 # ══════════════════════════════════════════════════════════════
 
-def listar_consultas(tipo: str = None) -> list[dict]:
+def listar_consultas(tipo: str = None, tipo_compromisso: str = None) -> list[dict]:
     conn = sqlite3.connect(DB_PATH, timeout=30)
     try:
-        cur  = conn.cursor()
-        where = f"WHERE c.tipo = '{tipo}'" if tipo else ""
+        cur    = conn.cursor()
+        wheres = []
+        if tipo:
+            wheres.append(f"c.tipo = '{tipo}'")
+        if tipo_compromisso:
+            wheres.append(f"COALESCE(c.tipo_compromisso,'consulta') = '{tipo_compromisso}'")
+        where = ("WHERE " + " AND ".join(wheres)) if wheres else ""
         cur.execute(f"""
             SELECT c.id, c.data, c.hora, c.tipo, c.local, c.observacoes,
-                   m.nome as medico, e.nome as especialidade
+                   m.nome as medico, e.nome as especialidade,
+                   c.medico_id, COALESCE(c.pauta,'[]') as pauta,
+                   COALESCE(c.tipo_compromisso,'consulta') as tipo_compromisso,
+                   c.clinica_id, cl.nome as clinica_nome, cl.tipo as clinica_tipo
             FROM consultas c
             LEFT JOIN medicos m ON m.id = c.medico_id
             LEFT JOIN especialidades e ON e.id = m.especialidade_id
+            LEFT JOIN clinicas cl ON cl.id = c.clinica_id
             {where}
             ORDER BY c.data DESC, c.hora DESC
         """)
-        cols = ["id","data","hora","tipo","local","observacoes","medico","especialidade"]
+        cols = ["id","data","hora","tipo","local","observacoes","medico","especialidade",
+                "medico_id","pauta","tipo_compromisso","clinica_id","clinica_nome","clinica_tipo"]
         rows = cur.fetchall()
         return [dict(zip(cols, r)) for r in rows]
     finally:
@@ -1751,24 +1856,85 @@ def listar_consultas(tipo: str = None) -> list[dict]:
 
 
 def salvar_consulta(dados: dict) -> int:
+    import json as _json
+    pauta_json = _json.dumps(dados.get("pauta") or [], ensure_ascii=False)
     conn = sqlite3.connect(DB_PATH, timeout=30)
     try:
         cur  = conn.cursor()
         if dados.get("id"):
             cur.execute("""
                 UPDATE consultas SET medico_id=?, data=?, hora=?, tipo=?,
-                local=?, observacoes=? WHERE id=?
+                local=?, observacoes=?, pauta=?, tipo_compromisso=?, clinica_id=?
+                WHERE id=?
             """, (dados.get("medico_id"), dados["data"], dados.get("hora"),
                   dados.get("tipo","agendada"), dados.get("local"),
-                  dados.get("observacoes"), dados["id"]))
+                  dados.get("observacoes"), pauta_json,
+                  dados.get("tipo_compromisso","consulta"), dados.get("clinica_id"),
+                  dados["id"]))
             cid = dados["id"]
         else:
             cur.execute("""
-                INSERT INTO consultas (medico_id, paciente_id, data, hora, tipo, local, observacoes)
-                VALUES (?,?,?,?,?,?,?)
+                INSERT INTO consultas
+                    (medico_id, paciente_id, data, hora, tipo, local, observacoes,
+                     pauta, tipo_compromisso, clinica_id)
+                VALUES (?,?,?,?,?,?,?,?,?,?)
             """, (dados.get("medico_id"), dados.get("paciente_id"),
                   dados["data"], dados.get("hora"),
                   dados.get("tipo","agendada"), dados.get("local"),
+                  dados.get("observacoes"), pauta_json,
+                  dados.get("tipo_compromisso","consulta"), dados.get("clinica_id")))
+            cid = cur.lastrowid
+        conn.commit()
+        return cid
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
+# ══════════════════════════════════════════════════════════════
+# HELPERS — CLÍNICAS
+# ══════════════════════════════════════════════════════════════
+
+def listar_clinicas(so_ativas: bool = True) -> list[dict]:
+    conn = sqlite3.connect(DB_PATH, timeout=30)
+    try:
+        cur   = conn.cursor()
+        where = "WHERE ativo = 1" if so_ativas else ""
+        cur.execute(f"""
+            SELECT id, nome, tipo, telefone, email, website,
+                   endereco_json, observacoes, ativo, criado_em
+            FROM clinicas {where} ORDER BY nome
+        """)
+        cols = ["id","nome","tipo","telefone","email","website",
+                "endereco_json","observacoes","ativo","criado_em"]
+        return [dict(zip(cols, r)) for r in cur.fetchall()]
+    finally:
+        conn.close()
+
+
+def salvar_clinica(dados: dict) -> int:
+    conn = sqlite3.connect(DB_PATH, timeout=30)
+    try:
+        cur = conn.cursor()
+        if dados.get("id"):
+            cur.execute("""
+                UPDATE clinicas SET nome=?, tipo=?, telefone=?, email=?,
+                website=?, endereco_json=?, observacoes=?, ativo=? WHERE id=?
+            """, (dados["nome"], dados.get("tipo","clinica"),
+                  dados.get("telefone"), dados.get("email"),
+                  dados.get("website"), dados.get("endereco_json"),
+                  dados.get("observacoes"), dados.get("ativo",1), dados["id"]))
+            cid = dados["id"]
+        else:
+            cur.execute("""
+                INSERT INTO clinicas (nome, tipo, telefone, email, website,
+                                      endereco_json, observacoes)
+                VALUES (?,?,?,?,?,?,?)
+            """, (dados["nome"], dados.get("tipo","clinica"),
+                  dados.get("telefone"), dados.get("email"),
+                  dados.get("website"), dados.get("endereco_json"),
                   dados.get("observacoes")))
             cid = cur.lastrowid
         conn.commit()
@@ -1776,6 +1942,15 @@ def salvar_consulta(dados: dict) -> int:
     except Exception:
         conn.rollback()
         raise
+    finally:
+        conn.close()
+
+
+def excluir_clinica(clinica_id: int) -> None:
+    conn = sqlite3.connect(DB_PATH, timeout=30)
+    try:
+        conn.execute("UPDATE clinicas SET ativo = 0 WHERE id = ?", (clinica_id,))
+        conn.commit()
     finally:
         conn.close()
 
@@ -1828,18 +2003,26 @@ def listar_receitas(consulta_id: int = None) -> list[dict]:
 # HELPERS — REMÉDIOS
 # ══════════════════════════════════════════════════════════════
 
-def listar_remedios(so_ativos=True) -> list[dict]:
+def listar_remedios(so_ativos=True, tipo=None) -> list[dict]:
     conn = sqlite3.connect(DB_PATH, timeout=30)
     try:
         cur  = conn.cursor()
-        where = "WHERE r.ativo = 1" if so_ativos else ""
+        clausulas = []
+        if so_ativos:
+            clausulas.append("r.ativo = 1")
+        if tipo:
+            clausulas.append(f"COALESCE(r.tipo,'remedio') = '{tipo}'")
+        where = ("WHERE " + " AND ".join(clausulas)) if clausulas else ""
         cur.execute(f"""
             SELECT r.id, r.nome, r.dosagem, r.frequencia, r.data_inicio, r.data_fim,
                    r.estoque_atual, r.estoque_minimo, r.observacoes, r.ativo,
                    m.nome as medico, r.medico_id,
                    COALESCE(r.principio_ativo, '') as principio_ativo,
                    COALESCE(r.tipo, 'remedio') as tipo,
-                   COALESCE(r.prescrito, 0) as prescrito
+                   COALESCE(r.prescrito, 0) as prescrito,
+                   (SELECT path FROM remedio_fotos
+                    WHERE remedio_id = r.id AND COALESCE(tipo,'remedio') = 'remedio'
+                    ORDER BY criado_em LIMIT 1) as foto_thumb
             FROM remedios r
             LEFT JOIN medicos m ON m.id = r.medico_id
             {where}
@@ -1847,7 +2030,7 @@ def listar_remedios(so_ativos=True) -> list[dict]:
         """)
         cols = ["id","nome","dosagem","frequencia","data_inicio","data_fim",
                 "estoque_atual","estoque_minimo","observacoes","ativo","medico",
-                "medico_id","principio_ativo","tipo","prescrito"]
+                "medico_id","principio_ativo","tipo","prescrito","foto_thumb"]
         rows = cur.fetchall()
         return [dict(zip(cols, r)) for r in rows]
     finally:
@@ -2041,14 +2224,17 @@ def atualizar_foto_remedio(remedio_id, foto_path):
 
 # ── REMÉDIO: GALERIA DE FOTOS ─────────────────────────────────
 
-def listar_fotos_remedio(remedio_id: int) -> list[dict]:
+def listar_fotos_remedio(remedio_id: int, tipo: str = None) -> list[dict]:
     conn = sqlite3.connect(DB_PATH, timeout=30)
     conn.row_factory = sqlite3.Row
     try:
+        where = "AND COALESCE(tipo,'remedio') = ?" if tipo else ""
+        params = (remedio_id, tipo) if tipo else (remedio_id,)
         rows = conn.execute(
-            "SELECT id, path, legenda, criado_em FROM remedio_fotos "
-            "WHERE remedio_id=? ORDER BY criado_em",
-            (remedio_id,)
+            f"SELECT id, path, legenda, COALESCE(tipo,'remedio') as tipo, "
+            f"data_validade, criado_em FROM remedio_fotos "
+            f"WHERE remedio_id=? {where} ORDER BY criado_em",
+            params
         ).fetchall()
         return [dict(r) for r in rows]
     except Exception as e:
@@ -2058,12 +2244,14 @@ def listar_fotos_remedio(remedio_id: int) -> list[dict]:
         conn.close()
 
 
-def adicionar_foto_remedio(remedio_id: int, path: str, legenda: str = "") -> int | None:
+def adicionar_foto_remedio(remedio_id: int, path: str, legenda: str = "",
+                           tipo: str = "remedio", data_validade: str = None) -> int | None:
     conn = sqlite3.connect(DB_PATH, timeout=30)
     try:
         cur = conn.execute(
-            "INSERT INTO remedio_fotos (remedio_id, path, legenda) VALUES (?,?,?)",
-            (remedio_id, path, legenda or "")
+            "INSERT INTO remedio_fotos (remedio_id, path, legenda, tipo, data_validade) "
+            "VALUES (?,?,?,?,?)",
+            (remedio_id, path, legenda or "", tipo, data_validade)
         )
         conn.commit()
         return cur.lastrowid

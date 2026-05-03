@@ -283,9 +283,9 @@ def criar_tela_perfil(page: ft.Page, voltar_fn=None):
             try: page.update()
             except Exception: pass
 
-        from telas_sistema.tela_backup import criar_tela_backup
+        from telas_sistema.tela_config import criar_tela_config
         page.controls.clear()
-        page.controls.append(criar_tela_backup(page, _voltar_bk))
+        page.controls.append(criar_tela_config(page, _voltar_bk, aba_inicial=1))
         try: page.update()
         except Exception: pass
 

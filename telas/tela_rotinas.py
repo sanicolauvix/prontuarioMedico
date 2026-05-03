@@ -580,22 +580,6 @@ def criar_tela_rotinas(page: ft.Page, voltar_fn, navegar_fn=None) -> ft.Containe
                 card.on_click = lambda e, tt=t: _mostrar_detalhe(tt)
                 area.controls.append(card)
 
-        # Botao nova rotina
-        btn_nova = ft.Container(
-            content=ft.Row([
-                ft.Icon("add_rounded", size=16, color=VERD),
-                ft.Text("Nova Rotina", size=13, color=VERD),
-            ], spacing=4, tight=True, alignment=ft.MainAxisAlignment.CENTER),
-            bgcolor=f"{VERD}11", border_radius=10,
-            padding=ft.padding.symmetric(vertical=14),
-            border=ft.Border(
-                top=ft.BorderSide(1, f"{VERD}44"), bottom=ft.BorderSide(1, f"{VERD}44"),
-                left=ft.BorderSide(1, f"{VERD}44"), right=ft.BorderSide(1, f"{VERD}44"),
-            ),
-            ink=True,
-        )
-        btn_nova.on_click = lambda e: _form_template()
-        area.controls.append(btn_nova)
 
         _atualizar_header()
         if _montado[0]:
@@ -718,7 +702,7 @@ def criar_tela_rotinas(page: ft.Page, voltar_fn, navegar_fn=None) -> ft.Containe
             btn_novo = ft.Container(
                 content=ft.Row([
                     ft.Icon("add_rounded", size=16, color=VERD),
-                    ft.Text("Nova", size=13, color=VERD),
+                    ft.Text("+ Nova", size=13, color=VERD),
                 ], spacing=4, tight=True),
                 padding=ft.padding.symmetric(horizontal=8, vertical=8),
                 border_radius=8, ink=True,
@@ -768,13 +752,6 @@ def criar_tela_rotinas(page: ft.Page, voltar_fn, navegar_fn=None) -> ft.Containe
     # ══════════════════════════════════════════════════════
 
     _mostrar_lista()
-
-    # Header inicial placeholder (sera substituido por _atualizar_header)
-    cab_inicial = lay.criar_cabecalho(
-        "Rotinas Diarias", voltar_fn,
-        icone_titulo="calendar_today_rounded", cor_titulo=AZUL,
-    )
-    _cab_container.content = cab_inicial
 
     corpo = ft.Column([
         ft.Container(height=lay.spacer_topo, bgcolor=BG),

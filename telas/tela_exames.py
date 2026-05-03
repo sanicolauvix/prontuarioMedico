@@ -2153,6 +2153,8 @@ def _conteudo_exames(page):
 # ══════════════════════════════════════════════════════════════
 
 def criar_tela_consulta(page: ft.Page, voltar_fn):
+    from shared.layout import Layout
+    lay = Layout(page)
 
     ABAS = [
         (0, "search_rounded",            "Buscar",         AZUL),
@@ -2214,53 +2216,22 @@ def criar_tela_consulta(page: ft.Page, voltar_fn):
     _rebuild_abas()
     _rebuild_conteudo()
 
-    btn_voltar = ft.Container(
-        content=ft.Row([
-            ft.Icon("arrow_back_rounded", size=16),
-            ft.Text("Voltar", size=13),
-        ], spacing=4, tight=True),
-        padding=ft.padding.symmetric(horizontal=8, vertical=8),
-        ink=True,
-        on_click=lambda e: voltar_fn(),
-    )
-
-    cabecalho = ft.Container(
-        content=ft.Row([
-            btn_voltar,
-            ft.Row([
-                ft.Icon("search_rounded", size=20, color="#58A6FF"),
-                ft.Text("Consulta de Exames", size=18,
-                        weight=ft.FontWeight.W_700, color="#E6EDF3"),
-            ], spacing=8, tight=True),
-            ft.Container(expand=True),
-        ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
-        padding=ft.padding.symmetric(horizontal=16, vertical=14),
-        border=ft.Border(bottom=ft.BorderSide(1, "#21262D")),
+    cabecalho = lay.criar_cabecalho(
+        "Consulta de Exames", voltar_fn,
+        icone_titulo="search_rounded",
+        cor_titulo=AZUL,
     )
 
     corpo = ft.Column([
+        ft.Container(height=lay.spacer_topo, bgcolor=BG),
         cabecalho,
         ft.Container(content=barra_abas,
-                     border=ft.Border(bottom=ft.BorderSide(1, "#21262D"))),
+                     border=ft.Border(bottom=ft.BorderSide(1, BD))),
         ft.Container(
             content=area_conteudo,
             padding=ft.padding.all(16),
             expand=True,
         ),
-    ], expand=True)
+    ], expand=True, spacing=0)
 
-    try:
-        larg = page.width or 800
-    except Exception:
-        larg = 800
-
-    if larg > 500:
-        conteudo_final = ft.Row([
-            ft.Container(expand=True),
-            ft.Container(content=corpo, width=480),
-            ft.Container(expand=True),
-        ], expand=True)
-    else:
-        conteudo_final = corpo
-
-    return ft.Container(bgcolor="#0D1117", expand=True, content=conteudo_final)
+    return lay.wrap(ft.Container(bgcolor=BG, expand=True, content=corpo))

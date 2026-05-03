@@ -303,11 +303,12 @@ def _conteudo_rotina(page, wrapper):
                         ft.Container(expand=True),
                         ft.FilledButton(
                             content=ft.Row([
-                                ft.Icon("save_rounded", size=16),
-                                ft.Text("Salvar", size=13),
+                                ft.Icon("save_rounded", size=16, color="#0D1117"),
+                                ft.Text("Salvar", size=13, color="#0D1117"),
                             ], spacing=6, tight=True),
                             style=ft.ButtonStyle(
                                 bgcolor=VERD,
+                                color="#0D1117",
                                 shape=ft.RoundedRectangleBorder(radius=8),
                                 padding=ft.padding.symmetric(horizontal=16, vertical=10)),
                             on_click=_salvar),
@@ -353,11 +354,12 @@ def _conteudo_rotina(page, wrapper):
                         ft.Container(expand=True),
                         ft.FilledButton(
                             content=ft.Row([
-                                ft.Icon("add_rounded", size=16),
-                                ft.Text("Novo Item", size=13),
+                                ft.Icon("add_rounded", size=16, color="#0D1117"),
+                                ft.Text("Novo Item", size=13, color="#0D1117"),
                             ], spacing=6, tight=True),
                             style=ft.ButtonStyle(
                                 bgcolor=VERD,
+                                color="#0D1117",
                                 shape=ft.RoundedRectangleBorder(radius=8),
                                 padding=ft.padding.symmetric(horizontal=14, vertical=10)),
                             on_click=lambda e: _abrir_ficha(None)),

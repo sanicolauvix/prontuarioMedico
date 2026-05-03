@@ -78,6 +78,7 @@ class BackupWatcher:
         self._pendente     = False
         self._ultimo_envio = 0.0
         self._callback_ui  = None
+        self._timer_start  = 0.0
 
     # -- Ciclo de vida ──────────────────────────────────────────────────────────
 
@@ -121,9 +122,9 @@ class BackupWatcher:
         if not self.ativo:
             return
         log.info("[Watcher] Executando backup inicial (primeira execucao)...")
-        self._notificar_ui("Iniciando primeiro backup automatico...")
 
         def _run() -> None:
+            self._notificar_ui({"fase": "executando"})
             try:
                 from backup.drive_backup import fazer_backup
                 ok, msg = fazer_backup(
@@ -133,13 +134,13 @@ class BackupWatcher:
                 self._ultimo_envio = time.time()
                 if ok:
                     log.info("[Watcher] Primeiro backup OK: %s", msg)
-                    self._notificar_ui("Primeiro backup concluido!")
+                    self._notificar_ui({"fase": "concluido", "msg": msg})
                 else:
                     log.warning("[Watcher] Primeiro backup falhou: %s", msg)
-                    self._notificar_ui(f"Primeiro backup falhou: {msg[:60]}")
+                    self._notificar_ui({"fase": "erro", "msg": msg[:60]})
             except Exception as exc:
                 log.exception("[Watcher] Erro no primeiro backup: %s", exc)
-                self._notificar_ui(f"Erro no backup: {str(exc)[:60]}")
+                self._notificar_ui({"fase": "erro", "msg": str(exc)[:60]})
 
         threading.Thread(target=_run, daemon=True).start()
 
@@ -149,6 +150,7 @@ class BackupWatcher:
         """Reinicia o timer de debounce a cada alteracao no banco."""
         with self._lock:
             self._pendente = True
+            self._timer_start = time.time()
             self._cancelar_timer()
             self._timer = threading.Timer(
                 self.debounce_seg, self._disparar_backup
@@ -159,6 +161,7 @@ class BackupWatcher:
                 "[Watcher] Mudanca detectada -- backup em %d min",
                 self.debounce_seg // 60,
             )
+        self._notificar_ui({"fase": "pendente", "proximo_em": self.debounce_seg})
 
     # -- Disparo do backup (fluxo normal) ────────────────────────────────────────
 
@@ -174,6 +177,7 @@ class BackupWatcher:
         log.info("[Watcher] Disparando backup automatico...")
 
         def _run() -> None:
+            self._notificar_ui({"fase": "executando"})
             try:
                 from backup.drive_backup import fazer_backup
                 ok, msg = fazer_backup(
@@ -183,13 +187,13 @@ class BackupWatcher:
                 self._ultimo_envio = time.time()
                 if ok:
                     log.info("[Watcher] Backup automatico OK: %s", msg)
-                    self._notificar_ui(f"Backup automatico: {msg}")
+                    self._notificar_ui({"fase": "concluido", "msg": msg})
                 else:
                     log.warning("[Watcher] Backup automatico falhou: %s", msg)
-                    self._notificar_ui(f"Backup falhou: {msg[:60]}")
+                    self._notificar_ui({"fase": "erro", "msg": msg[:60]})
             except Exception as exc:
                 log.exception("[Watcher] Erro no backup automatico: %s", exc)
-                self._notificar_ui(f"Erro no backup: {str(exc)[:60]}")
+                self._notificar_ui({"fase": "erro", "msg": str(exc)[:60]})
 
         threading.Thread(target=_run, daemon=True).start()
 
@@ -200,7 +204,7 @@ class BackupWatcher:
             self._timer.cancel()
             self._timer = None
 
-    def _notificar_ui(self, msg: str) -> None:
+    def _notificar_ui(self, msg) -> None:
         if self._callback_ui:
             try:
                 self._callback_ui(msg)
@@ -211,21 +215,15 @@ class BackupWatcher:
 
     @property
     def proximo_backup_em(self) -> str:
-        """Tempo estimado ate o proximo backup. Ex: '28 min', '45s', '--'."""
+        """Tempo estimado ate o proximo backup. Ex: '28min 45s', '45s', '--'."""
         if not self._pendente or not self._timer:
             return "--"
         try:
-            restante = max(0, int(
-                self._timer.interval -
-                (time.time() - (
-                    self._timer._when
-                    if hasattr(self._timer, "_when")
-                    else time.time()
-                ))
-            ))
+            elapsed = time.time() - self._timer_start
+            restante = max(0, int(self.debounce_seg - elapsed))
             if restante < 60:
                 return f"{restante}s"
-            return f"{restante // 60} min"
+            return f"{restante // 60}min {restante % 60:02d}s"
         except Exception:
             return "em breve"
 
