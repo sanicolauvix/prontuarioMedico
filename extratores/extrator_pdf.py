@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 # KOIOS v1.0 | gerado: 2026-03-12 07:18 | extrator_pdf.py
-EXTRATOR_VERSION = "2026-05-05-medsenior"
+EXTRATOR_VERSION = "2026-05-05-api"
 """
 extrator_pdf.py - Extrator universal para múltiplos laboratórios
 Suporta: Laboratório Pretti, Cremasco, Tommasi, Virchow (e similares)
@@ -1603,6 +1603,21 @@ def extrair_pdf_bytes(conteudo_bytes: bytes, nome_arquivo: str,
         if len(texto_completo) >= MAX_CHARS:
             logging.warning(f"[EXTRATOR] Limite de chars atingido em {nome_arquivo}")
             break
+
+    # ── Tentativa via API Claude (primaria) ──────────────────
+    try:
+        from .extrator_api import extrair_via_api as _ext_api
+        _dados_api = _ext_api(texto_completo, nome_arquivo)
+        if _dados_api:
+            _dados_api["arquivo_origem"]  = nome_arquivo
+            _dados_api["drive_file_id"]   = drive_file_id
+            _dados_api["resultado_texto"] = texto_completo
+            _prog("concluido", total_pags, total_pags, texto_completo.count("\n"),
+                  len(_dados_api.get("resultados", [])))
+            return _dados_api
+    except Exception as _api_ex:
+        logging.warning(f"[EXTRATOR] API indisponivel, usando regex: {_api_ex}")
+    # ── Fallback: deteccao e extracao por regex ───────────────
 
     laboratorio = detectar_laboratorio(texto_completo)
     cabecalho   = extrair_cabecalho(texto_completo, laboratorio)

@@ -709,7 +709,7 @@ def construir_painel_conferencia(
                             expand=True, no_wrap=True,
                             overflow=ft.TextOverflow.ELLIPSIS),
                     ft.IconButton(
-                        icon="picture_as_pdf_outlined_rounded",
+                        icon="picture_as_pdf_rounded",
                         icon_color=VERM,
                         icon_size=18,
                         tooltip="Abrir PDF para consultar referências",
