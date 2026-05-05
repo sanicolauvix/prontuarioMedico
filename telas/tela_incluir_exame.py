@@ -1133,11 +1133,11 @@ def criar_tela_incluir_exame(page: ft.Page, voltar_fn):
         _voltar_selecao()
 
     def _verificar_drive():
-        """Testa credenciais do Drive. Retorna (ok, drive_ou_erro)."""
+        """Testa credenciais do Drive. Retorna (ok, creds_ou_erro)."""
         try:
-            from shared.drive_connector import autenticar_drive
-            drive = autenticar_drive()
-            return True, drive
+            from utils.drive_sync import _get_creds
+            creds = _get_creds()
+            return True, creds
         except Exception as ex:
             return False, str(ex)
 
@@ -1179,16 +1179,18 @@ def criar_tela_incluir_exame(page: ft.Page, voltar_fn):
                 return
 
             # ── Upload Drive ──────────────────────────────────
-            from shared.drive_connector import garantir_pasta_base, upload_arquivo
-            drive = drive_ou_erro  # é o objeto drive autenticado
+            from utils.drive_sync import garantir_pasta, upload_foto as _upload_foto
+            creds = drive_ou_erro  # credenciais validadas por _verificar_drive
 
             _set_status("Verificando pasta no Drive...", VERD, 0.25)
-            garantir_pasta_base(drive)
+            pasta_raiz = garantir_pasta("Koios_Prontuario", creds=creds)
+            pasta_exames = garantir_pasta("EXAMES_PDF", pai_id=pasta_raiz, creds=creds)
 
             _set_status("Enviando arquivo...", VERD, 0.50)
             caminho  = dados.get("arquivo_path", "")
             logging.info(f"[LIBERAR] upload: {caminho}")
-            drive_id = upload_arquivo(caminho, drive) if os.path.exists(caminho) else None
+            drive_id = _upload_foto(caminho, os.path.basename(caminho),
+                                    pasta_exames, creds) if caminho and os.path.exists(caminho) else None
             if drive_id:
                 dados["drive_file_id"] = drive_id
                 logging.info(f"[LIBERAR] upload OK: {drive_id}")
