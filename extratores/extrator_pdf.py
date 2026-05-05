@@ -105,12 +105,28 @@ PALAVRAS_LAUDO = [
     "laudo de urina", "exame de urina",
 ]
 
+PALAVRAS_ENDOSCOPIA = [
+    "endoscopia digestiva", "colonoscopia", "esofago:", "estomago:",
+    "colo ascendente", "mucosa bulbar", "laudo de video endoscopia",
+    "laudo de video colonoscopia", "iage", "fujinon",
+    "relatorio de video endoscopia", "relatorio de video colonoscopia",
+    "esofago", "estomago", "duodeno", "reto", "sigmoidea",
+]
+
+_EDA_KEYS = {"endoscopia digestiva", "esofago:", "estomago:", "mucosa bulbar", "eda"}
+_COLO_KEYS = {"colonoscopia", "colo ascendente", "sigmoidea", "reto", "laudo de video colonoscopia"}
+
+
 def detectar_tipo(texto: str) -> str:
     """Retorna 'laudo', 'imagem', 'mapa' ou 'numerico' baseado no conteúdo do PDF."""
     t = texto.lower()
     for palavra in PALAVRAS_LAUDO:
         if palavra in t:
             return "laudo"
+    # Endoscopia / colonoscopia também são laudos
+    n_endo = sum(1 for k in PALAVRAS_ENDOSCOPIA if k in t)
+    if n_endo >= 2:
+        return "laudo"
     for palavra in PALAVRAS_MAPA:
         if palavra in t:
             return "mapa"
@@ -118,6 +134,21 @@ def detectar_tipo(texto: str) -> str:
         if palavra in t:
             return "imagem"
     return "numerico"
+
+
+def detectar_subtipo_laudo(texto: str) -> str:
+    """Para laudos, retorna 'endoscopia', 'colonoscopia', 'eda' ou '' (generico)."""
+    t = texto.lower()
+    n_endo = sum(1 for k in PALAVRAS_ENDOSCOPIA if k in t)
+    if n_endo < 2:
+        return ""
+    n_colo = sum(1 for k in _COLO_KEYS if k in t)
+    n_eda  = sum(1 for k in _EDA_KEYS  if k in t)
+    if n_colo > n_eda:
+        return "colonoscopia"
+    if n_eda > 0:
+        return "eda"
+    return "endoscopia"
 
 
 # ══════════════════════════════════════════════════════════════
@@ -222,6 +253,105 @@ def extrair_laudo_virchow(texto: str) -> dict:
         "resumo":         resumo or "",
         "conclusao":      conclusao or "",
     }
+
+
+def extrair_laudo_endoscopia(texto: str) -> dict:
+    """Extrai campos de laudos de EDA / Colonoscopia (IAGE e similares)."""
+    t = texto.lower()
+
+    if "colonoscopia" in t or "colo ascendente" in t or "sigmoidea" in t:
+        tipo_exame = "Colonoscopia"
+    elif "endoscopia digestiva" in t or "esofago" in t or "estomago" in t:
+        tipo_exame = "EDA - Endoscopia Digestiva Alta"
+    else:
+        tipo_exame = "Endoscopia"
+
+    # Número do laudo (ex: "Laudo Nº 26176")
+    m_num = re.search(r"laudo\s+n[º°o]?\s*\.?\s*(\d+)", texto, re.IGNORECASE)
+    if m_num:
+        tipo_exame += f" ({m_num.group(1)})"
+
+    # Resumo: texto antes de "Impressão" ou "Diagnóstico" ou fim
+    resumo = ""
+    m_res = re.search(
+        r"(?:EXAME|PROCEDIMENTO|ACHADOS?)[:\s]*(.+?)(?:IMPRESS[AÃ]O|DIAGN[OÓ]STICO|CONCLUS[AÃ]O|$)",
+        texto, re.DOTALL | re.IGNORECASE,
+    )
+    if m_res:
+        resumo = " ".join(m_res.group(1).split())[:600]
+    else:
+        resumo = " ".join(texto.split())[:400]
+
+    # Conclusão / Impressão diagnóstica
+    conclusao = ""
+    m_conc = re.search(
+        r"(?:IMPRESS[AÃ]O\s+DIAGN[OÓ]STICA|CONCLUS[AÃ]O|DIAGN[OÓ]STICO)[:\s]*(.+?)(?:\n\n|$)",
+        texto, re.DOTALL | re.IGNORECASE,
+    )
+    if m_conc:
+        conclusao = " ".join(m_conc.group(1).split())[:400]
+
+    return {
+        "tipo_exame":     tipo_exame,
+        "texto_completo": texto.strip(),
+        "resumo":         resumo,
+        "conclusao":      conclusao,
+    }
+
+
+def extrair_imagens_pdf(conteudo_bytes: bytes, prefixo: str, pasta_dest: str) -> list:
+    """
+    Extrai imagens embutidas de paginas de fotos endoscopicas.
+    Identifica paginas que contenham 'Relatorio de Video' no texto.
+    Retorna lista de {"nome_arquivo": str, "arquivo_local": str, "ordem": int}.
+    """
+    import io as _io
+    import os as _os
+    import pdfplumber
+
+    _os.makedirs(pasta_dest, exist_ok=True)
+    resultado = []
+    seq = 0
+
+    try:
+        with pdfplumber.open(_io.BytesIO(conteudo_bytes)) as pdf:
+            for page in pdf.pages:
+                texto_pag = (page.extract_text() or "").lower()
+                # Paginas de fotos contêm "relatorio de video" ou "video endoscopia"
+                eh_pag_fotos = (
+                    ("relat" in texto_pag and "video" in texto_pag)
+                    or "relatorio de video" in texto_pag
+                )
+                if not eh_pag_fotos:
+                    continue
+
+                for img in page.images:
+                    try:
+                        stream = img.get("stream")
+                        if stream is None:
+                            continue
+                        raw_data = stream.get_data()
+                        if not raw_data or len(raw_data) < 200:
+                            continue
+
+                        nome = f"{prefixo}_{seq + 1:03d}.jpg"
+                        caminho = _os.path.join(pasta_dest, nome)
+                        with open(caminho, "wb") as f:
+                            f.write(raw_data)
+
+                        resultado.append({
+                            "nome_arquivo": nome,
+                            "arquivo_local": caminho,
+                            "ordem": seq,
+                        })
+                        seq += 1
+                    except Exception as ex_img:
+                        logging.warning(f"[IMG] imagem seq={seq}: {ex_img}")
+    except Exception as ex:
+        logging.warning(f"[IMG] extrair_imagens_pdf: {ex}")
+
+    logging.info(f"[IMG] {len(resultado)} imagem(ns) extraida(s) com prefixo={prefixo}")
+    return resultado
 
 
 def extrair_laudo_generico(texto: str) -> dict:
@@ -1431,12 +1561,16 @@ def extrair_pdf_bytes(conteudo_bytes: bytes, nome_arquivo: str,
 
     elif tipo == "laudo":
         # ── Laudo textual ──────────────────────────────────────
-        if laboratorio == "Virchow":
+        subtipo = detectar_subtipo_laudo(texto_completo)
+        if subtipo in ("eda", "colonoscopia", "endoscopia"):
+            laudo = extrair_laudo_endoscopia(texto_completo)
+        elif laboratorio == "Virchow":
             laudo = extrair_laudo_virchow(texto_completo)
         else:
             laudo = extrair_laudo_generico(texto_completo)
 
         dados["tipo_exame"] = laudo["tipo_exame"]
+        dados["subtipo"]    = subtipo
         dados["resultados"] = []
         dados["laudo"] = {
             "texto_completo": laudo["texto_completo"],
@@ -1444,6 +1578,19 @@ def extrair_pdf_bytes(conteudo_bytes: bytes, nome_arquivo: str,
             "conclusao":      laudo["conclusao"],
         }
         dados["modelo_nao_configurado"] = False
+
+        # Extrair imagens embutidas (paginas de fotos endoscopicas)
+        if subtipo in ("eda", "colonoscopia", "endoscopia"):
+            import os as _os, hashlib as _hs
+            _hash  = _hs.md5(conteudo_bytes[:4096]).hexdigest()[:8]
+            _pasta = _os.path.join(
+                _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))),
+                "dados", "imagens",
+            )
+            _prefixo = f"{_hash}_{subtipo}"
+            dados["imagens_extraidas"] = extrair_imagens_pdf(
+                conteudo_bytes, _prefixo, _pasta
+            )
 
     else:
         # ── Numérico ───────────────────────────────────────────

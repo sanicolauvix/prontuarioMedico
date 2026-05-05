@@ -263,8 +263,8 @@ def _tela_principal(page: ft.Page, voltar_fn=None):
         except Exception: pass
 
     _UTI_CANAIS = [
-        ("Glicose",    "water_drop_rounded",            "#FF6B6B",
-         ["glicose", "glucose", "glicemia"]),
+        ("Glicemia",   "water_drop_rounded",            "#FF6B6B",
+         ["glicose", "glucose", "glicemia", "glicada", "hba1c"]),
         ("Ac.Urico",   "science_rounded",               "#FFD93D",
          ["acido urico", "urico", "uratos"]),
         ("Pressao",    "favorite_rounded",              "#4ECDC4",
@@ -316,8 +316,15 @@ def _tela_principal(page: ft.Page, voltar_fn=None):
                  lambda p, v: criar_tela_grafico_marcador(p, v, lbl, termos, cor),
                  _voltar_hub)
 
+    def _abrir_glicemia():
+        from telas.tela_glicemia import criar_tela_glicemia
+        _navegar(page, criar_tela_glicemia, _voltar_hub)
+
     def _mk_click_uti(lbl, termos, cor):
-        def _h(e): _abrir_grafico_canal(lbl, termos, cor)
+        if lbl == "Glicemia":
+            def _h(e): _abrir_glicemia()
+        else:
+            def _h(e): _abrir_grafico_canal(lbl, termos, cor)
         return _h
 
     for _lbl, _ico, _cor, _termos in _UTI_CANAIS:
@@ -459,7 +466,7 @@ def _tela_principal(page: ft.Page, voltar_fn=None):
         return c
 
     mini_stats = ft.Row([
-        _mini_stat(txt_stat_remedios, "Remedios", AMAR, "medication_rounded",
+        _mini_stat(txt_stat_remedios, "Medicamentos", AMAR, "medication_rounded",
                    _lazy_fn("tela_remedios", "criar_tela_remedios")),
         _mini_stat(txt_stat_consulta, "Prox.\nCompromisso", AZUL, "event_note_rounded",
                    _lazy_fn("tela_compromissos", "criar_tela_compromissos")),
@@ -487,11 +494,10 @@ def _tela_principal(page: ft.Page, voltar_fn=None):
                     inst = _bw._instancia
                     if inst and inst.status == "pendente":
                         restante = inst.proximo_backup_em
-                        txt_sync.value = f"Backup em {restante}"
-                        txt_sync.color = AMAR
-                        ico_sync.color = AMAR
-                        ico_sync.name = "cloud_sync_rounded"
-                        _atualizar_ui()
+                        page.pubsub.send_all_on_topic("_backup_status", {
+                            "fase": "_tick",
+                            "txt":  f"Backup em {restante}",
+                        })
                 except Exception:
                     pass
                 time.sleep(1)
@@ -505,7 +511,12 @@ def _tela_principal(page: ft.Page, voltar_fn=None):
             _iniciar_countdown()
             return
         _parar_countdown()
-        if fase == "executando":
+        if fase == "_tick":
+            txt_sync.value = msg.get("txt", "")
+            txt_sync.color = AMAR
+            ico_sync.color = AMAR
+            ico_sync.name = "cloud_sync_rounded"
+        elif fase == "executando":
             txt_sync.value = "Fazendo backup..."
             txt_sync.color = AZUL
             ico_sync.color = AZUL
@@ -836,13 +847,21 @@ def _tela_principal(page: ft.Page, voltar_fn=None):
 
         # Mini stats
         try:
+            hoje_iso = date.today().isoformat()
+            def _dmy_to_iso(s):
+                try:
+                    d, m, y = s.split("/")
+                    return f"{y}-{m}-{d}"
+                except Exception:
+                    return ""
             agendadas = sorted(
-                [c for c in listar_consultas(tipo="agendada")
-                 if (c["data"] or "") >= date.today().isoformat()],
-                key=lambda x: x["data"],
+                [(c, _dmy_to_iso(c["data"] or ""))
+                 for c in listar_consultas(tipo="agendada")],
+                key=lambda x: x[1],
             )
-            proxima = agendadas[0]["data"] if agendadas else None
-            d_txt = (proxima[8:10] + "/" + proxima[5:7]) if proxima else "Nenhuma"
+            futuras = [c for c, iso in agendadas if iso >= hoje_iso]
+            proxima = futuras[0]["data"] if futuras else None
+            d_txt = proxima if proxima else "Nenhuma"
 
             try:
                 templates = listar_templates()
@@ -1239,4 +1258,12 @@ def _tela_incluir_exame(page, voltar_fn=None):
 
 def criar_tela_prontuario(page: ft.Page, voltar_fn=None):
     criar_tabelas()
+    import threading as _thr
+    def _sync_bg():
+        try:
+            from dados.model_prontuario import sincronizar_anexos_pendentes
+            sincronizar_anexos_pendentes()
+        except Exception:
+            pass
+    _thr.Thread(target=_sync_bg, daemon=True).start()
     return _tela_principal(page, voltar_fn)

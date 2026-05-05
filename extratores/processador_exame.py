@@ -938,6 +938,199 @@ def construir_painel_conferencia(
             ft.Container(height=8),
         ]
 
+    # ── Seção editável de laudo (para tipo == 'laudo') ─────────────────────────
+    laudo_dict = dados.get("laudo") or {}
+    if dados.get("tipo") == "laudo" and laudo_dict:
+        tf_resumo = ft.TextField(
+            label="Resumo / Achados",
+            value=laudo_dict.get("resumo", ""),
+            multiline=True, min_lines=3, max_lines=8,
+            bgcolor=BG, border_color=BD, focused_border_color=AZUL,
+            label_style=ft.TextStyle(color=SEC, size=11),
+            text_style=ft.TextStyle(color=TXT, size=12),
+            border_radius=6,
+        )
+        tf_conclusao = ft.TextField(
+            label="Conclusao / Diagnostico",
+            value=laudo_dict.get("conclusao", ""),
+            multiline=True, min_lines=2, max_lines=5,
+            bgcolor=BG, border_color=BD, focused_border_color=AZUL,
+            label_style=ft.TextStyle(color=SEC, size=11),
+            text_style=ft.TextStyle(color=TXT, size=12),
+            border_radius=6,
+        )
+
+        def _on_resumo(e):
+            dados["laudo"]["resumo"] = e.control.value
+
+        def _on_conclusao(e):
+            dados["laudo"]["conclusao"] = e.control.value
+
+        tf_resumo.on_change    = _on_resumo
+        tf_conclusao.on_change = _on_conclusao
+
+        laudo_expandido = [False]
+        laudo_body = ft.Column([tf_resumo, tf_conclusao], spacing=8, visible=False)
+        laudo_chev = ft.Text("▼", size=12, color=AZUL)
+
+        def _toggle_laudo(e=None):
+            laudo_expandido[0] = not laudo_expandido[0]
+            laudo_body.visible = laudo_expandido[0]
+            laudo_chev.value   = "▲" if laudo_expandido[0] else "▼"
+            page.update()
+
+        btn_laudo = ft.Container(
+            content=ft.Row([
+                ft.Icon("description_rounded", size=14, color=AZUL),
+                ft.Text("Editar Laudo Extraido", size=12, color=AZUL,
+                        weight=ft.FontWeight.W_600),
+                ft.Container(expand=True),
+                laudo_chev,
+            ], spacing=6),
+            bgcolor=f"{AZUL}12", border_radius=8,
+            padding=ft.padding.symmetric(horizontal=12, vertical=8),
+            border=ft.Border(
+                left=ft.BorderSide(2, AZUL),
+                top=ft.BorderSide(1, f"{AZUL}33"),
+                bottom=ft.BorderSide(1, f"{AZUL}33"),
+                right=ft.BorderSide(1, f"{AZUL}33"),
+            ),
+            ink=True,
+        )
+        btn_laudo.on_click = _toggle_laudo
+
+        controles += [ft.Container(height=4), btn_laudo, laudo_body, ft.Container(height=4)]
+
+    # ── Galeria de preview das imagens extraidas ───────────────────────────────
+    imagens = dados.get("imagens_extraidas", [])
+    _imagens_selecionadas = list(imagens)   # cópia mutável (exclui imagens indesejadas)
+
+    if imagens:
+        grade_imgs = ft.Row(wrap=True, spacing=8, run_spacing=8)
+
+        def _rebuild_grade():
+            grade_imgs.controls.clear()
+            for img_info in list(_imagens_selecionadas):
+                def _excluir(e, info=img_info):
+                    _imagens_selecionadas.remove(info)
+                    _rebuild_grade()
+                    page.update()
+
+                miniatura = ft.Stack([
+                    ft.Container(
+                        content=ft.Image(
+                            src=img_info["arquivo_local"].replace("\\", "/"),
+                            width=120, height=90,
+                            fit=ft.ImageFit.COVER,
+                            error_content=ft.Icon("broken_image_rounded", size=20, color=MUT),
+                        ),
+                        width=120, height=90, border_radius=8,
+                        clip_behavior=ft.ClipBehavior.ANTI_ALIAS,
+                        border=ft.Border(
+                            top=ft.BorderSide(1, BD), bottom=ft.BorderSide(1, BD),
+                            left=ft.BorderSide(1, BD), right=ft.BorderSide(1, BD),
+                        ),
+                    ),
+                    ft.Container(
+                        content=ft.Icon("close_rounded", size=12, color=TXT),
+                        bgcolor="#CC000000",
+                        border_radius=ft.BorderRadius(0, 6, 0, 6),
+                        padding=3, right=0, top=0,
+                        ink=True,
+                        on_click=_excluir,
+                    ),
+                ])
+                grade_imgs.controls.append(miniatura)
+
+        _rebuild_grade()
+
+        corpo_imgs = ft.Container(content=grade_imgs, visible=False)
+        imgs_chev  = ft.Text("▼", size=12, color=VERD)
+        imgs_label = ft.Text(
+            f"Ver {len(imagens)} foto(s) extraida(s)",
+            size=12, color=VERD, weight=ft.FontWeight.W_600,
+        )
+
+        def _toggle_imgs(e=None):
+            corpo_imgs.visible = not corpo_imgs.visible
+            imgs_chev.value = "▲" if corpo_imgs.visible else "▼"
+            page.update()
+
+        btn_imgs = ft.Container(
+            content=ft.Row([
+                ft.Icon("photo_library_rounded", size=14, color=VERD),
+                imgs_label,
+                ft.Container(expand=True),
+                imgs_chev,
+            ], spacing=6),
+            bgcolor=f"{VERD}12", border_radius=8,
+            padding=ft.padding.symmetric(horizontal=12, vertical=8),
+            border=ft.Border(
+                left=ft.BorderSide(2, VERD),
+                top=ft.BorderSide(1, f"{VERD}33"),
+                bottom=ft.BorderSide(1, f"{VERD}33"),
+                right=ft.BorderSide(1, f"{VERD}33"),
+            ),
+            ink=True,
+        )
+        btn_imgs.on_click = _toggle_imgs
+
+        controles += [ft.Container(height=4), btn_imgs, corpo_imgs, ft.Container(height=8)]
+
+    # ── Wrap de on_liberar para upload Drive de imagens ───────────────────────
+    _on_liberar_orig = on_liberar
+
+    def _on_liberar_com_imgs():
+        if not _imagens_selecionadas:
+            _on_liberar_orig()
+            return
+
+        # Tentar upload no Drive; se falhar, salvar local com pendente_sync=1
+        try:
+            from utils.drive_sync import _get_creds, garantir_pasta, upload_foto as _up_foto
+            import os as _os
+            creds    = _get_creds()
+            pasta_id = garantir_pasta("EXAME_IMAGENS", creds=creds)
+            anexos = []
+            for img_info in _imagens_selecionadas:
+                try:
+                    drive_id = _up_foto(
+                        img_info["arquivo_local"],
+                        img_info["nome_arquivo"],
+                        pasta_id, creds,
+                    )
+                    _os.remove(img_info["arquivo_local"])
+                    anexos.append({
+                        "drive_file_id": drive_id,
+                        "nome_arquivo":  img_info["nome_arquivo"],
+                        "ordem":         img_info["ordem"],
+                    })
+                    _log(f"[IMG] upload OK: {img_info['nome_arquivo']} → {drive_id}")
+                except Exception as ex_up:
+                    _log(f"[IMG] upload falhou ({img_info['nome_arquivo']}): {ex_up}")
+                    anexos.append({
+                        "arquivo_local": img_info["arquivo_local"],
+                        "nome_arquivo":  img_info["nome_arquivo"],
+                        "ordem":         img_info["ordem"],
+                        "pendente_sync": 1,
+                    })
+        except Exception as ex_drive:
+            _log(f"[IMG] Drive indisponivel — salvando local: {ex_drive}")
+            anexos = [
+                {
+                    "arquivo_local": img["arquivo_local"],
+                    "nome_arquivo":  img["nome_arquivo"],
+                    "ordem":         img["ordem"],
+                    "pendente_sync": 1,
+                }
+                for img in _imagens_selecionadas
+            ]
+
+        dados["anexos"] = dados.get("anexos", []) + anexos
+        _on_liberar_orig()
+
+    on_liberar = _on_liberar_com_imgs
+
     controles += [
         ft.Divider(color=BD, height=1),
         ft.Container(height=8),

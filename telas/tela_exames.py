@@ -590,12 +590,12 @@ def _gerar_grafico_flet(historicos: list) -> ft.Control:
                 continue
             nivel = h.get("nivel", "")
             cor_pt = NIVEL_COR.get(nivel, s["cor"])
-            uni_str = h.get("unidade") or s["uni"]
-            data_str = (h.get("data") or "")[:10]
+            uni_str  = h.get("unidade") or s["uni"]
+            data_fmt = d.strftime("%d/%m/%Y")
             points.append(ft.LineChartDataPoint(
                 x=float(didx[d]),
                 y=float(v),
-                tooltip=f"{h.get('valor','')} {uni_str}\n{data_str}",
+                tooltip=f"{h.get('valor','')} {uni_str}\n{data_fmt}",
                 point=ft.ChartCirclePoint(radius=5, color=cor_pt,
                                           stroke_color="#0D1117", stroke_width=1.5),
                 selected_point=ft.ChartCirclePoint(radius=7, color=cor_pt,
@@ -631,16 +631,24 @@ def _gerar_grafico_flet(historicos: list) -> ft.Control:
     if not chart_series:
         return ft.Text("Sem pontos para exibir.", size=12, color="#484F58")
 
-    # Rotulos do eixo X
+    # Rotulos do eixo X — filtrar para no maximo 7 labels (evita sobreposicao)
+    n_datas = len(todas_datas)
+    step    = max(1, n_datas // 7)
     x_labels = [
         ft.ChartAxisLabel(
             value=float(i),
             label=ft.Container(
-                content=ft.Text(d.strftime("%d/%m"), size=9, color="#8B949E"),
-                padding=ft.padding.only(top=4),
+                content=ft.Column([
+                    ft.Text(d.strftime("%d/%m"), size=9,  color="#8B949E",
+                            text_align=ft.TextAlign.CENTER),
+                    ft.Text(d.strftime("%Y"),    size=8,  color="#484F58",
+                            text_align=ft.TextAlign.CENTER),
+                ], spacing=0, horizontal_alignment=ft.CrossAxisAlignment.CENTER),
+                padding=ft.padding.only(top=2),
             ),
         )
         for i, d in enumerate(todas_datas)
+        if i % step == 0 or i == n_datas - 1
     ]
 
     chart = ft.LineChart(
@@ -648,6 +656,8 @@ def _gerar_grafico_flet(historicos: list) -> ft.Control:
         bgcolor="#161B22",
         tooltip_bgcolor="#161B22",
         tooltip_rounded_radius=6,
+        tooltip_fit_inside_horizontally=True,
+        tooltip_fit_inside_vertically=True,
         border=ft.Border(
             bottom=ft.BorderSide(1, "#21262D"),
             left=ft.BorderSide(1, "#21262D"),
@@ -657,7 +667,7 @@ def _gerar_grafico_flet(historicos: list) -> ft.Control:
         ),
         vertical_grid_lines=ft.ChartGridLines(color="#00000000"),
         left_axis=ft.ChartAxis(labels_size=44, show_labels=True),
-        bottom_axis=ft.ChartAxis(labels=x_labels, labels_size=30),
+        bottom_axis=ft.ChartAxis(labels=x_labels, labels_size=44),
         min_y=y_min - y_pad,
         max_y=y_max + y_pad,
         min_x=-0.3,
@@ -668,7 +678,7 @@ def _gerar_grafico_flet(historicos: list) -> ft.Control:
 
     return ft.Container(
         content=chart,
-        height=260,
+        height=280,
         bgcolor="#161B22",
         border_radius=8,
         padding=ft.padding.symmetric(horizontal=4, vertical=8),
@@ -937,6 +947,123 @@ def renderizar_tabela_exame(page: ft.Page, exame: dict) -> ft.Control:
     )
 
 
+def _renderizar_galeria_anexos(exame_id: int, page: ft.Page) -> ft.Control | None:
+    """Retorna galeria de miniaturas para imagens de exame_anexos, ou None se vazia."""
+    try:
+        from dados.model_prontuario import listar_anexos_exame
+        anexos = listar_anexos_exame(exame_id)
+    except Exception:
+        return None
+
+    if not anexos:
+        return None
+
+    def _abrir_fullscreen(src: str):
+        ref = [None]
+
+        def _fechar(e=None):
+            if ref[0] in page.overlay:
+                page.overlay.remove(ref[0])
+            try: page.update()
+            except Exception: pass
+
+        ref[0] = ft.Container(
+            content=ft.Stack([
+                ft.Container(
+                    content=ft.Image(
+                        src=src, expand=True,
+                        fit=ft.ImageFit.CONTAIN,
+                        error_content=ft.Icon("broken_image_rounded", size=40, color=MUT),
+                    ),
+                    expand=True, margin=ft.margin.all(32),
+                ),
+                ft.Container(
+                    content=ft.Icon("close_rounded", size=20, color=TXT),
+                    bgcolor="#CC000000", border_radius=20,
+                    width=36, height=36, alignment=ft.alignment.Alignment(0, 0),
+                    right=8, top=8, ink=True, on_click=_fechar,
+                ),
+            ], expand=True),
+            bgcolor="#DD000000", expand=True,
+            alignment=ft.alignment.Alignment(0, 0),
+        )
+        ref[0].on_click = _fechar
+        page.overlay.append(ref[0])
+        try: page.update()
+        except Exception: pass
+
+    grade = ft.Row(wrap=True, spacing=6, run_spacing=6)
+    for anexo in anexos:
+        # Prioridade: Drive thumbnail URL, fallback para arquivo local
+        if anexo.get("drive_file_id"):
+            src = (
+                "https://drive.google.com/thumbnail?id="
+                + anexo["drive_file_id"] + "&sz=w240"
+            )
+            src_full = (
+                "https://drive.google.com/uc?id=" + anexo["drive_file_id"]
+            )
+        elif anexo.get("arquivo_local"):
+            local = (anexo["arquivo_local"] or "").replace("\\", "/")
+            src = local
+            src_full = local
+        else:
+            continue
+
+        def _on_click_foto(e, _src=src_full):
+            _abrir_fullscreen(_src)
+
+        mini = ft.Container(
+            content=ft.Image(
+                src=src, width=120, height=90, fit=ft.ImageFit.COVER,
+                error_content=ft.Icon("image_not_supported_rounded", size=16, color=MUT),
+            ),
+            width=120, height=90, border_radius=8,
+            clip_behavior=ft.ClipBehavior.ANTI_ALIAS,
+            border=ft.Border(
+                top=ft.BorderSide(1, BD), bottom=ft.BorderSide(1, BD),
+                left=ft.BorderSide(1, BD), right=ft.BorderSide(1, BD),
+            ),
+            ink=True,
+        )
+        mini.on_click = _on_click_foto
+        grade.controls.append(mini)
+
+    if not grade.controls:
+        return None
+
+    n = len(grade.controls)
+    galeria_body = ft.Container(content=grade, padding=ft.padding.only(top=6), visible=False)
+    galeria_chev = ft.Text("▼", size=11, color=VERD)
+
+    def _toggle_galeria(e=None):
+        galeria_body.visible = not galeria_body.visible
+        galeria_chev.value = "▲" if galeria_body.visible else "▼"
+        try: page.update()
+        except Exception: pass
+
+    btn_galeria = ft.Container(
+        content=ft.Row([
+            ft.Icon("photo_library_rounded", size=13, color=VERD),
+            ft.Text(f"Ver fotos ({n})", size=11, color=VERD, weight=ft.FontWeight.W_600),
+            ft.Container(expand=True),
+            galeria_chev,
+        ], spacing=6),
+        bgcolor=f"{VERD}0F", border_radius=6,
+        padding=ft.padding.symmetric(horizontal=10, vertical=7),
+        border=ft.Border(
+            left=ft.BorderSide(2, VERD),
+            top=ft.BorderSide(1, f"{VERD}33"),
+            bottom=ft.BorderSide(1, f"{VERD}33"),
+            right=ft.BorderSide(1, f"{VERD}33"),
+        ),
+        ink=True,
+    )
+    btn_galeria.on_click = _toggle_galeria
+
+    return ft.Column([btn_galeria, galeria_body], spacing=4)
+
+
 def renderizar_card_laudo(page: ft.Page, laudo: dict) -> ft.Control:
     import webbrowser
     expandido = [False]
@@ -1007,7 +1134,18 @@ def renderizar_card_laudo(page: ft.Page, laudo: dict) -> ft.Control:
             left=ft.BorderSide(2, "#BC8CFF"), right=ft.BorderSide(1, "#21262D"),
         ),
     )
-    return ft.Column([cabecalho, texto_container], spacing=2)
+
+    # Galeria de imagens (se existirem anexos)
+    _eid = (laudo.get("exame_id")
+            or laudo.get("exame_db_id")
+            or ((laudo.get("historico") or [{}])[0].get("exame_id"))
+            or 0)
+    galeria = _renderizar_galeria_anexos(_eid, page)
+    controles = [cabecalho, texto_container]
+    if galeria:
+        controles.append(galeria)
+
+    return ft.Column(controles, spacing=2)
 
 
 

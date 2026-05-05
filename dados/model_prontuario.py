@@ -225,6 +225,23 @@ def _migrar_consulta_pauta():
         print(f"[MODEL] _migrar_consulta_pauta: {ex}")
 
 
+def _migrar_exame_anexos_imagens():
+    """Adiciona arquivo_local e pendente_sync em exame_anexos para sync Drive de imagens."""
+    try:
+        with sqlite3.connect(DB_PATH, timeout=30) as conn:
+            cols = [r[1] for r in conn.execute("PRAGMA table_info(exame_anexos)").fetchall()]
+            if "arquivo_local" not in cols:
+                conn.execute("ALTER TABLE exame_anexos ADD COLUMN arquivo_local TEXT")
+                print("[MODEL] coluna arquivo_local adicionada em exame_anexos")
+            if "pendente_sync" not in cols:
+                conn.execute(
+                    "ALTER TABLE exame_anexos ADD COLUMN pendente_sync INTEGER DEFAULT 0"
+                )
+                print("[MODEL] coluna pendente_sync adicionada em exame_anexos")
+    except Exception as ex:
+        print(f"[MODEL] _migrar_exame_anexos_imagens: {ex}")
+
+
 def _migrar_compromisso():
     """Adiciona tipo_compromisso e clinica_id em consultas (renomeada para compromissos)."""
     try:
@@ -883,6 +900,7 @@ def criar_tabelas():
     _migrar_consulta_pauta()
     _migrar_compromisso()
     _criar_rotinas()
+    _migrar_exame_anexos_imagens()
     # Registrar módulo no core
     try:
         _conn = sqlite3.connect(CORE_DB, timeout=30)
@@ -1200,13 +1218,20 @@ def salvar_exame(dados: dict, status: str = "ativo") -> int:
             """, (exame_id, laudo.get("texto_completo"),
                   laudo.get("resumo"), laudo.get("conclusao")))
 
-        # Anexos imagem
+        # Anexos imagem (suporta drive_file_id e/ou arquivo_local + pendente_sync)
         for i, anexo in enumerate(dados.get("anexos", [])):
             cur.execute("""
-                INSERT INTO exame_anexos (exame_id, drive_file_id, nome_arquivo, ordem)
-                VALUES (?,?,?,?)
-            """, (exame_id, anexo.get("drive_file_id"),
-                  anexo.get("nome_arquivo"), anexo.get("ordem", i)))
+                INSERT INTO exame_anexos
+                    (exame_id, drive_file_id, nome_arquivo, ordem, arquivo_local, pendente_sync)
+                VALUES (?,?,?,?,?,?)
+            """, (
+                exame_id,
+                anexo.get("drive_file_id"),
+                anexo.get("nome_arquivo"),
+                anexo.get("ordem", i),
+                anexo.get("arquivo_local"),
+                1 if anexo.get("pendente_sync") else 0,
+            ))
 
         conn.commit()
         return exame_id
@@ -1215,6 +1240,81 @@ def salvar_exame(dados: dict, status: str = "ativo") -> int:
         raise
     finally:
         conn.close()
+
+
+def listar_anexos_exame(exame_id: int) -> list:
+    """Retorna lista de anexos (imagens) de um exame ordenados por ordem."""
+    try:
+        with sqlite3.connect(DB_PATH, timeout=30) as conn:
+            rows = conn.execute(
+                "SELECT id, drive_file_id, nome_arquivo, ordem, arquivo_local, pendente_sync "
+                "FROM exame_anexos WHERE exame_id=? ORDER BY ordem",
+                (exame_id,),
+            ).fetchall()
+        return [
+            {
+                "id":            r[0],
+                "drive_file_id": r[1],
+                "nome_arquivo":  r[2],
+                "ordem":         r[3],
+                "arquivo_local": r[4],
+                "pendente_sync": r[5],
+            }
+            for r in rows
+        ]
+    except Exception as ex:
+        print(f"[MODEL] listar_anexos_exame: {ex}")
+        return []
+
+
+def sincronizar_anexos_pendentes() -> int:
+    """
+    Tenta fazer upload no Drive de todos os anexos com pendente_sync=1.
+    Retorna numero de anexos sincronizados com sucesso.
+    """
+    try:
+        with sqlite3.connect(DB_PATH, timeout=30) as conn:
+            rows = conn.execute(
+                "SELECT id, nome_arquivo, arquivo_local FROM exame_anexos "
+                "WHERE pendente_sync=1 AND arquivo_local IS NOT NULL"
+            ).fetchall()
+    except Exception as ex:
+        print(f"[MODEL] sincronizar_anexos_pendentes (leitura): {ex}")
+        return 0
+
+    if not rows:
+        return 0
+
+    try:
+        from utils.drive_sync import _get_creds, garantir_pasta, upload_foto
+        creds    = _get_creds()
+        pasta_id = garantir_pasta("EXAME_IMAGENS", creds=creds)
+    except Exception as ex:
+        print(f"[MODEL] sincronizar_anexos_pendentes (drive): {ex}")
+        return 0
+
+    import os as _os
+    sincronizados = 0
+    for row_id, nome_arquivo, arquivo_local in rows:
+        try:
+            if not _os.path.exists(arquivo_local or ""):
+                continue
+            drive_id = upload_foto(arquivo_local, nome_arquivo, pasta_id, creds)
+            with sqlite3.connect(DB_PATH, timeout=30) as conn:
+                conn.execute(
+                    "UPDATE exame_anexos SET drive_file_id=?, arquivo_local=NULL, "
+                    "pendente_sync=0 WHERE id=?",
+                    (drive_id, row_id),
+                )
+            try:
+                _os.remove(arquivo_local)
+            except Exception:
+                pass
+            sincronizados += 1
+        except Exception as ex:
+            print(f"[MODEL] sync_anexo id={row_id}: {ex}")
+
+    return sincronizados
 
 
 def salvar_rascunho(dados: dict) -> int:
@@ -3330,6 +3430,108 @@ def excluir_item(iid: int) -> None:
             conn.execute("DELETE FROM itens_momento WHERE id=?", (iid,))
     except Exception as ex:
         print(f"[MODEL] excluir_item: {ex}")
+
+
+# ══════════════════════════════════════════════════════════════
+# MARCADORES — leituras manuais / BLE
+# ══════════════════════════════════════════════════════════════
+
+def listar_leituras_marcador(termos: list[str], limite: int = 200) -> list[dict]:
+    """Retorna leituras de marcadores_leituras que contenham qualquer dos termos."""
+    condicoes = " OR ".join(["LOWER(parametro) LIKE ?" for _ in termos])
+    params    = [f"%{t.lower()}%" for t in termos]
+    params.append(limite)
+    try:
+        with sqlite3.connect(DB_PATH, timeout=30) as conn:
+            cur = conn.execute(f"""
+                SELECT id, parametro, valor, valor_txt, unidade, referencia,
+                       data_medicao, hora_medicao, fonte, observacoes
+                FROM marcadores_leituras
+                WHERE {condicoes}
+                ORDER BY data_medicao DESC, hora_medicao DESC
+                LIMIT ?
+            """, params)
+            cols = ["id","parametro","valor","valor_txt","unidade","referencia",
+                    "data_medicao","hora_medicao","fonte","observacoes"]
+            return [dict(zip(cols, r)) for r in cur.fetchall()]
+    except Exception as ex:
+        print(f"[MODEL] listar_leituras_marcador: {ex}")
+        return []
+
+
+def salvar_leitura_marcador(dados: dict) -> int:
+    """Insere ou atualiza uma leitura em marcadores_leituras. Retorna o id."""
+    try:
+        with sqlite3.connect(DB_PATH, timeout=30) as conn:
+            if dados.get("id"):
+                conn.execute("""
+                    UPDATE marcadores_leituras
+                    SET parametro=?, categoria=?, valor=?, valor_txt=?,
+                        unidade=?, referencia=?, data_medicao=?, hora_medicao=?,
+                        fonte=?, observacoes=?
+                    WHERE id=?
+                """, (dados["parametro"], dados.get("categoria"),
+                      dados.get("valor"), dados.get("valor_txt"),
+                      dados.get("unidade"), dados.get("referencia"),
+                      dados["data_medicao"], dados.get("hora_medicao"),
+                      dados.get("fonte","manual"), dados.get("observacoes"),
+                      dados["id"]))
+                return dados["id"]
+            else:
+                cur = conn.execute("""
+                    INSERT INTO marcadores_leituras
+                        (parametro, categoria, valor, valor_txt, unidade,
+                         referencia, data_medicao, hora_medicao, fonte, observacoes)
+                    VALUES (?,?,?,?,?,?,?,?,?,?)
+                """, (dados["parametro"], dados.get("categoria"),
+                      dados.get("valor"), dados.get("valor_txt"),
+                      dados.get("unidade","mg/dL"), dados.get("referencia"),
+                      dados["data_medicao"], dados.get("hora_medicao"),
+                      dados.get("fonte","manual"), dados.get("observacoes")))
+                _notify()
+                return cur.lastrowid
+    except Exception as ex:
+        print(f"[MODEL] salvar_leitura_marcador: {ex}")
+        return 0
+
+
+def excluir_leitura_marcador(leitura_id: int) -> None:
+    try:
+        with sqlite3.connect(DB_PATH, timeout=30) as conn:
+            conn.execute("DELETE FROM marcadores_leituras WHERE id=?", (leitura_id,))
+            _notify()
+    except Exception as ex:
+        print(f"[MODEL] excluir_leitura_marcador: {ex}")
+
+
+def listar_exames_glicemia(termos: list[str], limite: int = 100) -> list[dict]:
+    """Retorna resultados de lab vinculados a glicemia, filtrando pelo nome/categoria do exame padrao."""
+    like = [f"%{t.lower()}%" for t in termos]
+    conds_nome = " OR ".join(["LOWER(ep.nome_oficial) LIKE ?" for _ in termos])
+    conds_cat  = " OR ".join(["LOWER(ep.categoria) LIKE ?"   for _ in termos])
+    params = like + like + [limite]
+    try:
+        with sqlite3.connect(DB_PATH, timeout=30) as conn:
+            cur = conn.execute(f"""
+                SELECT r.id, r.exame_padrao_id, ep.nome_oficial AS parametro,
+                       r.valor, r.unidade, r.referencia, r.nivel_interpretacao,
+                       e.data_exame, e.arquivo_origem, e.laboratorio,
+                       e.drive_file_id, e.id AS exame_id
+                FROM resultados_estruturados r
+                JOIN exames e ON r.exame_id = e.id
+                JOIN exames_padrao ep ON r.exame_padrao_id = ep.id
+                WHERE ({conds_nome} OR {conds_cat})
+                  AND r.valor IS NOT NULL AND r.valor != ''
+                ORDER BY e.data_exame DESC
+                LIMIT ?
+            """, params)
+            cols = ["id","exame_padrao_id","parametro","valor","unidade",
+                    "referencia","nivel","data_exame","arquivo_origem",
+                    "laboratorio","drive_id","exame_id"]
+            return [dict(zip(cols, r)) for r in cur.fetchall()]
+    except Exception as ex:
+        print(f"[MODEL] listar_exames_glicemia: {ex}")
+        return []
 
 
 if __name__ == "__main__":
