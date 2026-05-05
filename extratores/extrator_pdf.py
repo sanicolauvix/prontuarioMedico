@@ -67,7 +67,7 @@ def detectar_laboratorio(texto: str) -> str:
     if "cardio sistemas" in t: return "DynaMapa"
     if "dyna-mapa"  in t: return "DynaMapa"
     if "dyna mapa"  in t: return "DynaMapa"
-    if "medsenior"  in t: return "DynaMapa"
+    if "medsenior"  in t: return "MedSênior"
     if "zeiss"      in t: return "Zeiss"
     if "heidelberg" in t: return "Heidelberg"
     # Marcadores alternativos (quando o nome do lab está só em imagem)
@@ -89,7 +89,6 @@ PALAVRAS_MAPA = [
     "dyna-mapa",
     "dyna mapa",
     "cardio sistemas",
-    "medsenior",
 ]
 
 PALAVRAS_IMAGEM = [
@@ -175,6 +174,7 @@ def extrair_cabecalho(texto: str, laboratorio: str) -> dict:
         r"CLIENTE:\s*([A-ZÀÁÂÃÉÊÍÓÔÕÚÇ][^\n]{3,50}?)(?:\s+DN:|\s*$)",
         r"PACIENTE:\s*([A-ZÀÁÂÃÉÊÍÓÔÕÚÇ][^\n]{3,50}?)(?:\s+DN:|\s*$)",
         r"Sr\.\s*\(a\)\s*:\s*([A-ZÀÁÂÃÉÊÍÓÔÕÚÇ][^\n]{3,50})",
+        r"Nome\.+:\s*([A-ZÁÀÃÂÉÊÍÓÔÕÚÇ][^\n]{3,60}?)(?:\s+Idade|\s*$)",
         r"Nome\s*:\s*([A-ZÀÁÂÃÉÊÍÓÔÕÚÇ][^\n]{3,50}?)(?:\s+Sexo:|\s+C[oó]digo|\s*$)",
         r"Nome[=\s]+([A-ZÁÀÃÂÉÊÍÓÔÕÚÇ][A-ZÁÀÃÂÉÊÍÓÔÕÚÇ\s]{3,60}?)(?:[=\n]|Idade|Sexo|$)",
         r"Paciente[=\s]+([A-ZÁÀÃÂÉÊÍÓÔÕÚÇ][A-ZÁÀÃÂÉÊÍÓÔÕÚÇ\s]{3,60}?)(?:[=\n]|C[oó]digo|$)",
@@ -205,6 +205,7 @@ def extrair_cabecalho(texto: str, laboratorio: str) -> dict:
     d["medico_solicit"] = _buscar(texto, [
         r"NOME\s+M[EÉ]DICO:\s*([A-ZÀÁÂÃÉÊÍÓÔÕÚÇ][^\n]{3,60}?)(?:\s+CRM|\s*$)",
         r"M[EÉ]DICO:\s*([A-ZÀÁÂÃÉÊÍÓÔÕÚÇ][^\n]{3,60}?)(?:\s+CRM|\s*$)",
+        r"Medico\.+:\s*([A-ZÁÀÃÂÉÊÍÓÔÕÚÇ][^\n]{3,60}?)(?:\s+Data|\s*$)",
         r"Solicitante\s*:\s*([A-ZÀÁÂÃÉÊÍÓÔÕÚÇ][^\n]{3,60})",
         r"M[eé]dico:\s*([A-ZÀÁÂÃÉÊÍÓÔÕÚÇ][^\n]{3,60}?)(?:\s+RM:|\s*$)",
     ])
@@ -397,6 +398,84 @@ def extrair_laudo_generico(texto: str) -> dict:
 
 
 # ══════════════════════════════════════════════════════════════
+# 4b. EXTRAÇÃO MEDSENIOR
+# ══════════════════════════════════════════════════════════════
+
+def extrair_medsenior(texto: str) -> list[dict]:
+    """
+    Extrai resultados do Laboratorio Clinico MedSenior.
+    Formato esperado:
+        NOME DO EXAME
+        Valor de referência
+        Resultado: VALOR UNIDADE REF_RANGE
+        Método..: ...
+    """
+    resultados = []
+    linhas = texto.splitlines()
+    i = 0
+    while i < len(linhas):
+        linha = linhas[i].strip()
+        # Detecta linha "Resultado: VALUE [UNIT] [REF]"
+        m = re.match(r"Resultado\s*:\s*([\d,\.]+)\s*(.*)", linha, re.IGNORECASE)
+        if m:
+            valor_str = m.group(1).replace(",", ".")
+            resto = (m.group(2) or "").strip()
+            # unidade: primeiro token não-numérico (ex: "nmol/L")
+            tokens = resto.split()
+            if tokens and not tokens[0][0].isdigit():
+                unidade = tokens[0]
+                ref_texto = " ".join(tokens[1:])
+            else:
+                unidade = ""
+                ref_texto = resto
+
+            # Intervalo de referência: pega o ÚLTIMO par numérico (ignora "20 a 70 anos")
+            ref_min = ref_max = None
+            refs = re.findall(r"([\d,\.]+)\s*a\s*([\d,\.]+)", ref_texto)
+            if refs:
+                ref_min = float(refs[-1][0].replace(",", "."))
+                ref_max = float(refs[-1][1].replace(",", "."))
+
+            # Nome do exame: procura para trás (última linha não-vazia antes de "Valor de referência")
+            nome_exame = ""
+            for j in range(i - 1, max(i - 6, -1), -1):
+                candidate = linhas[j].strip()
+                if not candidate:
+                    continue
+                cl = candidate.lower()
+                if "valor de refer" in cl or "metodo" in cl or "material" in cl:
+                    continue
+                # Se tem números soltos ou "resultado" é ruído
+                if re.match(r"^[\d\s,\.]+$", candidate):
+                    continue
+                nome_exame = candidate
+                break
+
+            if not nome_exame:
+                i += 1
+                continue
+
+            try:
+                valor = float(valor_str)
+            except ValueError:
+                i += 1
+                continue
+
+            resultados.append({
+                "parametro": nome_exame,
+                "valor": valor,
+                "unidade": unidade,
+                "referencia": ref_texto or (f"{ref_min} a {ref_max}" if ref_min else ""),
+                "ref_min": ref_min,
+                "ref_max": ref_max,
+                "sub_resultados": [],
+            })
+        i += 1
+
+    return resultados
+
+
+# ══════════════════════════════════════════════════════════════
 # 5. EXTRAÇÃO DOS RESULTADOS NUMÉRICOS
 # ══════════════════════════════════════════════════════════════
 
@@ -418,6 +497,10 @@ def extrair_resultados(texto: str, laboratorio: str, on_progress=None) -> list[d
     # ── Tommasi ───────────────────────────────────────────────
     elif laboratorio == "Tommasi":
         resultados += extrair_tommasi(texto)
+
+    # ── MedSênior ─────────────────────────────────────────────
+    elif laboratorio == "MedSênior":
+        resultados += extrair_medsenior(texto)
 
     # Limpar nomes de quebras de linha, espaços e sufixos de sexo soltos (ex: "COLESTEROL M")
     for _r in resultados:
@@ -533,6 +616,9 @@ _MAPA_NOMES = {
     "Albuminas":                       "Albumina",
     "Bilirrubina Direta (Conjugada)":  "Bilirrubina Direta",
     "Bilirrubina Indireta (Não-Conjugada)": "Bilirrubina Indireta",
+    # MedSênior (formato: "NOME - DESCRICAO LONGA")
+    "SHBG - GLOBULINA LIGADORA DE HORMÔNIOS SEXUAIS": "SHBG",
+    "SHBG - GLOBULINA LIGADORA DE HORMONIOS SEXUAIS": "SHBG",
 }
 
 def _normalizar_nome_parametro(nome: str) -> str:
