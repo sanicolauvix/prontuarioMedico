@@ -911,6 +911,8 @@ def construir_painel_conferencia(
             spacing=0,
         )
 
+        _preview_aberto = len(lista_pend) == 0   # abre por padrao se sem pendencias
+
         corpo_preview = ft.Container(
             content=ft.Column([
                 _cabecalho_tabela(),
@@ -924,16 +926,17 @@ def construir_painel_conferencia(
                     clip_behavior=ft.ClipBehavior.ANTI_ALIAS,
                 ),
             ], spacing=0),
-            visible=False,   # começa colapsado
+            visible=_preview_aberto,
         )
 
-        # Flet 0.82.0: ft.Icon não aceita ref= + name= juntos
-        # Solução: usar Text mutável para label e chevron como Text unicode
+        _n_prev = len(lista_ok)
         _prev_label   = ft.Text(
-            value=f"Ver {len(lista_ok)} resultado(s) extraído(s)",
+            value=(f"Ocultar {_n_prev} resultado(s)"
+                   if _preview_aberto
+                   else f"Ver {_n_prev} resultado(s) extraído(s)"),
             size=12, color=AZUL, weight=ft.FontWeight.W_600,
         )
-        _prev_chevron = ft.Text("▼", size=12, color=AZUL)
+        _prev_chevron = ft.Text("▲" if _preview_aberto else "▼", size=12, color=AZUL)
 
         def _toggle_preview(e=None):
             corpo_preview.visible = not corpo_preview.visible
