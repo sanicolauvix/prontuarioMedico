@@ -12,6 +12,10 @@ Tipos de retorno:
 import re
 import io
 import logging
+try:
+    import pdfplumber
+except ImportError:
+    pdfplumber = None
 
 
 # Sufixos que não fazem parte do nome (sexo, abreviações soltas ex: "COLESTEROL M")
@@ -306,9 +310,7 @@ def extrair_imagens_pdf(conteudo_bytes: bytes, prefixo: str, pasta_dest: str) ->
     """
     import io as _io
     import os as _os
-    try:
-        import pdfplumber
-    except ImportError:
+    if pdfplumber is None:
         logging.warning("[IMG] pdfplumber nao instalado — sem extracao de imagens")
         return []
 
@@ -1463,6 +1465,9 @@ def extrair_pdf_bytes(conteudo_bytes: bytes, nome_arquivo: str,
                 print(f"[EXTRATOR] on_progress erro: {_ex}")
         else:
             print(f"[EXTRATOR] on_progress=None, callback nao registrado")
+
+    if pdfplumber is None:
+        raise ImportError("pdfplumber nao instalado. Execute: pip install pdfplumber")
 
     texto_completo = ""
     MAX_PAGINAS    = 30
