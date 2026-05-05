@@ -48,12 +48,23 @@ def _cache_path(conteudo_bytes: bytes) -> Path:
     md5 = hashlib.md5(conteudo_bytes).hexdigest()
     return _CACHE_DIR / f"{md5}.json"
 
+def _extrator_version() -> str:
+    try:
+        from extratores.extrator_pdf import EXTRATOR_VERSION
+        return EXTRATOR_VERSION
+    except Exception:
+        return "unknown"
+
 def _cache_ler(conteudo_bytes: bytes) -> dict | None:
-    """Lê cache se existir. Retorna dict ou None."""
+    """Lê cache se existir e versão do extrator bater. Retorna dict ou None."""
     try:
         p = _cache_path(conteudo_bytes)
         if p.exists():
             dados = json.loads(p.read_text(encoding="utf-8"))
+            if dados.get("_extrator_version") != _extrator_version():
+                p.unlink()
+                logging.info(f"[CACHE] INVALIDADO (versao extrator mudou) — {p.name}")
+                return None
             logging.info(f"[CACHE] HIT — {p.name}")
             return dados
     except Exception as ex:
@@ -61,13 +72,14 @@ def _cache_ler(conteudo_bytes: bytes) -> dict | None:
     return None
 
 def _cache_salvar(conteudo_bytes: bytes, dados: dict):
-    """Salva resultado da extração em cache JSON."""
+    """Salva resultado da extração em cache JSON com versão do extrator."""
     try:
         _CACHE_DIR.mkdir(parents=True, exist_ok=True)
         p = _cache_path(conteudo_bytes)
         # Não salvar bytes no cache — apenas dados serializáveis
         dados_clean = {k: v for k, v in dados.items()
                        if k not in ("arquivo_path", "arquivo_origem")}
+        dados_clean["_extrator_version"] = _extrator_version()
         p.write_text(json.dumps(dados_clean, ensure_ascii=False, indent=2),
                      encoding="utf-8")
         logging.info(f"[CACHE] SALVO — {p.name} ({p.stat().st_size//1024}KB)")
