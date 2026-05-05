@@ -12,7 +12,6 @@ Tipos de retorno:
 import re
 import io
 import logging
-import pdfplumber
 
 
 # Sufixos que não fazem parte do nome (sexo, abreviações soltas ex: "COLESTEROL M")
@@ -307,7 +306,11 @@ def extrair_imagens_pdf(conteudo_bytes: bytes, prefixo: str, pasta_dest: str) ->
     """
     import io as _io
     import os as _os
-    import pdfplumber
+    try:
+        import pdfplumber
+    except ImportError:
+        logging.warning("[IMG] pdfplumber nao instalado — sem extracao de imagens")
+        return []
 
     _os.makedirs(pasta_dest, exist_ok=True)
     resultado = []
