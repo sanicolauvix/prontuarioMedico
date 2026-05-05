@@ -781,6 +781,40 @@ def construir_painel_conferencia(
         ft.Container(height=8),
     ]
 
+    # ── Botão abrir PDF local ──────────────────────────────────────────────────
+    _arquivo_path = dados.get("arquivo_path") or dados.get("arquivo_origem") or ""
+    if _arquivo_path:
+        import os as _os
+        _nome_pdf = _os.path.basename(_arquivo_path)
+
+        def _abrir_pdf_local(e=None):
+            try:
+                import webbrowser, pathlib
+                uri = pathlib.Path(_arquivo_path).resolve().as_uri()
+                webbrowser.open(uri)
+            except Exception as _ex:
+                _log(f"[PAINEL] abrir PDF: {_ex}")
+
+        _btn_pdf = ft.Container(
+            content=ft.Row([
+                ft.Icon("picture_as_pdf_rounded", size=14, color=VERM),
+                ft.Text(_nome_pdf, size=12, color=AZUL, expand=True,
+                        no_wrap=True, overflow=ft.TextOverflow.ELLIPSIS),
+                ft.Icon("open_in_new_rounded", size=13, color=SEC),
+            ], spacing=6),
+            bgcolor=f"{VERM}10", border_radius=8,
+            padding=ft.padding.symmetric(horizontal=12, vertical=8),
+            border=ft.Border(
+                left=ft.BorderSide(2, VERM),
+                top=ft.BorderSide(1, f"{VERM}33"),
+                bottom=ft.BorderSide(1, f"{VERM}33"),
+                right=ft.BorderSide(1, f"{VERM}33"),
+            ),
+            ink=True,
+        )
+        _btn_pdf.on_click = _abrir_pdf_local
+        controles += [_btn_pdf, ft.Container(height=8)]
+
     if lista_pend:
         controles += [
             aviso_pend,
@@ -938,9 +972,9 @@ def construir_painel_conferencia(
             ft.Container(height=8),
         ]
 
-    # ── Seção editável de laudo (para tipo == 'laudo') ─────────────────────────
+    # ── Seção editável de laudo (para qualquer tipo que tenha laudo_dict) ────────
     laudo_dict = dados.get("laudo") or {}
-    if dados.get("tipo") == "laudo" and laudo_dict:
+    if laudo_dict and any(laudo_dict.get(k) for k in ("resumo", "conclusao", "texto_completo")):
         tf_resumo = ft.TextField(
             label="Resumo / Achados",
             value=laudo_dict.get("resumo", ""),
@@ -1076,6 +1110,51 @@ def construir_painel_conferencia(
         btn_imgs.on_click = _toggle_imgs
 
         controles += [ft.Container(height=4), btn_imgs, corpo_imgs, ft.Container(height=8)]
+
+    # ── Fallback: texto bruto quando não há resultados nem laudo ──────────────
+    _tem_conteudo = bool(results) or bool(laudo_dict)
+    _texto_bruto  = (dados.get("resultado_texto") or "").strip()
+    if not _tem_conteudo and _texto_bruto:
+        _txt_bruto_label  = ft.Text("Ver texto extraído do PDF", size=12, color=AMAR,
+                                    weight=ft.FontWeight.W_600)
+        _txt_bruto_chev   = ft.Text("▼", size=12, color=AMAR)
+        _txt_bruto_corpo  = ft.Container(
+            content=ft.Text(
+                _texto_bruto[:4000] + ("…" if len(_texto_bruto) > 4000 else ""),
+                size=11, color=SEC, selectable=True,
+            ),
+            bgcolor=BG, border_radius=6, padding=10,
+            border=ft.Border(
+                top=ft.BorderSide(1, BD), bottom=ft.BorderSide(1, BD),
+                left=ft.BorderSide(1, BD), right=ft.BorderSide(1, BD),
+            ),
+            visible=False,
+        )
+
+        def _toggle_bruto(e=None):
+            _txt_bruto_corpo.visible = not _txt_bruto_corpo.visible
+            _txt_bruto_chev.value   = "▲" if _txt_bruto_corpo.visible else "▼"
+            page.update()
+
+        _btn_bruto = ft.Container(
+            content=ft.Row([
+                ft.Icon("text_snippet_rounded", size=14, color=AMAR),
+                _txt_bruto_label,
+                ft.Container(expand=True),
+                _txt_bruto_chev,
+            ], spacing=6),
+            bgcolor=f"{AMAR}12", border_radius=8,
+            padding=ft.padding.symmetric(horizontal=12, vertical=8),
+            border=ft.Border(
+                left=ft.BorderSide(2, AMAR),
+                top=ft.BorderSide(1, f"{AMAR}33"),
+                bottom=ft.BorderSide(1, f"{AMAR}33"),
+                right=ft.BorderSide(1, f"{AMAR}33"),
+            ),
+            ink=True,
+        )
+        _btn_bruto.on_click = _toggle_bruto
+        controles += [ft.Container(height=4), _btn_bruto, _txt_bruto_corpo, ft.Container(height=8)]
 
     # ── Wrap de on_liberar para upload Drive de imagens ───────────────────────
     _on_liberar_orig = on_liberar

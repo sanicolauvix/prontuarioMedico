@@ -87,7 +87,9 @@ PALAVRAS_MAPA = [
     "descenso noturno",
     "pa sist",
     "dyna-mapa",
+    "dyna mapa",
     "cardio sistemas",
+    "medsenior",
 ]
 
 PALAVRAS_IMAGEM = [
