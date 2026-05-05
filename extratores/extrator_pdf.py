@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 # KOIOS v1.0 | gerado: 2026-03-12 07:18 | extrator_pdf.py
-EXTRATOR_VERSION = "2026-05-05-api"
+EXTRATOR_VERSION = "2026-05-05-api-v2"
 """
 extrator_pdf.py - Extrator universal para múltiplos laboratórios
 Suporta: Laboratório Pretti, Cremasco, Tommasi, Virchow (e similares)
@@ -421,11 +421,13 @@ def extrair_medsenior(texto: str) -> list[dict]:
         if m:
             valor_str = m.group(1).replace(",", ".")
             resto = (m.group(2) or "").strip()
-            # unidade: primeiro token não-numérico (ex: "nmol/L")
-            tokens = resto.split()
-            if tokens and not tokens[0][0].isdigit():
-                unidade = tokens[0]
-                ref_texto = " ".join(tokens[1:])
+            # Unidade pode estar colada ao valor: "248,0ng/mL" → resto="ng/mL ..."
+            # ou separada: "48,4 nmol/L ..." → resto="nmol/L ..."
+            # Regex extrai unidade como sequencia nao-numerica no inicio
+            m_u = re.match(r'^([A-Za-z/%µ][A-Za-z\d/%µ\.]*)\s*(.*)', resto)
+            if m_u:
+                unidade = m_u.group(1)
+                ref_texto = m_u.group(2).strip()
             else:
                 unidade = ""
                 ref_texto = resto
@@ -437,17 +439,25 @@ def extrair_medsenior(texto: str) -> list[dict]:
                 ref_min = float(refs[-1][0].replace(",", "."))
                 ref_max = float(refs[-1][1].replace(",", "."))
 
-            # Nome do exame: procura para trás (última linha não-vazia antes de "Valor de referência")
+            # Nome do exame: procura para trás (ultima linha util antes de "Resultado:")
             nome_exame = ""
             for j in range(i - 1, max(i - 6, -1), -1):
                 candidate = linhas[j].strip()
                 if not candidate:
                     continue
                 cl = candidate.lower()
-                if "valor de refer" in cl or "metodo" in cl or "material" in cl:
+                if "metodo" in cl or "material" in cl:
                     continue
-                # Se tem números soltos ou "resultado" é ruído
-                if re.match(r"^[\d\s,\.]+$", candidate):
+                # "FERRITINA Valor de referencia" na mesma linha → remove sufixo
+                candidate = re.sub(
+                    r'\s+[Vv]alor\s+de\s+refer[eê]ncia.*$', '', candidate
+                ).strip()
+                if not candidate:
+                    continue
+                # Descarta separadores (linha de tracos) e linhas so com numeros
+                if re.match(r'^[-\s]+$', candidate):
+                    continue
+                if re.match(r'^[\d\s,\.]+$', candidate):
                     continue
                 nome_exame = candidate
                 break
