@@ -345,14 +345,69 @@ def criar_tela_incluir_exame(page: ft.Page, voltar_fn):
 
     # Mapa de fases → ícone + label amigável
     _FASES = {
-        "contando":   ("find_in_page_outlined_rounded",    "Mapeando páginas",      AZUL),
-        "lendo":      ("menu_book_outlined_rounded",        "Lendo conteúdo",        AZUL),
-        "analisando": ("psychology_outlined_rounded",       "Analisando parâmetros", "#BC8CFF"),
-        "extraindo":  ("science_outlined_rounded",          "Extraindo resultados",  "#BC8CFF"),
-        "validando":  ("verified_outlined_rounded",         "Validando dados",       VERD),
-        "salvando":   ("save_outlined_rounded",             "Salvando rascunho",     VERD),
-        "concluido":  ("check_circle_outline_rounded",      "Concluído!",            VERD),
+        "contando":        ("find_in_page_outlined_rounded",  "Mapeando páginas",            AZUL),
+        "lendo":           ("menu_book_outlined_rounded",      "Lendo conteúdo",              AZUL),
+        "api_visao":       ("image_search_rounded",            "Claude Vision — PDF escaneado", AMAR),
+        "api_texto":       ("psychology_outlined_rounded",     "Claude API — extraindo dados", "#BC8CFF"),
+        "multiplos_laudos":("library_books_rounded",           "Múltiplos exames detectados!",AMAR),
+        "analisando":      ("psychology_outlined_rounded",     "Analisando parâmetros",       "#BC8CFF"),
+        "extraindo":       ("science_outlined_rounded",        "Extraindo resultados",        "#BC8CFF"),
+        "validando":       ("verified_outlined_rounded",       "Validando dados",             VERD),
+        "salvando":        ("save_outlined_rounded",           "Salvando rascunho",           VERD),
+        "concluido":       ("check_circle_outline_rounded",    "Concluído!",                  VERD),
     }
+
+    # Índice de etapa para cada fase (1=Mapear, 2=Ler, 3=Analisar, 4=Salvar)
+    _ETAPA_INDEX = {
+        "contando":        1,
+        "lendo":           2,
+        "api_visao":       3,
+        "api_texto":       3,
+        "analisando":      3,
+        "extraindo":       3,
+        "multiplos_laudos":4,
+        "concluido":       4,
+        "validando":       4,
+        "salvando":        4,
+    }
+
+    # ── Chips de etapa persistentes (atualizados in-place) ───
+    def _fazer_chip(label, icon):
+        return ft.Container(
+            content=ft.Row([
+                ft.Icon(icon, size=11, color=MUT),
+                ft.Text(label, size=10, color=MUT),
+            ], spacing=4, tight=True),
+            bgcolor=BG, border_radius=20,
+            padding=ft.padding.symmetric(horizontal=8, vertical=4),
+            border=ft.border.all(1, BD),
+        )
+
+    _chip_mapear   = _fazer_chip("1 · Mapear",   "find_in_page_outlined_rounded")
+    _chip_ler      = _fazer_chip("2 · Ler",      "menu_book_outlined_rounded")
+    _chip_analisar = _fazer_chip("3 · Analisar", "psychology_outlined_rounded")
+    _chip_salvar   = _fazer_chip("4 · Salvar",   "save_outlined_rounded")
+    _chips_ordem   = [_chip_mapear, _chip_ler, _chip_analisar, _chip_salvar]
+
+    def _atualizar_etapas(fase_key):
+        idx = _ETAPA_INDEX.get(fase_key, 0)
+        for i, chip in enumerate(_chips_ordem, 1):
+            if i < idx:
+                cor = VERD; borda = VERD
+            elif i == idx:
+                _f = _FASES.get(fase_key)
+                cor = _f[2] if _f else AZUL; borda = cor
+            else:
+                cor = MUT; borda = BD
+            chip.content.controls[0].color = cor
+            chip.content.controls[1].color = cor
+            chip.border = ft.border.all(1, borda)
+
+    def _resetar_etapas():
+        for chip in _chips_ordem:
+            chip.content.controls[0].color = MUT
+            chip.content.controls[1].color = MUT
+            chip.border = ft.border.all(1, BD)
 
     def _set_status(msg, cor=AZUL, prog=None, detalhe="", fase_key=""):
         # Percentual
@@ -373,6 +428,7 @@ def criar_tela_incluir_exame(page: ft.Page, voltar_fn):
             status_fase_ico.color = c
             status_txt.value      = lbl
             status_txt.color      = c
+            _atualizar_etapas(fase_key)
         else:
             status_txt.value = msg
             status_txt.color = cor
@@ -383,21 +439,6 @@ def criar_tela_incluir_exame(page: ft.Page, voltar_fn):
             page.update()
         except Exception:
             pass
-
-    # ── Helper visual — chip de etapa ────────────────────────
-    def _etapa_chip(label, icon):
-        return ft.Container(
-            content=ft.Row([
-                ft.Icon(icon, size=11, color=MUT),
-                ft.Text(label, size=10, color=MUT),
-            ], spacing=4, tight=True),
-            bgcolor=BG, border_radius=20,
-            padding=ft.padding.symmetric(horizontal=8, vertical=4),
-            border=ft.Border(
-                top=ft.BorderSide(1, BD), bottom=ft.BorderSide(1, BD),
-                left=ft.BorderSide(1, BD), right=ft.BorderSide(1, BD),
-            ),
-        )
 
     # ══════════════════════════════════════════════════════════
     # FASE 1 — SELEÇÃO
@@ -582,15 +623,15 @@ def criar_tela_incluir_exame(page: ft.Page, voltar_fn):
 
                     ft.Container(height=8),
 
-                    # ── Etapas visuais ─────────────────────────
+                    # ── Etapas visuais (chips persistentes — atualizados in-place) ──
                     ft.Row([
-                        _etapa_chip("1 · Mapear",   "find_in_page_outlined_rounded"),
+                        _chip_mapear,
                         ft.Container(width=4),
-                        _etapa_chip("2 · Ler",      "menu_book_outlined_rounded"),
+                        _chip_ler,
                         ft.Container(width=4),
-                        _etapa_chip("3 · Analisar", "psychology_outlined_rounded"),
+                        _chip_analisar,
                         ft.Container(width=4),
-                        _etapa_chip("4 · Salvar",   "save_outlined_rounded"),
+                        _chip_salvar,
                     ], spacing=0, wrap=True),
 
                 ], spacing=6),
@@ -660,7 +701,7 @@ def criar_tela_incluir_exame(page: ft.Page, voltar_fn):
             btn = ft.Container(
                 content=ft.Column([
                     ft.Row([
-                        ft.Icon("description_rounded", size=20, color=GOLD),
+                        ft.Icon("description_rounded", size=20, color=AMAR),
                         ft.Text(tipo_txt, size=15, color=TXT,
                                 weight=ft.FontWeight.BOLD),
                     ], spacing=8),
@@ -669,7 +710,7 @@ def criar_tela_incluir_exame(page: ft.Page, voltar_fn):
                             max_lines=3),
                     ft.Container(height=8),
                     ft.Row([
-                        ft.Text("Importar este exame →", size=12, color=GOLD),
+                        ft.Text("Importar este exame →", size=12, color=AMAR),
                     ], alignment=ft.MainAxisAlignment.END),
                 ], spacing=0),
                 bgcolor=CARD,
@@ -745,6 +786,7 @@ def criar_tela_incluir_exame(page: ft.Page, voltar_fn):
             _snack("Selecione um arquivo PDF.", VERM); return
         if not os.path.exists(caminho):
             _snack("Arquivo não encontrado.", VERM); return
+        _resetar_etapas()
         fase[0] = "processando"
         _rebuild()
         threading.Thread(target=_processar, args=(caminho,), daemon=True).start()
@@ -894,13 +936,13 @@ def criar_tela_incluir_exame(page: ft.Page, voltar_fn):
                     prog = 0.25 + min(lins / total_lins * 0.45, 0.45) if total_lins > 0 else 0.30
                     _set_status("", AZUL, prog, f"linha {lins} de {total_lins}", "lendo")
                 elif fase_e == "api_visao":
-                    _set_status("Claude Vision analisando PDF escaneado...", GOLD,
+                    _set_status("Claude Vision analisando PDF escaneado...", AMAR,
                                 0.50, "enviando imagens para a IA...", "api_visao")
                 elif fase_e == "api_texto":
                     _set_status("Claude API extraindo dados...", "#BC8CFF",
                                 0.50, "analisando texto estruturado...", "api_texto")
                 elif fase_e == "multiplos_laudos":
-                    _set_status("Múltiplos exames detectados!", GOLD, 1.0,
+                    _set_status("Múltiplos exames detectados!", AMAR, 1.0,
                                 f"{itens} exame(s) — selecione qual importar", "multiplos_laudos")
                 elif fase_e == "analisando":
                     _set_status("", "#BC8CFF", 0.75, f"{lins} linha(s)...", "analisando")
@@ -1154,7 +1196,7 @@ def criar_tela_incluir_exame(page: ft.Page, voltar_fn):
                     _set_status("", AZUL, prog, det, "lendo")
 
                 elif fase_e == "api_visao":
-                    _set_status("Claude Vision analisando PDF escaneado...", GOLD,
+                    _set_status("Claude Vision analisando PDF escaneado...", AMAR,
                                 0.50, "enviando imagens para a IA — pode levar alguns segundos...", "api_visao")
 
                 elif fase_e == "api_texto":
@@ -1163,7 +1205,7 @@ def criar_tela_incluir_exame(page: ft.Page, voltar_fn):
 
                 elif fase_e == "multiplos_laudos":
                     det = f"{itens} exame(s) encontrado(s) — selecione qual importar"
-                    _set_status("Múltiplos exames detectados!", GOLD, 1.0, det, "multiplos_laudos")
+                    _set_status("Múltiplos exames detectados!", AMAR, 1.0, det, "multiplos_laudos")
 
                 elif fase_e == "analisando":
                     det = f"{lins} linha(s) · identificando parâmetros e valores..."
