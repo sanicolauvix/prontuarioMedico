@@ -28,7 +28,35 @@ _PROMPT = """Texto extraido de PDF de laboratorio:
 
 {texto}
 
-Retorne JSON com este formato exato (sem comentarios, sem texto extra):
+REGRA CRITICA — MULTIPLOS LAUDOS:
+Se o texto contiver MAIS DE UM laudo/procedimento distinto (ex: EDA + Colonoscopia,
+ou qualquer dois exames com numeros de laudo diferentes ou secoes separadas),
+retorne SOMENTE este JSON:
+{{
+  "multiplos_laudos": true,
+  "laboratorio": "nome do lab",
+  "paciente_nome": "NOME COMPLETO EM MAIUSCULAS ou null",
+  "data_exame": "DD/MM/YYYY ou null",
+  "medico_solicit": "nome do medico ou null",
+  "laudos": [
+    {{
+      "tipo_exame": "EDA",
+      "numero_laudo": "26176",
+      "texto_completo": "texto integral do laudo EDA",
+      "resumo": "achados principais",
+      "conclusao": "conclusao/diagnostico"
+    }},
+    {{
+      "tipo_exame": "Colonoscopia",
+      "numero_laudo": "26177",
+      "texto_completo": "texto integral do laudo Colonoscopia",
+      "resumo": "achados principais",
+      "conclusao": "conclusao/diagnostico"
+    }}
+  ]
+}}
+
+Caso contrario (exame unico), retorne:
 {{
   "laboratorio": "nome do laboratorio (ex: MedSenior, Cremasco, Pretti, Virchow)",
   "paciente_nome": "NOME COMPLETO EM MAIUSCULAS ou null",
@@ -95,16 +123,25 @@ def extrair_via_api(texto: str, nome_arquivo: str = "") -> dict | None:
 
         dados = json.loads(raw)
 
-        # Garante todos os campos obrigatorios
-        dados.setdefault("arquivo_origem",         nome_arquivo)
-        dados.setdefault("drive_file_id",          None)
+        dados.setdefault("arquivo_origem", nome_arquivo)
+        dados.setdefault("drive_file_id",  None)
+        dados.setdefault("laboratorio",    "Desconhecido")
+        dados.setdefault("paciente_nome",  None)
+        dados.setdefault("paciente_cpf",   None)
+        dados.setdefault("data_exame",     None)
+        dados.setdefault("medico_solicit", None)
+
+        # Multiplos laudos: retorna como esta
+        if dados.get("multiplos_laudos"):
+            logging.info(
+                f"[API_EXT] multiplos laudos — lab={dados['laboratorio']} "
+                f"n={len(dados.get('laudos', []))}"
+            )
+            return dados
+
+        # Exame unico: completa campos obrigatorios
         dados.setdefault("resultado_texto",        texto)
         dados.setdefault("tipo",                   "numerico")
-        dados.setdefault("paciente_nome",          None)
-        dados.setdefault("paciente_cpf",           None)
-        dados.setdefault("data_exame",             None)
-        dados.setdefault("laboratorio",            "Desconhecido")
-        dados.setdefault("medico_solicit",         None)
         dados.setdefault("tipo_exame",             "")
         dados.setdefault("resultados",             [])
         dados.setdefault("laudo",                  None)
@@ -113,7 +150,6 @@ def extrair_via_api(texto: str, nome_arquivo: str = "") -> dict | None:
 
         for r in dados.get("resultados", []):
             r.setdefault("sub_resultados", [])
-            # Garante que valor e float ou None
             v = r.get("valor")
             if isinstance(v, str):
                 try:
