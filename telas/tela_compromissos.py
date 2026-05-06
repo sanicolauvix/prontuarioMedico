@@ -10,6 +10,7 @@ import datetime
 import json as _json
 import flet as ft
 from shared.layout import Layout
+from shared.auth import IS_ANDROID
 from dados.model_prontuario import (
     listar_consultas, salvar_consulta, listar_medicos,
     salvar_receita, listar_receitas,
@@ -384,6 +385,7 @@ def _campo_clinica(page, clinicas, clinica_id_sel, valor_ini=""):
 # ══════════════════════════════════════════════════════════════
 
 def _tela_receita(page, consulta, voltar_fn):
+    lay            = Layout(page)
     lista_rec      = ft.Column(spacing=8)
     txt_status_ia  = ft.Text("", size=12, color=SEC)
     txt_instrucoes = _campo("Instrucoes de uso extraidas", multiline=True, min_lines=4)
@@ -494,61 +496,46 @@ def _tela_receita(page, consulta, voltar_fn):
 
     _carregar_lista()
 
-    cabecalho = ft.Container(
-        content=ft.Row([
-            ft.Container(
-                content=ft.Row([
-                    ft.Icon("arrow_back_rounded", size=16),
-                    ft.Text("Voltar", size=13),
-                ], spacing=4, tight=True),
-                padding=ft.padding.symmetric(horizontal=8, vertical=8),
-                ink=True, on_click=lambda e: voltar_fn(),
-            ),
-            ft.Column([
-                ft.Text("Receitas", size=18, weight=ft.FontWeight.W_700, color=TXT),
-                ft.Text(f"{consulta.get('medico') or 'Profissional'}  "
-                        f"·  {consulta.get('data','')} {consulta.get('hora','')}",
-                        size=11, color=SEC),
-            ], spacing=1, expand=True),
-        ]),
-        padding=ft.padding.symmetric(horizontal=16, vertical=14),
-        border=ft.Border(bottom=ft.BorderSide(1, BD)),
+    cabecalho = lay.criar_cabecalho(
+        "Receitas", voltar_fn,
+        icone_titulo="receipt_long_rounded",
+        cor_titulo=ROXO,
     )
 
-    corpo = ft.Column([
-        cabecalho,
+    area = ft.Column([
+        _label_sec("RECEITAS CADASTRADAS"),
+        lista_rec,
+        ft.Container(height=1, bgcolor=BD, margin=ft.margin.symmetric(vertical=8)),
+        _label_sec("ADICIONAR RECEITA", ROXO),
         ft.Container(
-            content=ft.Column([
-                _label_sec("RECEITAS CADASTRADAS"),
-                lista_rec,
-                ft.Container(height=1, bgcolor=BD, margin=ft.margin.symmetric(vertical=8)),
-                _label_sec("ADICIONAR RECEITA", ROXO),
-                ft.Container(
-                    content=ft.Row([
-                        ft.Icon("camera_alt_outlined_rounded", size=15, color=ROXO),
-                        ft.Text("Foto da receita", size=12, color=ROXO),
-                    ], spacing=6, tight=True),
-                    bgcolor=f"{ROXO}18", border=ft.border.all(1, ROXO + "55"),
-                    border_radius=8, ink=True,
-                    padding=ft.padding.symmetric(horizontal=12, vertical=9),
-                    on_click=_selecionar_foto,
-                ),
-                btn_extrair,
-                txt_status_ia,
-                txt_instrucoes,
-                ft.Container(
-                    content=ft.Row([
-                        ft.Icon("save_rounded", size=15, color=BG),
-                        ft.Text("Salvar Receita", size=13, color=BG, weight=ft.FontWeight.W_600),
-                    ], spacing=6, tight=True),
-                    bgcolor=AZUL, border_radius=8, ink=True,
-                    padding=ft.padding.symmetric(horizontal=16, vertical=12),
-                    on_click=_salvar_receita,
-                ),
-                ft.Container(height=20),
-            ], spacing=10, scroll=ft.ScrollMode.AUTO),
-            padding=ft.padding.all(16), expand=True,
+            content=ft.Row([
+                ft.Icon("camera_alt_outlined_rounded", size=15, color=ROXO),
+                ft.Text("Foto da receita", size=12, color=ROXO),
+            ], spacing=6, tight=True),
+            bgcolor=f"{ROXO}18", border=ft.border.all(1, ROXO + "55"),
+            border_radius=8, ink=True,
+            padding=ft.padding.symmetric(horizontal=12, vertical=9),
+            on_click=_selecionar_foto,
         ),
+        btn_extrair,
+        txt_status_ia,
+        txt_instrucoes,
+        ft.Container(
+            content=ft.Row([
+                ft.Icon("save_rounded", size=15, color=BG),
+                ft.Text("Salvar Receita", size=13, color=BG, weight=ft.FontWeight.W_600),
+            ], spacing=6, tight=True),
+            bgcolor=AZUL, border_radius=8, ink=True,
+            padding=ft.padding.symmetric(horizontal=16, vertical=12),
+            on_click=_salvar_receita,
+        ),
+        ft.Container(height=20),
+    ], spacing=10, scroll=ft.ScrollMode.AUTO)
+
+    corpo = ft.Column([
+        ft.Container(height=lay.spacer_topo, bgcolor=BG),
+        cabecalho,
+        ft.Container(content=area, padding=ft.padding.all(16), expand=True),
     ], expand=True, spacing=0)
 
     return _centralizar(corpo, page)
@@ -558,7 +545,7 @@ def _tela_receita(page, consulta, voltar_fn):
 # FORMULÁRIO DE COMPROMISSO
 # ══════════════════════════════════════════════════════════════
 
-def _tela_ficha_compromisso(page, consulta, voltar_fn, medicos, clinicas):
+def _tela_ficha_compromisso(page, consulta, voltar_fn, medicos, clinicas, receitas_fn=None):
     lay    = Layout(page)
     is_new = consulta is None
 
@@ -629,9 +616,9 @@ def _tela_ficha_compromisso(page, consulta, voltar_fn, medicos, clinicas):
     btn_add_item = ft.Container(
         content=ft.Row([
             ft.Icon("add_rounded", size=14, color=AZUL),
-            ft.Text("Adicionar", size=12, color=AZUL),
-        ], spacing=4, tight=True),
-        padding=ft.padding.symmetric(horizontal=10, vertical=8),
+            ft.Text("Adicionar item", size=12, color=AZUL),
+        ], spacing=4, alignment=ft.MainAxisAlignment.CENTER),
+        padding=ft.padding.symmetric(horizontal=10, vertical=10),
         border_radius=8, bgcolor=AZUL + "18",
         border=ft.border.all(1, AZUL + "44"), ink=True,
     )
@@ -677,7 +664,7 @@ def _tela_ficha_compromisso(page, consulta, voltar_fn, medicos, clinicas):
             return
         hora     = f_hora.value.strip() or "08:00"
         med_nome = med_map.get(med_id_sel[0], "") if med_id_sel[0] else ""
-        _, label_t, _ = TIPOS_COMP.get(tipo_comp_sel[0], TIPOS_COMP["outro"])
+        _, _, label_t = TIPOS_COMP.get(tipo_comp_sel[0], TIPOS_COMP["outro"])
         desc = med_nome or label_t
         ok, info = _agendar_alarme_windows(data, hora, desc)
         txt_alarme.value = (f"Alarme: {data} as {hora}" if ok else f"Erro: {info}")
@@ -707,7 +694,6 @@ def _tela_ficha_compromisso(page, consulta, voltar_fn, medicos, clinicas):
     _rebuild_chips_tipo()
     _rebuild_chips_status()
 
-    cor_tc, icone_tc, _ = TIPOS_COMP.get(tipo_comp_sel[0], TIPOS_COMP["outro"])
     titulo = "Novo Compromisso" if is_new else "Editar Compromisso"
 
     btn_salvar = ft.Container(
@@ -746,7 +732,7 @@ def _tela_ficha_compromisso(page, consulta, voltar_fn, medicos, clinicas):
                 chips_status,
                 ft.Container(height=4),
                 _label_sec("ITENS A TRATAR"),
-                ft.Row([f_novo_item, btn_add_item], spacing=8),
+                ft.Column([f_novo_item, btn_add_item], spacing=6),
                 pauta_col,
                 ft.Container(height=4),
                 _label_sec("OBSERVACOES"),
@@ -762,8 +748,22 @@ def _tela_ficha_compromisso(page, consulta, voltar_fn, medicos, clinicas):
                     border_radius=8, ink=True,
                     padding=ft.padding.symmetric(horizontal=16, vertical=10),
                     on_click=_agendar,
+                    visible=not IS_ANDROID,
                 ),
                 txt_alarme,
+                *([] if not receitas_fn else [
+                    ft.Container(
+                        content=ft.Row([
+                            ft.Icon("receipt_long_rounded", size=15, color=ROXO),
+                            ft.Text("Ver Receitas", size=13, color=ROXO),
+                        ], spacing=6, tight=True),
+                        bgcolor=f"{ROXO}18",
+                        border=ft.border.all(1, ROXO + "55"),
+                        border_radius=8, ink=True,
+                        padding=ft.padding.symmetric(horizontal=16, vertical=10),
+                        on_click=lambda e: receitas_fn(),
+                    ),
+                ]),
                 txt_erro,
                 ft.Container(height=20),
             ], spacing=8, scroll=ft.ScrollMode.AUTO),
@@ -863,10 +863,6 @@ def criar_tela_compromissos(page: ft.Page, voltar_fn):
                 def _click(e): _abrir_ficha(cons)
                 return _click
 
-            def _make_rec(cons):
-                def _click(e): _abrir_receitas(cons)
-                return _click
-
             lista.controls.append(ft.Container(
                 content=ft.Column([
                     ft.Row([
@@ -896,14 +892,6 @@ def criar_tela_compromissos(page: ft.Page, voltar_fn):
                         ft.Text(local_label, size=11, color=SEC, expand=True),
                         ft.Container(
                             content=ft.Row([
-                                ft.Icon("receipt_long_rounded", size=13, color=ROXO),
-                                ft.Text("Receitas", size=11, color=ROXO),
-                            ], spacing=4, tight=True),
-                            padding=ft.padding.symmetric(horizontal=8, vertical=8),
-                            ink=True, on_click=_make_rec(c),
-                        ),
-                        ft.Container(
-                            content=ft.Row([
                                 ft.Icon("edit_rounded", size=13, color=MUT),
                                 ft.Text("Editar", size=11, color=MUT),
                             ], spacing=4, tight=True),
@@ -929,20 +917,28 @@ def criar_tela_compromissos(page: ft.Page, voltar_fn):
         try: page.update()
         except Exception: pass
 
-    def _abrir_ficha(consulta):
+    def _abrir_receitas(consulta, voltar_para_ficha=False):
         def _voltar():
-            _carregar(); _mostrar_principal()
+            if voltar_para_ficha:
+                _abrir_ficha(consulta)
+            else:
+                _carregar(); _mostrar_principal()
         wrapper.controls.clear()
-        wrapper.controls.append(
-            _tela_ficha_compromisso(page, consulta, _voltar, medicos, clinicas))
+        wrapper.controls.append(_tela_receita(page, consulta, _voltar))
         try: page.update()
         except Exception: pass
 
-    def _abrir_receitas(consulta):
+    def _abrir_ficha(consulta):
         def _voltar():
             _carregar(); _mostrar_principal()
+
+        rec_fn = None if consulta is None else (
+            lambda cons=consulta: _abrir_receitas(cons, voltar_para_ficha=True)
+        )
         wrapper.controls.clear()
-        wrapper.controls.append(_tela_receita(page, consulta, _voltar))
+        wrapper.controls.append(
+            _tela_ficha_compromisso(page, consulta, _voltar, medicos, clinicas,
+                                    receitas_fn=rec_fn))
         try: page.update()
         except Exception: pass
 

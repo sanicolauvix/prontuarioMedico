@@ -319,3 +319,39 @@ class PainelSelecaoExame:
     def set_itens(self, itens: list):
         self.itens = itens
         self._limpar_tudo()
+
+
+# ══════════════════════════════════════════════════════════════
+# Utilitario de navegacao: grafico de marcador de saude
+# ══════════════════════════════════════════════════════════════
+
+def abrir_sub_grafico(page: ft.Page, wrapper: ft.Column, lay,
+                      titulo: str, exame_dict: dict, fn_voltar_principal):
+    """
+    Abre sub-tela de grafico/detalhe dentro do wrapper de navegacao.
+    Reutilizavel em qualquer tela de marcador de saude.
+
+    Parametros
+    ----------
+    page                : ft.Page
+    wrapper             : ft.Column  -- container raiz da tela (navegacao)
+    lay                 : Layout     -- instancia de shared.layout.Layout
+    titulo              : str        -- nome exibido no cabecalho
+    exame_dict          : dict       -- {nome_oficial, unidade, historico: list[dict]}
+    fn_voltar_principal : callable() -- restaura a tela principal no wrapper
+    """
+    from telas.tela_exames import renderizar_grafico_combinado
+
+    cab     = lay.criar_cabecalho(titulo, lambda e=None: fn_voltar_principal(),
+                                  icone_titulo="show_chart_rounded", cor_titulo=AZUL)
+    grafico = renderizar_grafico_combinado(page, [exame_dict])
+    corpo   = lay.criar_corpo(
+        cab,
+        ft.Column([grafico], spacing=0, expand=True, scroll=ft.ScrollMode.AUTO),
+    )
+    wrapper.controls.clear()
+    wrapper.controls.append(ft.Container(bgcolor=BG, expand=True, content=corpo))
+    try:
+        page.update()
+    except Exception:
+        pass

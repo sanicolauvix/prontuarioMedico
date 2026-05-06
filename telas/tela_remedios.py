@@ -103,6 +103,15 @@ def _mask_data(campo: ft.TextField):
     campo.on_change = _on
 
 
+def _add_months(dt: date, meses: int) -> date:
+    import calendar
+    mes = dt.month + meses
+    ano = dt.year + (mes - 1) // 12
+    mes = (mes - 1) % 12 + 1
+    max_dia = calendar.monthrange(ano, mes)[1]
+    return date(ano, mes, min(dt.day, max_dia))
+
+
 # ══════════════════════════════════════════════════════════════
 # ABA 1 — HOJE (painel de tomadas diárias)
 # ══════════════════════════════════════════════════════════════
@@ -774,11 +783,48 @@ def _build_ficha_remedio(page, remedio, voltar_fn):
     def _on_foto_receita(path_abs):
         path_rel = processar_foto(path_abs, "fotos_remedios")
         if path_rel:
-            _fotos_novas.append((path_rel, "", "receita", f_validade_receita.value.strip() or None))
+            _fotos_novas.append((path_rel, "", "receita", validade_data[0] or None))
             _rebuild_galerias()
 
-    f_validade_receita = _campo("Validade da receita (DD/MM/AAAA)", largura=220,
-                                hint="DD/MM/AAAA")
+    # Validade da receita — chips com calculo automatico
+    _VALID_OPCOES = [
+        ("unica",    "Unica",    None),
+        ("continua", "Continua", None),
+        ("6meses",   "6 meses",  6),
+        ("1ano",     "1 ano",    12),
+    ]
+    validade_sel  = [None]
+    validade_data = [""]
+    chips_validade    = ft.Row(spacing=6, wrap=True)
+    txt_data_validade = ft.Text("", size=11, color=VERD)
+
+    def _rebuild_chips_validade():
+        chips_validade.controls.clear()
+        for key, label, meses in _VALID_OPCOES:
+            ativo = validade_sel[0] == key
+            cor   = AZUL if ativo else MUT
+            def _on_val(e, k=key, m=meses, lb=label):
+                validade_sel[0] = k
+                if m is not None:
+                    dt_fim = _add_months(date.today(), m)
+                    validade_data[0]          = dt_fim.strftime("%d/%m/%Y")
+                    txt_data_validade.value   = f"Validade: {validade_data[0]}"
+                    txt_data_validade.color   = VERD
+                else:
+                    validade_data[0]          = k
+                    txt_data_validade.value   = f"Receita {lb.lower()}"
+                    txt_data_validade.color   = SEC if k == "continua" else AMAR
+                _rebuild_chips_validade()
+            chips_validade.controls.append(ft.Container(
+                content=ft.Text(label, size=11, color=cor, weight=ft.FontWeight.W_600),
+                bgcolor=f"{AZUL}22" if ativo else BD, border_radius=12,
+                padding=ft.padding.symmetric(horizontal=10, vertical=5),
+                border=ft.border.all(1, cor), ink=True, on_click=_on_val,
+            ))
+        try: page.update()
+        except Exception: pass
+
+    _rebuild_chips_validade()
 
     btn_add_foto = criar_btn_seletor_foto(
         page=page,
@@ -1023,7 +1069,9 @@ def _build_ficha_remedio(page, remedio, voltar_fn):
         # ── RECEITAS/PRESCRICOES ──────────────────────────
         ft.Container(height=4),
         _label_sec("RECEITAS / PRESCRICOES"),
-        f_validade_receita,
+        _label_sec("VALIDADE DA RECEITA", SEC),
+        chips_validade,
+        txt_data_validade,
         btn_add_receita,
         galeria_rec,
 
@@ -1193,8 +1241,134 @@ def _lista_remedios(page, abrir_ficha_fn):
     def _toggle(e): so_ativos[0] = sw.value; _carregar()
     sw.on_change = _toggle
 
+    def _abrir_busca(e=None):
+        todos_rem = listar_remedios(so_ativos=False)
+        ref_ov    = [None]
+
+        f_search = ft.TextField(
+            hint_text="Nome, principio ativo ou medico...",
+            prefix_icon="search_rounded",
+            bgcolor=CARD, border_color=BD2, focused_border_color=AZUL,
+            hint_style=ft.TextStyle(color=MUT),
+            text_style=ft.TextStyle(color=TXT),
+            border_radius=8, autofocus=True,
+        )
+        resultado = ft.Column(spacing=6, scroll=ft.ScrollMode.AUTO, expand=True)
+
+        def _fechar(e=None):
+            if ref_ov[0] in page.overlay:
+                page.overlay.remove(ref_ov[0])
+            try: page.update()
+            except Exception: pass
+
+        def _pesquisar(e):
+            termo = (f_search.value or "").strip().upper()
+            resultado.controls.clear()
+            if not termo:
+                resultado.controls.append(
+                    ft.Text("Digite para buscar...", size=12, color=MUT))
+                try: page.update()
+                except Exception: pass
+                return
+            matches = [r for r in todos_rem if
+                       termo in r["nome"].upper() or
+                       termo in (r.get("principio_ativo") or "").upper() or
+                       termo in (r.get("medico") or "").upper()]
+            if not matches:
+                resultado.controls.append(
+                    ft.Text("Nenhum resultado.", size=12, color=MUT))
+                try: page.update()
+                except Exception: pass
+                return
+            for r in matches[:25]:
+                est = r.get("estoque_atual", 0) or 0
+                mn  = r.get("estoque_minimo", 5) or 5
+                cor = _cor_estoque(est, mn)
+                med_txt = r.get("medico") or ""
+                def _sel(e, rem=r):
+                    _fechar()
+                    abrir_ficha_fn(rem)
+                resultado.controls.append(ft.Container(
+                    content=ft.Row([
+                        ft.Container(
+                            content=ft.Icon("medication_rounded", size=18, color=cor),
+                            bgcolor=f"{cor}1A", border_radius=8, width=36, height=36,
+                            alignment=ft.alignment.Alignment(0, 0)),
+                        ft.Column([
+                            ft.Row([
+                                ft.Text(r["nome"], size=13, color=TXT,
+                                        weight=ft.FontWeight.W_600),
+                                ft.Container(
+                                    content=ft.Text("INATIVO", size=8, color=MUT),
+                                    bgcolor=f"{MUT}22", border_radius=4,
+                                    padding=ft.padding.symmetric(horizontal=4, vertical=1),
+                                ) if not r.get("ativo", 1) else ft.Container(),
+                            ], spacing=6, tight=True),
+                            ft.Text(r.get("principio_ativo") or "", size=10, color=MUT)
+                                if r.get("principio_ativo") else ft.Container(),
+                            ft.Text(med_txt, size=10, color=ROXO)
+                                if med_txt else ft.Container(),
+                        ], spacing=1, expand=True),
+                        ft.Text(f"{est} un.", size=11, color=cor),
+                        ft.Icon("chevron_right_rounded", size=14, color=MUT),
+                    ], spacing=8, vertical_alignment=ft.CrossAxisAlignment.CENTER),
+                    bgcolor=CARD, border_radius=8, ink=True,
+                    padding=ft.padding.symmetric(horizontal=12, vertical=10),
+                    border=ft.Border(
+                        left=ft.BorderSide(2, cor), top=ft.BorderSide(1, BD),
+                        bottom=ft.BorderSide(1, BD), right=ft.BorderSide(1, BD)),
+                    on_click=_sel,
+                ))
+            try: page.update()
+            except Exception: pass
+
+        f_search.on_change = _pesquisar
+        resultado.controls.append(ft.Text("Digite para buscar...", size=12, color=MUT))
+
+        btn_fechar = ft.Container(
+            content=ft.Icon("arrow_back_rounded", size=18, color=TXT),
+            padding=ft.padding.symmetric(horizontal=8, vertical=8),
+            ink=True, border_radius=8,
+        )
+        btn_fechar.on_click = _fechar
+
+        ref_ov[0] = ft.Container(
+            content=ft.Column([
+                ft.Container(
+                    content=ft.Row([
+                        btn_fechar,
+                        ft.Text("Buscar remedio", size=16, color=TXT,
+                                weight=ft.FontWeight.W_600, expand=True),
+                    ], spacing=4),
+                    padding=ft.padding.symmetric(horizontal=8, vertical=12),
+                    border=ft.Border(bottom=ft.BorderSide(1, BD)),
+                ),
+                ft.Container(
+                    content=ft.Column([
+                        f_search,
+                        ft.Container(height=8),
+                        resultado,
+                    ], spacing=6, expand=True),
+                    padding=ft.padding.all(16),
+                    expand=True,
+                ),
+            ], spacing=0, expand=True),
+            bgcolor=BG, expand=True,
+        )
+        page.overlay.append(ref_ov[0])
+        try: page.update()
+        except Exception: pass
+
     _rebuild_chips()
     _carregar()
+
+    _btn_busca = ft.Container(
+        content=ft.Icon("search_rounded", size=18, color=SEC),
+        padding=ft.padding.symmetric(horizontal=10, vertical=8),
+        border_radius=8, ink=True,
+        border=ft.border.all(1, BD),
+    )
+    _btn_busca.on_click = _abrir_busca
 
     _btn_novo_rem = ft.Container(
         content=ft.Row([
@@ -1212,6 +1386,8 @@ def _lista_remedios(page, abrir_ficha_fn):
                 ft.Row([
                     chips_row,
                     ft.Container(expand=True),
+                    _btn_busca,
+                    ft.Container(width=6),
                     _btn_novo_rem,
                 ], vertical_alignment=ft.CrossAxisAlignment.CENTER),
                 ft.Row([sw], vertical_alignment=ft.CrossAxisAlignment.CENTER),
