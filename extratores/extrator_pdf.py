@@ -1618,19 +1618,25 @@ def extrair_pdf_bytes(conteudo_bytes: bytes, nome_arquivo: str,
     _pdf_escaneado = len(texto_completo.strip()) < 200
     try:
         if _pdf_escaneado:
+            _prog("api_visao", 0, total_pags, 0, 0, 0)
             from .extrator_api import extrair_via_api_pdf as _ext_pdf
-            logging.info("[EXTRATOR] PDF escaneado detectado — usando visao Claude")
+            logging.info("[EXTRATOR] PDF escaneado — usando Claude Vision")
             _dados_api = _ext_pdf(conteudo_bytes, nome_arquivo)
         else:
+            _prog("api_texto", 0, total_pags, 0, 0, 0)
             from .extrator_api import extrair_via_api as _ext_api
             _dados_api = _ext_api(texto_completo, nome_arquivo)
         if _dados_api:
-            _dados_api["arquivo_origem"]  = nome_arquivo
-            _dados_api["drive_file_id"]   = drive_file_id
+            _dados_api["arquivo_origem"] = nome_arquivo
+            _dados_api["drive_file_id"]  = drive_file_id
             if not _pdf_escaneado:
                 _dados_api["resultado_texto"] = texto_completo
-            _prog("concluido", total_pags, total_pags, texto_completo.count("\n"),
-                  len(_dados_api.get("resultados", [])))
+            if _dados_api.get("multiplos_laudos"):
+                _prog("multiplos_laudos", total_pags, total_pags, 0,
+                      len(_dados_api.get("laudos", [])), 0)
+            else:
+                _prog("concluido", total_pags, total_pags, texto_completo.count("\n"),
+                      len(_dados_api.get("resultados", [])))
             return _dados_api
     except Exception as _api_ex:
         logging.warning(f"[EXTRATOR] API indisponivel, usando regex: {_api_ex}")

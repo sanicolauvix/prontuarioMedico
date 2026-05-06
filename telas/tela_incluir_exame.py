@@ -71,6 +71,17 @@ def _cache_ler(conteudo_bytes: bytes) -> dict | None:
         logging.warning(f"[CACHE] Erro ao ler cache: {ex}")
     return None
 
+def _cache_versao_ok(conteudo_bytes: bytes) -> bool:
+    """Retorna True se cache existe E versão do extrator bate (sem deletar)."""
+    try:
+        p = _cache_path(conteudo_bytes)
+        if not p.exists():
+            return False
+        dados = json.loads(p.read_text(encoding="utf-8"))
+        return dados.get("_extrator_version") == _extrator_version()
+    except Exception:
+        return False
+
 def _cache_salvar(conteudo_bytes: bytes, dados: dict):
     """Salva resultado da extração em cache JSON com versão do extrator."""
     try:
@@ -178,8 +189,12 @@ def criar_tela_incluir_exame(page: ft.Page, voltar_fn):
             _conteudo_tmp = Path(caminho).read_bytes()
             _info = _cache_info(_conteudo_tmp)
             if _info:
-                _cache_badge.value   = f"⚡ Cache disponível ({_info}) — análise será instantânea"
-                _cache_badge.color   = VERD
+                if _cache_versao_ok(_conteudo_tmp):
+                    _cache_badge.value = f"⚡ Cache disponível ({_info}) — análise será instantânea"
+                    _cache_badge.color = VERD
+                else:
+                    _cache_badge.value = f"⚠ Cache desatualizado ({_info}) — será reprocessado via API"
+                    _cache_badge.color = LRNJ
                 _cache_badge.visible = True
                 _btn_limpar_cache.visible = True
             else:
@@ -878,6 +893,15 @@ def criar_tela_incluir_exame(page: ft.Page, voltar_fn):
                 elif fase_e == "lendo":
                     prog = 0.25 + min(lins / total_lins * 0.45, 0.45) if total_lins > 0 else 0.30
                     _set_status("", AZUL, prog, f"linha {lins} de {total_lins}", "lendo")
+                elif fase_e == "api_visao":
+                    _set_status("Claude Vision analisando PDF escaneado...", GOLD,
+                                0.50, "enviando imagens para a IA...", "api_visao")
+                elif fase_e == "api_texto":
+                    _set_status("Claude API extraindo dados...", "#BC8CFF",
+                                0.50, "analisando texto estruturado...", "api_texto")
+                elif fase_e == "multiplos_laudos":
+                    _set_status("Múltiplos exames detectados!", GOLD, 1.0,
+                                f"{itens} exame(s) — selecione qual importar", "multiplos_laudos")
                 elif fase_e == "analisando":
                     _set_status("", "#BC8CFF", 0.75, f"{lins} linha(s)...", "analisando")
                 elif fase_e == "extraindo":
@@ -1128,6 +1152,18 @@ def criar_tela_incluir_exame(page: ft.Page, voltar_fn):
                         prog = 0.30
                         det  = f"página {pag} de {tot}"
                     _set_status("", AZUL, prog, det, "lendo")
+
+                elif fase_e == "api_visao":
+                    _set_status("Claude Vision analisando PDF escaneado...", GOLD,
+                                0.50, "enviando imagens para a IA — pode levar alguns segundos...", "api_visao")
+
+                elif fase_e == "api_texto":
+                    _set_status("Claude API extraindo dados do PDF...", "#BC8CFF",
+                                0.50, "analisando texto estruturado...", "api_texto")
+
+                elif fase_e == "multiplos_laudos":
+                    det = f"{itens} exame(s) encontrado(s) — selecione qual importar"
+                    _set_status("Múltiplos exames detectados!", GOLD, 1.0, det, "multiplos_laudos")
 
                 elif fase_e == "analisando":
                     det = f"{lins} linha(s) · identificando parâmetros e valores..."
