@@ -135,29 +135,53 @@ def extrair_via_api(texto: str, nome_arquivo: str = "") -> dict | None:
         return None
 
 
-_PROMPT_PDF = (
-    "Analise este documento PDF de exame medico (pode ser escaneado). "
-    "Se houver mais de um laudo, extraia SOMENTE O PRIMEIRO que aparecer no documento. "
-    "Ignore paginas de fotos/imagens endoscopicas — extraia apenas o laudo textual. "
-    "Retorne JSON com este formato exato (sem comentarios, sem texto extra):\n"
-    "{\n"
-    '  "laboratorio": "nome do laboratorio",\n'
-    '  "paciente_nome": "NOME COMPLETO EM MAIUSCULAS ou null",\n'
-    '  "data_exame": "DD/MM/YYYY ou null",\n'
-    '  "medico_solicit": "nome do medico solicitante ou null",\n'
-    '  "tipo": "numerico" ou "laudo",\n'
-    '  "tipo_exame": "nome do exame (ex: EDA, Colonoscopia, TSH)",\n'
-    '  "resultados": [],\n'
-    '  "laudo": {\n'
-    '    "tipo_exame": "nome do exame",\n'
-    '    "texto_completo": "texto integral do laudo",\n'
-    '    "resumo": "achados principais em topicos",\n'
-    '    "conclusao": "conclusao/diagnostico"\n'
-    '  }\n'
-    "}\n"
-    "Para exames numericos (hemograma, bioquimica): tipo='numerico', resultados=[{parametro,valor,unidade,referencia,ref_min,ref_max}], laudo=null.\n"
-    "Para laudos descritivos (endoscopia, colonoscopia, histopatologico): tipo='laudo', resultados=[], laudo={...}."
-)
+_PROMPT_PDF = """Analise este documento PDF de exame medico (pode ser escaneado).
+Ignore paginas de fotos/imagens endoscopicas — extraia apenas as paginas de laudo textual.
+
+Se o PDF contiver MAIS DE UM laudo/exame distintos (ex: EDA + Colonoscopia no mesmo PDF),
+retorne SOMENTE este formato:
+{
+  "multiplos_laudos": true,
+  "laboratorio": "nome do lab",
+  "paciente_nome": "NOME COMPLETO EM MAIUSCULAS ou null",
+  "data_exame": "DD/MM/YYYY ou null",
+  "medico_solicit": "nome do medico ou null",
+  "laudos": [
+    {
+      "tipo_exame": "EDA",
+      "texto_completo": "texto integral do laudo EDA",
+      "resumo": "achados principais",
+      "conclusao": "conclusao/diagnostico"
+    },
+    {
+      "tipo_exame": "Colonoscopia",
+      "texto_completo": "texto integral do laudo Colonoscopia",
+      "resumo": "achados principais",
+      "conclusao": "conclusao/diagnostico"
+    }
+  ]
+}
+
+Se o PDF contiver apenas UM laudo/exame, retorne:
+{
+  "laboratorio": "nome do lab",
+  "paciente_nome": "NOME COMPLETO EM MAIUSCULAS ou null",
+  "data_exame": "DD/MM/YYYY ou null",
+  "medico_solicit": "nome do medico ou null",
+  "tipo": "numerico" ou "laudo",
+  "tipo_exame": "nome do exame (ex: EDA, Colonoscopia, TSH)",
+  "resultados": [],
+  "laudo": {
+    "tipo_exame": "nome do exame",
+    "texto_completo": "texto integral do laudo",
+    "resumo": "achados principais em topicos",
+    "conclusao": "conclusao/diagnostico"
+  }
+}
+
+Para exames numericos (hemograma, bioquimica): tipo='numerico', resultados=[{parametro,valor,unidade,referencia,ref_min,ref_max}], laudo=null.
+Para laudos descritivos (endoscopia, colonoscopia, histopatologico): tipo='laudo', resultados=[], laudo={...}.
+Retorne SOMENTE JSON valido, sem texto adicional, sem code fences."""
 
 
 def extrair_via_api_pdf(pdf_bytes: bytes, nome_arquivo: str = "") -> dict | None:
@@ -206,15 +230,25 @@ def extrair_via_api_pdf(pdf_bytes: bytes, nome_arquivo: str = "") -> dict | None
 
         dados = json.loads(raw)
 
-        dados.setdefault("arquivo_origem",         nome_arquivo)
-        dados.setdefault("drive_file_id",          None)
-        dados.setdefault("resultado_texto",        "")
+        dados.setdefault("arquivo_origem",  nome_arquivo)
+        dados.setdefault("drive_file_id",   None)
+        dados.setdefault("resultado_texto", "")
+        dados.setdefault("laboratorio",     "Desconhecido")
+        dados.setdefault("paciente_nome",   None)
+        dados.setdefault("paciente_cpf",    None)
+        dados.setdefault("data_exame",      None)
+        dados.setdefault("medico_solicit",  None)
+
+        # Multiplos laudos: retorna como esta, sem completar campos de exame unico
+        if dados.get("multiplos_laudos"):
+            logging.info(
+                f"[API_PDF] multiplos laudos — lab={dados['laboratorio']} "
+                f"n={len(dados.get('laudos', []))}"
+            )
+            return dados
+
+        # Exame unico: completa campos obrigatorios
         dados.setdefault("tipo",                   "laudo")
-        dados.setdefault("paciente_nome",          None)
-        dados.setdefault("paciente_cpf",           None)
-        dados.setdefault("data_exame",             None)
-        dados.setdefault("laboratorio",            "Desconhecido")
-        dados.setdefault("medico_solicit",         None)
         dados.setdefault("tipo_exame",             "")
         dados.setdefault("resultados",             [])
         dados.setdefault("laudo",                  None)

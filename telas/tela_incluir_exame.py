@@ -138,10 +138,11 @@ def criar_tela_incluir_exame(page: ft.Page, voltar_fn):
     def _rebuild():
         area.controls.clear()
         {
-            "selecao":     lambda: area.controls.extend(_tela_selecao()),
-            "processando": lambda: area.controls.extend(_tela_processando()),
-            "conferencia": lambda: area.controls.extend(_tela_conferencia()),
-            "liberando":   lambda: area.controls.extend(_tela_liberando()),
+            "selecao":        lambda: area.controls.extend(_tela_selecao()),
+            "processando":    lambda: area.controls.extend(_tela_processando()),
+            "selecao_laudo":  lambda: area.controls.extend(_tela_selecao_laudo()),
+            "conferencia":    lambda: area.controls.extend(_tela_conferencia()),
+            "liberando":      lambda: area.controls.extend(_tela_liberando()),
             "drive_falhou":          lambda: area.controls.extend(_tela_drive_falhou()),
             "modelo_nao_configurado": lambda: area.controls.extend(_tela_modelo_nao_configurado()),
         }.get(fase[0], lambda: None)()
@@ -587,6 +588,101 @@ def criar_tela_incluir_exame(page: ft.Page, voltar_fn):
                 ),
             ),
             ft.Container(height=20),
+        ]
+
+    # ══════════════════════════════════════════════════════════
+    # FASE 2b — SELEÇÃO DE LAUDO (PDF com múltiplos exames)
+    # ══════════════════════════════════════════════════════════
+    def _tela_selecao_laudo():
+        dados_multi = dados_extra[0] or {}
+        laudos_lista = dados_multi.get("laudos", [])
+
+        _SUBTIPO_MAP = {
+            "eda": "eda", "endoscopia digestiva alta": "eda",
+            "colonoscopia": "colonoscopia",
+            "sigmoidoscopia": "colonoscopia",
+            "retossigmoidoscopia": "colonoscopia",
+        }
+
+        def _selecionar(laudo_dict):
+            subtipo = _SUBTIPO_MAP.get(
+                laudo_dict.get("tipo_exame", "").lower().strip(), "endoscopia"
+            )
+            novo = {
+                "arquivo_origem":         dados_multi.get("arquivo_origem", ""),
+                "arquivo_path":           dados_multi.get("arquivo_path", ""),
+                "drive_file_id":          dados_multi.get("drive_file_id"),
+                "resultado_texto":        laudo_dict.get("texto_completo", ""),
+                "tipo":                   "laudo",
+                "subtipo":                subtipo,
+                "tipo_exame":             laudo_dict.get("tipo_exame", ""),
+                "laboratorio":            dados_multi.get("laboratorio", ""),
+                "paciente_nome":          dados_multi.get("paciente_nome"),
+                "paciente_cpf":           None,
+                "data_exame":             dados_multi.get("data_exame"),
+                "medico_solicit":         dados_multi.get("medico_solicit"),
+                "resultados":             [],
+                "laudo": {
+                    "tipo_exame":     laudo_dict.get("tipo_exame", ""),
+                    "texto_completo": laudo_dict.get("texto_completo", ""),
+                    "resumo":         laudo_dict.get("resumo", ""),
+                    "conclusao":      laudo_dict.get("conclusao", ""),
+                },
+                "modelo_nao_configurado": False,
+            }
+            dados_extra[0] = novo
+            pendencias[0]  = []
+            fase[0]        = "conferencia"
+            _rebuild()
+
+        cards = []
+        for laudo in laudos_lista:
+            tipo_txt  = laudo.get("tipo_exame", "Exame")
+            conclusao = laudo.get("conclusao", "")[:120]
+            if len(laudo.get("conclusao", "")) > 120:
+                conclusao += "..."
+
+            btn = ft.Container(
+                content=ft.Column([
+                    ft.Row([
+                        ft.Icon("description_rounded", size=20, color=GOLD),
+                        ft.Text(tipo_txt, size=15, color=TXT,
+                                weight=ft.FontWeight.BOLD),
+                    ], spacing=8),
+                    ft.Container(height=4),
+                    ft.Text(conclusao or "—", size=12, color=SEC,
+                            max_lines=3),
+                    ft.Container(height=8),
+                    ft.Row([
+                        ft.Text("Importar este exame →", size=12, color=GOLD),
+                    ], alignment=ft.MainAxisAlignment.END),
+                ], spacing=0),
+                bgcolor=CARD,
+                border_radius=12,
+                padding=ft.padding.all(16),
+                border=ft.border.all(1, BORDA),
+                ink=True,
+            )
+            laudo_capturado = dict(laudo)
+            btn.on_click = lambda e, ld=laudo_capturado: _selecionar(ld)
+            cards.append(btn)
+
+        return [
+            ft.Container(height=24),
+            ft.Text("Este PDF contém múltiplos exames.",
+                    size=15, color=TXT, weight=ft.FontWeight.BOLD,
+                    text_align=ft.TextAlign.CENTER),
+            ft.Text("Selecione qual deseja importar agora:",
+                    size=13, color=SEC, text_align=ft.TextAlign.CENTER),
+            ft.Container(height=16),
+            *cards,
+            ft.Container(height=16),
+            ft.Container(
+                content=ft.Text("Importe o mesmo PDF novamente para o outro exame.",
+                                size=11, color=SEC, text_align=ft.TextAlign.CENTER),
+                padding=ft.padding.symmetric(horizontal=16),
+            ),
+            ft.Container(height=8),
         ]
 
     # ══════════════════════════════════════════════════════════
@@ -1108,7 +1204,10 @@ def criar_tela_incluir_exame(page: ft.Page, voltar_fn):
             pendencias[0] = [{"parametro": p} for p in params if p not in vinc_ok]
 
             # Nada é gravado no banco aqui — tudo fica em memória até confirmar
-            fase[0] = "conferencia"
+            if dados.get("multiplos_laudos"):
+                fase[0] = "selecao_laudo"
+            else:
+                fase[0] = "conferencia"
             try:
                 _rebuild()
             except Exception as _rb_ex:
