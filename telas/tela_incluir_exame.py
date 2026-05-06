@@ -798,7 +798,7 @@ def criar_tela_incluir_exame(page: ft.Page, voltar_fn):
         ]
 
     def _liberar_multiplos():
-        """Upload Drive uma vez + grava cada laudo como exame separado."""
+        """Split PDF por laudo + upload Drive separado por exame + grava DB."""
         from dados.model_prontuario import salvar_exame, salvar_sync_pendente
         dados_multi  = dados_extra[0] or {}
         laudos_lista = dados_multi.get("laudos", [])
@@ -813,6 +813,29 @@ def criar_tela_incluir_exame(page: ft.Page, voltar_fn):
             except Exception:
                 pass
 
+        def _split_pdf(pdf_bytes: bytes, n: int) -> list[bytes]:
+            """Divide PDF em n partes iguais (paginas distribuidas sequencialmente)."""
+            import io as _io
+            try:
+                from pypdf import PdfReader, PdfWriter
+            except ImportError:
+                logging.warning("[SPLIT] pypdf nao disponivel — sem split")
+                return [pdf_bytes] * n
+            reader   = PdfReader(_io.BytesIO(pdf_bytes))
+            total    = len(reader.pages)
+            por_part = max(1, total // n)
+            partes   = []
+            for i in range(n):
+                inicio = i * por_part
+                fim    = inicio + por_part if i < n - 1 else total
+                w = PdfWriter()
+                for p in range(inicio, fim):
+                    w.add_page(reader.pages[p])
+                buf = _io.BytesIO()
+                w.write(buf)
+                partes.append(buf.getvalue())
+            return partes
+
         try:
             fase[0] = "liberando"; _rebuild()
 
@@ -824,28 +847,49 @@ def criar_tela_incluir_exame(page: ft.Page, voltar_fn):
             from utils.drive_sync import garantir_pasta, upload_foto as _upload_foto
             creds = drive_ou_erro
 
-            _set_status("Enviando arquivo para o Drive...", VERD, 0.20)
+            _set_status("Preparando pasta no Drive...", VERD, 0.15)
             pasta_raiz   = garantir_pasta("Koios_Prontuario", creds=creds)
             pasta_exames = garantir_pasta("EXAMES_PDF", pai_id=pasta_raiz, creds=creds)
-            caminho  = dados_multi.get("arquivo_path", "")
-            drive_id = (_upload_foto(caminho, os.path.basename(caminho),
-                                     pasta_exames, creds)
-                        if caminho and os.path.exists(caminho) else None)
+
+            caminho      = dados_multi.get("arquivo_path", "")
+            pdf_bytes    = Path(caminho).read_bytes() if caminho and os.path.exists(caminho) else b""
+            nome_base    = os.path.splitext(os.path.basename(caminho))[0]
+            total        = len(laudos_lista)
+            partes_pdf   = _split_pdf(pdf_bytes, total) if pdf_bytes else [b""] * total
+
+            tmp_dir      = Path(__file__).parent.parent / "temp"
+            tmp_dir.mkdir(parents=True, exist_ok=True)
 
             eids = []
-            total = len(laudos_lista)
-            for i, laudo in enumerate(laudos_lista, 1):
-                _set_status(f"Gravando exame {i}/{total}...", VERD,
-                            0.30 + (i / total) * 0.60)
-                d = _converter_laudo_para_dados(laudo, dados_multi, drive_id)
+            for i, laudo in enumerate(laudos_lista):
+                idx = i + 1
+                tipo = laudo.get("tipo_exame", f"exame{idx}").replace(" ", "_")
+                nome_parte = f"{nome_base}_{tipo}_{idx}.pdf"
+
+                _set_status(f"Enviando {tipo} para o Drive ({idx}/{total})...",
+                            VERD, 0.20 + (i / total) * 0.50)
+
+                drive_id = None
+                if partes_pdf[i]:
+                    tmp_path = tmp_dir / nome_parte
+                    try:
+                        tmp_path.write_bytes(partes_pdf[i])
+                        drive_id = _upload_foto(str(tmp_path), nome_parte,
+                                                pasta_exames, creds)
+                    finally:
+                        try: tmp_path.unlink(missing_ok=True)
+                        except Exception: pass
+
+                _set_status(f"Gravando {tipo} no banco ({idx}/{total})...",
+                            VERD, 0.70 + (i / total) * 0.25)
+                d   = _converter_laudo_para_dados(laudo, dados_multi, drive_id)
                 eid = salvar_exame(d, status="ativo")
                 try: salvar_sync_pendente(eid)
                 except Exception: pass
                 eids.append(eid)
 
             try:
-                _conteudo_tmp = Path(caminho).read_bytes()
-                _cache_apagar(_conteudo_tmp)
+                _cache_apagar(pdf_bytes)
             except Exception: pass
 
             _set_status("Concluído!", VERD, 1.0)

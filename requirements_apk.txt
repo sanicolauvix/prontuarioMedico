@@ -19,3 +19,6 @@ httpx
 
 # extracao de PDF (precisa --source-packages no flet build -- extensoes C)
 pdfplumber
+
+# split de PDF (puro Python -- sem extensoes C)
+pypdf
