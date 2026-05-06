@@ -136,10 +136,20 @@ def extrair_via_api(texto: str, nome_arquivo: str = "") -> dict | None:
 
 
 _PROMPT_PDF = """Analise este documento PDF de exame medico (pode ser escaneado).
-Ignore paginas de fotos/imagens endoscopicas — extraia apenas as paginas de laudo textual.
+Ignore paginas de fotos/imagens endoscopicas (ex: "Relatorio de Video Endoscopia") — extraia APENAS as paginas de laudo textual.
 
-Se o PDF contiver MAIS DE UM laudo/exame distintos (ex: EDA + Colonoscopia no mesmo PDF),
-retorne SOMENTE este formato:
+REGRA CRITICA — MULTIPLOS LAUDOS:
+EDA (Endoscopia Digestiva Alta) e Colonoscopia SAO SEMPRE exames distintos, mesmo no mesmo PDF.
+Se o PDF contiver MAIS DE UM laudo distinto com numero de laudo diferente, procedimento diferente,
+ou secoes claramente separadas (ex: "Laudo da EDA" na pagina 1 e "Laudo da Colonoscopia" na pagina 3),
+retorne OBRIGATORIAMENTE o formato multiplos_laudos=true abaixo.
+
+Combinacoes que SEMPRE geram multiplos_laudos=true:
+- EDA + Colonoscopia (mesmo PDF, laudos numerados separadamente)
+- Biopsia + Endoscopia
+- Qualquer dois procedimentos com numeros de laudo diferentes
+
+Formato MULTIPLOS LAUDOS (use quando houver 2 ou mais laudos distintos):
 {
   "multiplos_laudos": true,
   "laboratorio": "nome do lab",
@@ -149,26 +159,28 @@ retorne SOMENTE este formato:
   "laudos": [
     {
       "tipo_exame": "EDA",
-      "texto_completo": "texto integral do laudo EDA",
-      "resumo": "achados principais",
+      "numero_laudo": "26176",
+      "texto_completo": "transcricao integral do laudo EDA (pagina de texto, nao de fotos)",
+      "resumo": "achados principais em topicos",
       "conclusao": "conclusao/diagnostico"
     },
     {
       "tipo_exame": "Colonoscopia",
-      "texto_completo": "texto integral do laudo Colonoscopia",
-      "resumo": "achados principais",
+      "numero_laudo": "26177",
+      "texto_completo": "transcricao integral do laudo Colonoscopia",
+      "resumo": "achados principais em topicos",
       "conclusao": "conclusao/diagnostico"
     }
   ]
 }
 
-Se o PDF contiver apenas UM laudo/exame, retorne:
+Formato LAUDO UNICO (apenas quando o PDF tem exatamente um procedimento):
 {
   "laboratorio": "nome do lab",
   "paciente_nome": "NOME COMPLETO EM MAIUSCULAS ou null",
   "data_exame": "DD/MM/YYYY ou null",
   "medico_solicit": "nome do medico ou null",
-  "tipo": "numerico" ou "laudo",
+  "tipo": "laudo",
   "tipo_exame": "nome do exame (ex: EDA, Colonoscopia, TSH)",
   "resultados": [],
   "laudo": {
@@ -179,8 +191,8 @@ Se o PDF contiver apenas UM laudo/exame, retorne:
   }
 }
 
-Para exames numericos (hemograma, bioquimica): tipo='numerico', resultados=[{parametro,valor,unidade,referencia,ref_min,ref_max}], laudo=null.
-Para laudos descritivos (endoscopia, colonoscopia, histopatologico): tipo='laudo', resultados=[], laudo={...}.
+Para exames numericos (hemograma, bioquimica, hormonios): tipo='numerico', resultados=[{parametro,valor,unidade,referencia,ref_min,ref_max}], laudo=null.
+Para laudos descritivos (endoscopia, colonoscopia, histopatologico, ecocardiograma): tipo='laudo', resultados=[], laudo={...}.
 Retorne SOMENTE JSON valido, sem texto adicional, sem code fences."""
 
 
@@ -202,7 +214,7 @@ def extrair_via_api_pdf(pdf_bytes: bytes, nome_arquivo: str = "") -> dict | None
     try:
         resp = client.messages.create(
             model=_MODELO,
-            max_tokens=2048,
+            max_tokens=4096,
             system=_SYSTEM,
             messages=[{
                 "role": "user",

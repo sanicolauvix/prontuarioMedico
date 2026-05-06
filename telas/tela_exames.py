@@ -1330,7 +1330,7 @@ def _conteudo_buscar(page, fn_adicionar, chips_row, txt_info, col_resultado, sel
       - modo BUSCA: campo + lista de sugestões
       - modo RESULTADO: chips selecionados + gráfico + botão "Adicionar exame"
     """
-    exames_todos = buscar_todos_exames_padrao() + [
+    _laudos_items = [
         {
             "id":           "laudo_" + str(l["exame_id"]),
             "nome_oficial": l["tipo_exame"] or "Laudo",
@@ -1343,6 +1343,8 @@ def _conteudo_buscar(page, fn_adicionar, chips_row, txt_info, col_resultado, sel
         }
         for l in buscar_laudos()
     ]
+    # Laudos primeiro para que apareçam na lista padrão (sem busca)
+    exames_todos = _laudos_items + buscar_todos_exames_padrao()
     realizados = [e for e in exames_todos if e.get("realizado")]
 
     txt_busca = ft.TextField(

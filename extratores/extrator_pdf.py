@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 # KOIOS v1.0 | gerado: 2026-03-12 07:18 | extrator_pdf.py
-EXTRATOR_VERSION = "2026-05-06-visao"
+EXTRATOR_VERSION = "2026-05-06-multiplos"
 """
 extrator_pdf.py - Extrator universal para múltiplos laboratórios
 Suporta: Laboratório Pretti, Cremasco, Tommasi, Virchow (e similares)
