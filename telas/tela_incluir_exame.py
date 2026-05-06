@@ -697,99 +697,168 @@ def criar_tela_incluir_exame(page: ft.Page, voltar_fn):
         ]
 
     # ══════════════════════════════════════════════════════════
-    # FASE 2b — SELEÇÃO DE LAUDO (PDF com múltiplos exames)
+    # FASE 2b — CONFIRMAÇÃO DE MÚLTIPLOS LAUDOS
     # ══════════════════════════════════════════════════════════
-    def _tela_selecao_laudo():
-        dados_multi = dados_extra[0] or {}
-        laudos_lista = dados_multi.get("laudos", [])
+    _SUBTIPO_MAP = {
+        "eda": "eda", "endoscopia digestiva alta": "eda",
+        "colonoscopia": "colonoscopia",
+        "sigmoidoscopia": "colonoscopia",
+        "retossigmoidoscopia": "colonoscopia",
+    }
 
-        _SUBTIPO_MAP = {
-            "eda": "eda", "endoscopia digestiva alta": "eda",
-            "colonoscopia": "colonoscopia",
-            "sigmoidoscopia": "colonoscopia",
-            "retossigmoidoscopia": "colonoscopia",
+    def _converter_laudo_para_dados(laudo_dict, dados_multi, drive_id=None):
+        subtipo = _SUBTIPO_MAP.get(
+            laudo_dict.get("tipo_exame", "").lower().strip(), "endoscopia"
+        )
+        return {
+            "arquivo_origem":         dados_multi.get("arquivo_origem", ""),
+            "arquivo_path":           dados_multi.get("arquivo_path", ""),
+            "drive_file_id":          drive_id,
+            "resultado_texto":        laudo_dict.get("texto_completo", ""),
+            "tipo":                   "laudo",
+            "subtipo":                subtipo,
+            "tipo_exame":             laudo_dict.get("tipo_exame", ""),
+            "laboratorio":            dados_multi.get("laboratorio", ""),
+            "paciente_nome":          dados_multi.get("paciente_nome"),
+            "paciente_cpf":           None,
+            "data_exame":             dados_multi.get("data_exame"),
+            "medico_solicit":         dados_multi.get("medico_solicit"),
+            "resultados":             [],
+            "laudo": {
+                "tipo_exame":     laudo_dict.get("tipo_exame", ""),
+                "texto_completo": laudo_dict.get("texto_completo", ""),
+                "resumo":         laudo_dict.get("resumo", ""),
+                "conclusao":      laudo_dict.get("conclusao", ""),
+            },
+            "modelo_nao_configurado": False,
         }
 
-        def _selecionar(laudo_dict):
-            subtipo = _SUBTIPO_MAP.get(
-                laudo_dict.get("tipo_exame", "").lower().strip(), "endoscopia"
-            )
-            novo = {
-                "arquivo_origem":         dados_multi.get("arquivo_origem", ""),
-                "arquivo_path":           dados_multi.get("arquivo_path", ""),
-                "drive_file_id":          dados_multi.get("drive_file_id"),
-                "resultado_texto":        laudo_dict.get("texto_completo", ""),
-                "tipo":                   "laudo",
-                "subtipo":                subtipo,
-                "tipo_exame":             laudo_dict.get("tipo_exame", ""),
-                "laboratorio":            dados_multi.get("laboratorio", ""),
-                "paciente_nome":          dados_multi.get("paciente_nome"),
-                "paciente_cpf":           None,
-                "data_exame":             dados_multi.get("data_exame"),
-                "medico_solicit":         dados_multi.get("medico_solicit"),
-                "resultados":             [],
-                "laudo": {
-                    "tipo_exame":     laudo_dict.get("tipo_exame", ""),
-                    "texto_completo": laudo_dict.get("texto_completo", ""),
-                    "resumo":         laudo_dict.get("resumo", ""),
-                    "conclusao":      laudo_dict.get("conclusao", ""),
-                },
-                "modelo_nao_configurado": False,
-            }
-            dados_extra[0] = novo
-            pendencias[0]  = []
-            fase[0]        = "conferencia"
-            _rebuild()
+    def _tela_selecao_laudo():
+        dados_multi  = dados_extra[0] or {}
+        laudos_lista = dados_multi.get("laudos", [])
+        n = len(laudos_lista)
 
         cards = []
         for laudo in laudos_lista:
             tipo_txt  = laudo.get("tipo_exame", "Exame")
-            conclusao = laudo.get("conclusao", "")[:120]
-            if len(laudo.get("conclusao", "")) > 120:
+            conclusao = laudo.get("conclusao", "")[:150]
+            if len(laudo.get("conclusao", "")) > 150:
                 conclusao += "..."
-
-            btn = ft.Container(
+            cards.append(ft.Container(
                 content=ft.Column([
                     ft.Row([
-                        ft.Icon("description_rounded", size=20, color=AMAR),
-                        ft.Text(tipo_txt, size=15, color=TXT,
+                        ft.Icon("description_rounded", size=18, color=AMAR),
+                        ft.Text(tipo_txt, size=14, color=TXT,
                                 weight=ft.FontWeight.BOLD),
                     ], spacing=8),
                     ft.Container(height=4),
-                    ft.Text(conclusao or "—", size=12, color=SEC,
-                            max_lines=3),
-                    ft.Container(height=8),
-                    ft.Row([
-                        ft.Text("Importar este exame →", size=12, color=AMAR),
-                    ], alignment=ft.MainAxisAlignment.END),
+                    ft.Text(conclusao or "—", size=12, color=SEC),
                 ], spacing=0),
-                bgcolor=CARD,
-                border_radius=12,
-                padding=ft.padding.all(16),
+                bgcolor=CARD, border_radius=10,
+                padding=ft.padding.all(14),
                 border=ft.border.all(1, BD),
-                ink=True,
-            )
-            laudo_capturado = dict(laudo)
-            btn.on_click = lambda e, ld=laudo_capturado: _selecionar(ld)
-            cards.append(btn)
+            ))
+
+        btn_confirmar = ft.Container(
+            content=ft.Row([
+                ft.Icon("download_done_rounded", size=16, color=BG),
+                ft.Text(f"Importar {n} exame(s)", size=14,
+                        weight=ft.FontWeight.BOLD, color=BG),
+            ], spacing=8, tight=True),
+            bgcolor=VERD, border_radius=10,
+            padding=ft.padding.symmetric(horizontal=24, vertical=14),
+            ink=True,
+        )
+        btn_confirmar.on_click = lambda e: threading.Thread(
+            target=_liberar_multiplos, daemon=True
+        ).start()
+
+        btn_cancelar = ft.Container(
+            content=ft.Row([
+                ft.Icon("close_rounded", size=14, color=SEC),
+                ft.Text("Cancelar", size=12, color=SEC),
+            ], spacing=4, tight=True),
+            padding=ft.padding.symmetric(horizontal=12, vertical=8),
+            border_radius=8, ink=True,
+        )
+        btn_cancelar.on_click = _voltar_selecao
 
         return [
-            ft.Container(height=24),
-            ft.Text("Este PDF contém múltiplos exames.",
+            ft.Container(height=20),
+            ft.Text(f"Este PDF contém {n} exames.",
                     size=15, color=TXT, weight=ft.FontWeight.BOLD,
                     text_align=ft.TextAlign.CENTER),
-            ft.Text("Selecione qual deseja importar agora:",
+            ft.Text("Todos serão importados de uma vez:",
                     size=13, color=SEC, text_align=ft.TextAlign.CENTER),
-            ft.Container(height=16),
+            ft.Container(height=14),
             *cards,
-            ft.Container(height=16),
-            ft.Container(
-                content=ft.Text("Importe o mesmo PDF novamente para o outro exame.",
-                                size=11, color=SEC, text_align=ft.TextAlign.CENTER),
-                padding=ft.padding.symmetric(horizontal=16),
-            ),
+            ft.Container(height=20),
+            ft.Row([btn_cancelar, ft.Container(expand=True), btn_confirmar]),
             ft.Container(height=8),
         ]
+
+    def _liberar_multiplos():
+        """Upload Drive uma vez + grava cada laudo como exame separado."""
+        from dados.model_prontuario import salvar_exame, salvar_sync_pendente
+        dados_multi  = dados_extra[0] or {}
+        laudos_lista = dados_multi.get("laudos", [])
+
+        def _log_err(msg):
+            from datetime import datetime as _dt
+            try:
+                log_path = Path(__file__).parent.parent.parent / "logs" / "erro_processar.log"
+                log_path.parent.mkdir(parents=True, exist_ok=True)
+                with open(log_path, "a", encoding="utf-8") as f:
+                    f.write(f"{_dt.now()} {msg}\n")
+            except Exception:
+                pass
+
+        try:
+            fase[0] = "liberando"; _rebuild()
+
+            _set_status("Verificando credenciais do Drive...", AZUL, 0.05)
+            drive_ok, drive_ou_erro = _verificar_drive()
+            if not drive_ok:
+                fase[0] = "drive_falhou"; _rebuild(); return
+
+            from utils.drive_sync import garantir_pasta, upload_foto as _upload_foto
+            creds = drive_ou_erro
+
+            _set_status("Enviando arquivo para o Drive...", VERD, 0.20)
+            pasta_raiz   = garantir_pasta("Koios_Prontuario", creds=creds)
+            pasta_exames = garantir_pasta("EXAMES_PDF", pai_id=pasta_raiz, creds=creds)
+            caminho  = dados_multi.get("arquivo_path", "")
+            drive_id = (_upload_foto(caminho, os.path.basename(caminho),
+                                     pasta_exames, creds)
+                        if caminho and os.path.exists(caminho) else None)
+
+            eids = []
+            total = len(laudos_lista)
+            for i, laudo in enumerate(laudos_lista, 1):
+                _set_status(f"Gravando exame {i}/{total}...", VERD,
+                            0.30 + (i / total) * 0.60)
+                d = _converter_laudo_para_dados(laudo, dados_multi, drive_id)
+                eid = salvar_exame(d, status="ativo")
+                try: salvar_sync_pendente(eid)
+                except Exception: pass
+                eids.append(eid)
+
+            try:
+                _conteudo_tmp = Path(caminho).read_bytes()
+                _cache_apagar(_conteudo_tmp)
+            except Exception: pass
+
+            _set_status("Concluído!", VERD, 1.0)
+            time.sleep(0.8)
+            _voltar_selecao()
+            _snack(f"{total} exame(s) importado(s) com sucesso!", VERD)
+
+        except Exception as ex:
+            logging.exception(f"[LIBERAR_MULTI] {ex}")
+            _log_err(f"LIBERAR_MULTI ERROR: {ex}")
+            import traceback as _tb3
+            _erro_msg[0] = f"{type(ex).__name__}: {ex}\n\n{_tb3.format_exc()[-600:]}"
+            fase[0] = "erro"; _rebuild()
 
     # ══════════════════════════════════════════════════════════
     # FASE 3 — CONFERÊNCIA
