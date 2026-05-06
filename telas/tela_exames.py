@@ -1068,16 +1068,26 @@ def renderizar_card_laudo(page: ft.Page, laudo: dict) -> ft.Control:
     import webbrowser
     expandido = [False]
 
+    # Campos podem estar no nivel raiz (dict direto de buscar_laudos)
+    # ou dentro de historico[0] (quando passado via selecionados do chip)
+    _h0 = (laudo.get("historico") or [{}])[0]
+    _tipo_exame  = laudo.get("tipo_exame") or laudo.get("nome_oficial") or _h0.get("tipo_exame", "Laudo")
+    _resumo      = laudo.get("resumo")      or _h0.get("resumo", "")
+    _conclusao   = laudo.get("conclusao")   or _h0.get("conclusao", "")
+    _data        = laudo.get("data")        or _h0.get("data")
+    _laboratorio = laudo.get("laboratorio") or _h0.get("laboratorio", "")
+    _drive_id    = laudo.get("drive_id")    or _h0.get("drive_id")
+
     texto_container = ft.Container(
         content=ft.Column([
             ft.Text("Resumo / Macroscopia:", size=11, color="#484F58",
                     weight=ft.FontWeight.W_600),
-            ft.Text(laudo.get("resumo") or "-", size=12, color="#8B949E",
+            ft.Text(_resumo or "-", size=12, color="#8B949E",
                     selectable=True),
             ft.Divider(color="#21262D", height=8),
             ft.Text("Conclusao / Diagnostico:", size=11, color="#484F58",
                     weight=ft.FontWeight.W_600),
-            ft.Text(laudo.get("conclusao") or "-", size=13, color="#E6EDF3",
+            ft.Text(_conclusao or "-", size=13, color="#E6EDF3",
                     weight=ft.FontWeight.W_600, selectable=True),
         ], spacing=6),
         bgcolor="#0D1117", border_radius=8, padding=12,
@@ -1105,13 +1115,13 @@ def renderizar_card_laudo(page: ft.Page, laudo: dict) -> ft.Control:
                 width=32, height=32, alignment=ft.alignment.Alignment(0, 0),
             ),
             ft.Column([
-                ft.Text(laudo.get("tipo_exame", "Laudo"), size=13, color="#E6EDF3",
+                ft.Text(_tipo_exame, size=13, color="#E6EDF3",
                         weight=ft.FontWeight.W_600),
                 ft.Row([
-                    ft.Text(laudo["data"][:10] if laudo.get("data") else "?",
+                    ft.Text(_data[:10] if _data else "?",
                             size=11, color="#8B949E"),
                     ft.Text("-", size=11, color="#484F58"),
-                    ft.Text(laudo.get("laboratorio", ""), size=11, color="#58A6FF"),
+                    ft.Text(_laboratorio, size=11, color="#58A6FF"),
                 ], spacing=4),
             ], spacing=2, expand=True),
             ft.Container(
@@ -1122,9 +1132,9 @@ def renderizar_card_laudo(page: ft.Page, laudo: dict) -> ft.Control:
                 padding=ft.padding.symmetric(horizontal=8, vertical=8),
                 ink=True,
                 on_click=lambda e: webbrowser.open(
-                    "https://drive.google.com/file/d/" + laudo["drive_id"] + "/view"
+                    "https://drive.google.com/file/d/" + _drive_id + "/view"
                 ),
-            ) if laudo.get("drive_id") else ft.Container(),
+            ) if _drive_id else ft.Container(),
             icone_exp,
         ], spacing=8, vertical_alignment=ft.CrossAxisAlignment.CENTER),
         padding=ft.padding.symmetric(horizontal=12, vertical=10),
@@ -1136,10 +1146,7 @@ def renderizar_card_laudo(page: ft.Page, laudo: dict) -> ft.Control:
     )
 
     # Galeria de imagens (se existirem anexos)
-    _eid = (laudo.get("exame_id")
-            or laudo.get("exame_db_id")
-            or ((laudo.get("historico") or [{}])[0].get("exame_id"))
-            or 0)
+    _eid = laudo.get("exame_id") or laudo.get("exame_db_id") or _h0.get("exame_id") or 0
     galeria = _renderizar_galeria_anexos(_eid, page)
     controles = [cabecalho, texto_container]
     if galeria:
