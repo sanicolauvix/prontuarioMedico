@@ -133,11 +133,12 @@ def criar_tela_incluir_exame(page: ft.Page, voltar_fn):
         larg = 800
 
     # ── Estado ────────────────────────────────────────────────
-    fase         = ["selecao"]   # selecao | processando | conferencia | liberando
+    fase         = ["selecao"]   # selecao | processando | conferencia | liberando | erro
     caminho_sel  = [""]
     dados_extra  = [None]        # dados extraídos do PDF — fica em memória até confirmar
     pendencias   = [[]]          # parâmetros sem vínculo
     _dup_info    = [None]        # contexto de duplicata detectada (dict rico)
+    _erro_msg    = [""]          # mensagem de erro para fase "erro"
 
     area = ft.Column(
         spacing=8,
@@ -154,6 +155,7 @@ def criar_tela_incluir_exame(page: ft.Page, voltar_fn):
             "selecao_laudo":  lambda: area.controls.extend(_tela_selecao_laudo()),
             "conferencia":    lambda: area.controls.extend(_tela_conferencia()),
             "liberando":      lambda: area.controls.extend(_tela_liberando()),
+            "erro":           lambda: area.controls.extend(_tela_erro()),
             "drive_falhou":          lambda: area.controls.extend(_tela_drive_falhou()),
             "modelo_nao_configurado": lambda: area.controls.extend(_tela_modelo_nao_configurado()),
         }.get(fase[0], lambda: None)()
@@ -357,19 +359,16 @@ def criar_tela_incluir_exame(page: ft.Page, voltar_fn):
         "concluido":       ("check_circle_outline_rounded",    "Concluído!",                  VERD),
     }
 
-    # Índice de etapa para cada fase (1=Mapear, 2=Ler, 3=Analisar, 4=Salvar)
-    _ETAPA_INDEX = {
-        "contando":        1,
-        "lendo":           2,
-        "api_visao":       3,
-        "api_texto":       3,
-        "analisando":      3,
-        "extraindo":       3,
-        "multiplos_laudos":4,
-        "concluido":       4,
-        "validando":       4,
-        "salvando":        4,
-    }
+    # Grupos de fases em ordem (índice = posição do chip 0-based)
+    # Chips: 0=Mapear, 1=Ler, 2=Analisar, 3=Claudia(API), 4=Salvar
+    _FASE_GRUPOS = [
+        {"contando"},
+        {"lendo"},
+        {"analisando", "extraindo"},
+        {"api_visao", "api_texto"},
+        {"multiplos_laudos", "concluido", "validando", "salvando"},
+    ]
+    _api_usada = [False]
 
     # ── Chips de etapa persistentes (atualizados in-place) ───
     def _fazer_chip(label, icon):
@@ -386,15 +385,27 @@ def criar_tela_incluir_exame(page: ft.Page, voltar_fn):
     _chip_mapear   = _fazer_chip("1 · Mapear",   "find_in_page_outlined_rounded")
     _chip_ler      = _fazer_chip("2 · Ler",      "menu_book_outlined_rounded")
     _chip_analisar = _fazer_chip("3 · Analisar", "psychology_outlined_rounded")
-    _chip_salvar   = _fazer_chip("4 · Salvar",   "save_outlined_rounded")
-    _chips_ordem   = [_chip_mapear, _chip_ler, _chip_analisar, _chip_salvar]
+    _chip_claudia  = _fazer_chip("4 · Claudia",  "auto_awesome_rounded")
+    _chip_salvar   = _fazer_chip("5 · Salvar",   "save_outlined_rounded")
+    _chips_ordem   = [_chip_mapear, _chip_ler, _chip_analisar, _chip_claudia, _chip_salvar]
 
     def _atualizar_etapas(fase_key):
-        idx = _ETAPA_INDEX.get(fase_key, 0)
-        for i, chip in enumerate(_chips_ordem, 1):
-            if i < idx:
+        if fase_key in ("api_visao", "api_texto"):
+            _api_usada[0] = True
+        grupo_atual = next(
+            (i for i, g in enumerate(_FASE_GRUPOS) if fase_key in g), -1
+        )
+        for chip_idx, chip in enumerate(_chips_ordem):
+            is_claudia = chip_idx == 3
+            # Claudia fica cinza se API não foi usada e não é fase API
+            if is_claudia and not _api_usada[0] and grupo_atual != 3:
+                chip.content.controls[0].color = MUT
+                chip.content.controls[1].color = MUT
+                chip.border = ft.border.all(1, BD)
+                continue
+            if chip_idx < grupo_atual:
                 cor = VERD; borda = VERD
-            elif i == idx:
+            elif chip_idx == grupo_atual:
                 _f = _FASES.get(fase_key)
                 cor = _f[2] if _f else AZUL; borda = cor
             else:
@@ -404,6 +415,7 @@ def criar_tela_incluir_exame(page: ft.Page, voltar_fn):
             chip.border = ft.border.all(1, borda)
 
     def _resetar_etapas():
+        _api_usada[0] = False
         for chip in _chips_ordem:
             chip.content.controls[0].color = MUT
             chip.content.controls[1].color = MUT
@@ -631,6 +643,8 @@ def criar_tela_incluir_exame(page: ft.Page, voltar_fn):
                         ft.Container(width=4),
                         _chip_analisar,
                         ft.Container(width=4),
+                        _chip_claudia,
+                        ft.Container(width=4),
                         _chip_salvar,
                     ], spacing=0, wrap=True),
 
@@ -644,6 +658,42 @@ def criar_tela_incluir_exame(page: ft.Page, voltar_fn):
                 ),
             ),
             ft.Container(height=20),
+        ]
+
+    # ══════════════════════════════════════════════════════════
+    # FASE ERRO — exibe mensagem e mantém o usuário informado
+    # ══════════════════════════════════════════════════════════
+    def _tela_erro():
+        btn_voltar_erro = ft.Container(
+            content=ft.Row([
+                ft.Icon("arrow_back_rounded", size=14, color=SEC),
+                ft.Text("Voltar e tentar novamente", size=13, color=SEC),
+            ], spacing=6, tight=True),
+            padding=ft.padding.symmetric(horizontal=16, vertical=10),
+            border_radius=8, ink=True,
+        )
+        btn_voltar_erro.on_click = _voltar_selecao
+        return [
+            ft.Container(height=24),
+            ft.Icon("error_outline_rounded", size=44, color=VERM),
+            ft.Container(height=8),
+            ft.Text("Erro na extração do PDF", size=15, color=VERM,
+                    weight=ft.FontWeight.BOLD, text_align=ft.TextAlign.CENTER),
+            ft.Container(height=12),
+            ft.Container(
+                content=ft.Text(_erro_msg[0], size=11, color=TXT,
+                                selectable=True),
+                bgcolor=CARD, border_radius=8,
+                padding=ft.padding.all(14),
+                border=ft.border.all(1, VERM + "66"),
+                width=9999,
+            ),
+            ft.Container(height=6),
+            ft.Text("Detalhes em logs/erro_processar.log",
+                    size=10, color=MUT, text_align=ft.TextAlign.CENTER),
+            ft.Container(height=20),
+            ft.Row([btn_voltar_erro], alignment=ft.MainAxisAlignment.CENTER),
+            ft.Container(height=8),
         ]
 
     # ══════════════════════════════════════════════════════════
@@ -716,7 +766,7 @@ def criar_tela_incluir_exame(page: ft.Page, voltar_fn):
                 bgcolor=CARD,
                 border_radius=12,
                 padding=ft.padding.all(16),
-                border=ft.border.all(1, BORDA),
+                border=ft.border.all(1, BD),
                 ink=True,
             )
             laudo_capturado = dict(laudo)
@@ -977,10 +1027,10 @@ def criar_tela_incluir_exame(page: ft.Page, voltar_fn):
         except Exception as ex:
             _log_erro(f"REPROCESSAR ERROR: {ex}")
             logging.exception(f"[REPROCESSAR] {ex}")
-            fase[0] = "selecao"
+            import traceback as _tb
+            _erro_msg[0] = f"{type(ex).__name__}: {ex}\n\n{_tb.format_exc()[-800:]}"
+            fase[0] = "erro"
             try: _rebuild()
-            except Exception: pass
-            try: _snack(f"Erro: {str(ex)[:80]}", VERM)
             except Exception: pass
 
 
@@ -1291,23 +1341,20 @@ def criar_tela_incluir_exame(page: ft.Page, voltar_fn):
             except Exception as _rb_ex:
                 logging.exception(f"[INCLUIR] ERRO no _rebuild conferencia: {_rb_ex}")
                 _log_erro(f"REBUILD CONFERENCIA ERROR: {_rb_ex}")
-                # Fallback: mostrar mensagem de erro na tela
-                try:
-                    fase[0] = "selecao"
-                    _rebuild()
-                    _snack(f"Erro ao montar conferência: {str(_rb_ex)[:80]}", VERM)
-                except Exception:
-                    pass
+                import traceback as _tb2
+                _erro_msg[0] = f"Erro ao montar tela de conferência:\n{type(_rb_ex).__name__}: {_rb_ex}\n\n{_tb2.format_exc()[-600:]}"
+                fase[0] = "erro"
+                try: _rebuild()
+                except Exception: pass
 
         except Exception as ex:
             _log_erro(f"PROCESSAR ERROR: {ex}")
             logging.exception(f"[PROCESSAR] {ex}")
             print(f"[PROCESSAR] ERRO: {ex}")
-            fase[0] = "selecao"
+            import traceback as _tb
+            _erro_msg[0] = f"{type(ex).__name__}: {ex}\n\n{_tb.format_exc()[-800:]}"
+            fase[0] = "erro"
             try: _rebuild()
-            except Exception: pass
-            import time as _tex; _tex.sleep(0.15)
-            try: _snack(f"Erro ao processar: {str(ex)[:80]}", VERM)
             except Exception: pass
 
     def _cancelar_rascunho(e=None):
