@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 # KOIOS v1.0 | gerado: 2026-03-12 07:18 | extrator_pdf.py
-EXTRATOR_VERSION = "2026-05-05-api-v2"
+EXTRATOR_VERSION = "2026-05-06-visao"
 """
 extrator_pdf.py - Extrator universal para múltiplos laboratórios
 Suporta: Laboratório Pretti, Cremasco, Tommasi, Virchow (e similares)
@@ -1615,13 +1615,20 @@ def extrair_pdf_bytes(conteudo_bytes: bytes, nome_arquivo: str,
             break
 
     # ── Tentativa via API Claude (primaria) ──────────────────
+    _pdf_escaneado = len(texto_completo.strip()) < 200
     try:
-        from .extrator_api import extrair_via_api as _ext_api
-        _dados_api = _ext_api(texto_completo, nome_arquivo)
+        if _pdf_escaneado:
+            from .extrator_api import extrair_via_api_pdf as _ext_pdf
+            logging.info("[EXTRATOR] PDF escaneado detectado — usando visao Claude")
+            _dados_api = _ext_pdf(conteudo_bytes, nome_arquivo)
+        else:
+            from .extrator_api import extrair_via_api as _ext_api
+            _dados_api = _ext_api(texto_completo, nome_arquivo)
         if _dados_api:
             _dados_api["arquivo_origem"]  = nome_arquivo
             _dados_api["drive_file_id"]   = drive_file_id
-            _dados_api["resultado_texto"] = texto_completo
+            if not _pdf_escaneado:
+                _dados_api["resultado_texto"] = texto_completo
             _prog("concluido", total_pags, total_pags, texto_completo.count("\n"),
                   len(_dados_api.get("resultados", [])))
             return _dados_api

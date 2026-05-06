@@ -10,6 +10,7 @@ Usado por extrair_pdf_bytes() como tentativa principal.
 Fallback automático para regex se API indisponível.
 """
 
+import base64
 import json
 import logging
 import re
@@ -131,4 +132,104 @@ def extrair_via_api(texto: str, nome_arquivo: str = "") -> dict | None:
         return None
     except Exception as ex:
         logging.warning(f"[API_EXT] falha na extracao: {ex}")
+        return None
+
+
+_PROMPT_PDF = (
+    "Analise este documento PDF de exame medico (pode ser escaneado). "
+    "Se houver mais de um laudo, extraia SOMENTE O PRIMEIRO que aparecer no documento. "
+    "Ignore paginas de fotos/imagens endoscopicas — extraia apenas o laudo textual. "
+    "Retorne JSON com este formato exato (sem comentarios, sem texto extra):\n"
+    "{\n"
+    '  "laboratorio": "nome do laboratorio",\n'
+    '  "paciente_nome": "NOME COMPLETO EM MAIUSCULAS ou null",\n'
+    '  "data_exame": "DD/MM/YYYY ou null",\n'
+    '  "medico_solicit": "nome do medico solicitante ou null",\n'
+    '  "tipo": "numerico" ou "laudo",\n'
+    '  "tipo_exame": "nome do exame (ex: EDA, Colonoscopia, TSH)",\n'
+    '  "resultados": [],\n'
+    '  "laudo": {\n'
+    '    "tipo_exame": "nome do exame",\n'
+    '    "texto_completo": "texto integral do laudo",\n'
+    '    "resumo": "achados principais em topicos",\n'
+    '    "conclusao": "conclusao/diagnostico"\n'
+    '  }\n'
+    "}\n"
+    "Para exames numericos (hemograma, bioquimica): tipo='numerico', resultados=[{parametro,valor,unidade,referencia,ref_min,ref_max}], laudo=null.\n"
+    "Para laudos descritivos (endoscopia, colonoscopia, histopatologico): tipo='laudo', resultados=[], laudo={...}."
+)
+
+
+def extrair_via_api_pdf(pdf_bytes: bytes, nome_arquivo: str = "") -> dict | None:
+    """
+    Envia o PDF bruto (bytes) para Claude via visao nativa (document content block).
+    Usado para PDFs escaneados onde pdfplumber nao extrai texto suficiente.
+    Retorna None em qualquer falha (permite fallback para regex).
+    """
+    try:
+        from utils.claudia_engine import get_client
+        client = get_client()
+    except Exception as ex:
+        logging.warning(f"[API_PDF] cliente indisponivel: {ex}")
+        return None
+
+    pdf_b64 = base64.standard_b64encode(pdf_bytes).decode("utf-8")
+
+    try:
+        resp = client.messages.create(
+            model=_MODELO,
+            max_tokens=2048,
+            system=_SYSTEM,
+            messages=[{
+                "role": "user",
+                "content": [
+                    {
+                        "type": "document",
+                        "source": {
+                            "type": "base64",
+                            "media_type": "application/pdf",
+                            "data": pdf_b64,
+                        },
+                    },
+                    {
+                        "type": "text",
+                        "text": _PROMPT_PDF,
+                    },
+                ],
+            }],
+        )
+        raw = resp.content[0].text.strip()
+
+        # Remove code fences eventuais
+        raw = re.sub(r"^```(?:json)?\s*", "", raw)
+        raw = re.sub(r"\s*```$", "", raw)
+
+        dados = json.loads(raw)
+
+        dados.setdefault("arquivo_origem",         nome_arquivo)
+        dados.setdefault("drive_file_id",          None)
+        dados.setdefault("resultado_texto",        "")
+        dados.setdefault("tipo",                   "laudo")
+        dados.setdefault("paciente_nome",          None)
+        dados.setdefault("paciente_cpf",           None)
+        dados.setdefault("data_exame",             None)
+        dados.setdefault("laboratorio",            "Desconhecido")
+        dados.setdefault("medico_solicit",         None)
+        dados.setdefault("tipo_exame",             "")
+        dados.setdefault("resultados",             [])
+        dados.setdefault("laudo",                  None)
+        dados.setdefault("modelo_nao_configurado", False)
+        dados.setdefault("subtipo",                None)
+
+        logging.info(
+            f"[API_PDF] OK — lab={dados['laboratorio']} "
+            f"tipo={dados['tipo']} exame={dados['tipo_exame']}"
+        )
+        return dados
+
+    except json.JSONDecodeError as ex:
+        logging.warning(f"[API_PDF] JSON invalido: {ex} | raw={raw[:200]}")
+        return None
+    except Exception as ex:
+        logging.warning(f"[API_PDF] falha: {ex}")
         return None
