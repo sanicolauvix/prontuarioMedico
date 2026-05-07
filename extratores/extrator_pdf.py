@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 # KOIOS v1.0 | gerado: 2026-03-12 07:18 | extrator_pdf.py
-EXTRATOR_VERSION = "2026-05-06-multiplos-v2"
+EXTRATOR_VERSION = "2026-05-07-visao-laudo"
 """
 extrator_pdf.py - Extrator universal para múltiplos laboratórios
 Suporta: Laboratório Pretti, Cremasco, Tommasi, Virchow (e similares)
@@ -1615,12 +1615,23 @@ def extrair_pdf_bytes(conteudo_bytes: bytes, nome_arquivo: str,
             break
 
     # ── Tentativa via API Claude (primaria) ──────────────────
-    _pdf_escaneado = len(texto_completo.strip()) < 200
+    # PDFs escaneados (<200 chars) OU laudos endoscopicos → caminho de visão
+    # (garante deteccao de multiplos laudos no mesmo PDF)
+    _KEYS_VISAO = frozenset([
+        "endoscopia", "colonoscopia", "gastroenterologia",
+        "laudo de video", "video endoscopia", "esofago",
+        "estomago", "duodeno", "colon", "reto",
+    ])
+    _texto_lower   = texto_completo.lower()
+    _pdf_escaneado = (
+        len(texto_completo.strip()) < 200 or
+        any(k in _texto_lower for k in _KEYS_VISAO)
+    )
     try:
         if _pdf_escaneado:
             _prog("api_visao", 0, total_pags, 0, 0, 0)
             from .extrator_api import extrair_via_api_pdf as _ext_pdf
-            logging.info("[EXTRATOR] PDF escaneado — usando Claude Vision")
+            logging.info("[EXTRATOR] PDF escaneado/laudo — usando Claude Vision")
             _dados_api = _ext_pdf(conteudo_bytes, nome_arquivo)
         else:
             _prog("api_texto", 0, total_pags, 0, 0, 0)
