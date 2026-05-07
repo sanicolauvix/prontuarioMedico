@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 # KOIOS v1.0 | gerado: 2026-03-12 07:18 | extrator_pdf.py
-EXTRATOR_VERSION = "2026-05-07-visao-laudo"
+EXTRATOR_VERSION = "2026-05-07-visao-log"
 """
 extrator_pdf.py - Extrator universal para múltiplos laboratórios
 Suporta: Laboratório Pretti, Cremasco, Tommasi, Virchow (e similares)
@@ -1649,8 +1649,21 @@ def extrair_pdf_bytes(conteudo_bytes: bytes, nome_arquivo: str,
                 _prog("concluido", total_pags, total_pags, texto_completo.count("\n"),
                       len(_dados_api.get("resultados", [])))
             return _dados_api
+        else:
+            _kb = len(conteudo_bytes) // 1024
+            _msg = f"[EXTRATOR] API retornou None para {nome_arquivo} ({_kb} KB) — caindo no regex"
+            logging.warning(_msg)
+            try:
+                from pathlib import Path as _p
+                from datetime import datetime as _dt
+                _lp = _p(__file__).parent.parent / "logs" / "erro_processar.log"
+                _lp.parent.mkdir(exist_ok=True)
+                with open(_lp, "a", encoding="utf-8") as _f:
+                    _f.write(f"{_dt.now()} {_msg}\n")
+            except Exception:
+                pass
     except Exception as _api_ex:
-        logging.warning(f"[EXTRATOR] API indisponivel, usando regex: {_api_ex}")
+        logging.warning(f"[EXTRATOR] API excecao: {_api_ex}")
     # ── Fallback: deteccao e extracao por regex ───────────────
 
     laboratorio = detectar_laboratorio(texto_completo)

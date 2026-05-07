@@ -205,6 +205,9 @@ def extrair_via_api_pdf(pdf_bytes: bytes, nome_arquivo: str = "") -> dict | None
         logging.warning(f"[API_PDF] cliente indisponivel: {ex}")
         return None
 
+    _pdf_kb = len(pdf_bytes) // 1024
+    logging.info(f"[API_PDF] enviando PDF — {_pdf_kb} KB")
+
     pdf_b64 = base64.standard_b64encode(pdf_bytes).decode("utf-8")
 
     try:
@@ -270,8 +273,25 @@ def extrair_via_api_pdf(pdf_bytes: bytes, nome_arquivo: str = "") -> dict | None
         return dados
 
     except json.JSONDecodeError as ex:
-        logging.warning(f"[API_PDF] JSON invalido: {ex} | raw={raw[:200]}")
+        _msg = f"[API_PDF] JSON invalido: {ex} | raw={raw[:300]}"
+        logging.warning(_msg)
+        _log_arquivo(_msg)
         return None
     except Exception as ex:
-        logging.warning(f"[API_PDF] falha: {ex}")
+        _msg = f"[API_PDF] FALHA ({type(ex).__name__}): {ex}"
+        logging.warning(_msg)
+        _log_arquivo(_msg)
         return None
+
+
+def _log_arquivo(msg: str) -> None:
+    """Grava msg em logs/erro_processar.log para diagnostico."""
+    try:
+        from pathlib import Path as _Path
+        from datetime import datetime as _dt
+        log_path = _Path(__file__).parent.parent / "logs" / "erro_processar.log"
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(log_path, "a", encoding="utf-8") as f:
+            f.write(f"{_dt.now()} {msg}\n")
+    except Exception:
+        pass
