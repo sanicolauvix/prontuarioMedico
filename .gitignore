@@ -10,6 +10,11 @@ dist/
 dados/prontuario.db
 dados/prontuario.db-shm
 dados/prontuario.db-wal
+dados/_tmp_*.db
+dados/*_bak*.db
+dados/prontuario_local_bak.db
+dados/historico_backup.json
+dados/ultimo_backup.json
 client_secrets.json
 client_secrets_android.json
 client_secret_android.json
@@ -17,3 +22,5 @@ mycreds.json
 pyproject.toml
 temp/
 logs/
+exames/
+assets/fotos_receitas/

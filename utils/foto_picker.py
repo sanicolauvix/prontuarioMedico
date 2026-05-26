@@ -656,3 +656,65 @@ def editar_foto(path_rel: str, operacao: str) -> str:
     except Exception as ex:
         log.exception("[FotoPicker] editar_foto: %s", ex)
         return ""
+
+
+def upload_foto_imediato(
+    page,
+    path_abs: str,
+    pasta_drive: str,
+    on_concluido=None,
+    on_erro=None,
+    nome_arquivo: str = "",
+) -> None:
+    """
+    Faz upload de foto para o Drive em background (thread daemon).
+
+    pasta_drive: caminho relativo dentro de Eco_Koios/<APP>/
+                 Ex: "fotos/produtos/42"  ->  Eco_Koios/Prestanista/fotos/produtos/42/
+    on_concluido(drive_file_id, nome): chamado via pubsub apos sucesso
+    on_erro(msg): chamado via pubsub em caso de falha
+    """
+    nome = nome_arquivo or os.path.splitext(os.path.basename(path_abs))[0]
+    ext  = os.path.splitext(path_abs)[1] or ".jpg"
+    if not nome.endswith(ext):
+        nome = nome + ext
+
+    _TOPIC_OK  = f"_upload_ok_{nome}"
+    _TOPIC_ERR = f"_upload_err_{nome}"
+
+    if on_concluido:
+        def _handler_ok(msg):
+            page.pubsub.unsubscribe_topic(_TOPIC_OK)
+            on_concluido(msg.get("file_id", ""), msg.get("nome", nome))
+        page.pubsub.subscribe_topic(_TOPIC_OK, _handler_ok)
+
+    if on_erro:
+        def _handler_err(msg):
+            page.pubsub.unsubscribe_topic(_TOPIC_ERR)
+            on_erro(msg.get("erro", "Erro desconhecido"))
+        page.pubsub.subscribe_topic(_TOPIC_ERR, _handler_err)
+
+    def _run():
+        try:
+            from utils.drive_sync import garantir_pasta, upload_foto, _get_creds
+            from backup.drive_backup import _PASTA_KOIOS, _PASTA_RAIZ
+
+            creds   = _get_creds()
+            raiz_id = garantir_pasta(_PASTA_KOIOS, creds=creds)
+            app_id  = garantir_pasta(_PASTA_RAIZ, pai_id=raiz_id, creds=creds)
+            atual_id = app_id
+            for segmento in pasta_drive.strip("/").split("/"):
+                if segmento:
+                    atual_id = garantir_pasta(segmento, pai_id=atual_id, creds=creds)
+
+            file_id = upload_foto(path_abs, nome, atual_id, creds=creds)
+            log.info("[FotoPicker] upload_foto_imediato OK: %s -> %s", nome, file_id)
+            if on_concluido:
+                page.pubsub.send_all_on_topic(_TOPIC_OK,
+                                              {"file_id": file_id, "nome": nome})
+        except Exception as ex:
+            log.warning("[FotoPicker] upload_foto_imediato erro: %s", ex)
+            if on_erro:
+                page.pubsub.send_all_on_topic(_TOPIC_ERR, {"erro": str(ex)})
+
+    threading.Thread(target=_run, daemon=True, name="UploadFoto").start()

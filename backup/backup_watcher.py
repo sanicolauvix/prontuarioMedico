@@ -53,6 +53,81 @@ def _primeiro_backup() -> bool:
     return not os.path.exists(_HIST_PATH)
 
 
+def restaurar_db_do_drive() -> bool:
+    """
+    Compara o banco local com o backup mais recente em Drive/Prestanista/banco/.
+    Se o Drive for mais novo, baixa e substitui o banco local.
+    Retorna True se restaurou, False se o local ja e o mais recente ou em caso de erro.
+    Deve ser chamado no startup ANTES de SyncEngine.iniciar().
+    """
+    import shutil
+    import sqlite3
+    from datetime import datetime, timezone
+
+    _caminho_db = os.path.join(_ROOT, "database", "app.db")
+    try:
+        from backup.drive_backup import (
+            _obter_creds, _drive_service, _estrutura_pastas,
+            _arquivo_mais_recente_na_pasta, _baixar_arquivo_drive,
+        )
+        creds   = _obter_creds()
+        service = _drive_service(creds)
+        ids     = _estrutura_pastas(service)
+
+        arq = _arquivo_mais_recente_na_pasta(service, ids["banco"])
+        if not arq:
+            log.info("[Restore Startup] Nenhum backup no Drive — sem restauracao")
+            return False
+
+        drive_ts = arq.get("createdTime", "")
+        try:
+            dt = datetime.strptime(drive_ts, "%Y-%m-%dT%H:%M:%S.%fZ").replace(tzinfo=timezone.utc)
+        except ValueError:
+            dt = datetime.strptime(drive_ts, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+        drive_unix = dt.timestamp()
+
+        local_unix = os.path.getmtime(_caminho_db) if os.path.exists(_caminho_db) else 0.0
+
+        if drive_unix <= local_unix:
+            log.info("[Restore Startup] Banco local ja atualizado (diff=%.0fs)", local_unix - drive_unix)
+            return False
+
+        _nome_arq = arq.get("name") or arq.get("nome", "?")
+        log.info("[Restore Startup] Drive mais recente por %.0fs — restaurando %s...",
+                 drive_unix - local_unix, _nome_arq)
+
+        tmp = _caminho_db + "._restore"
+        if not _baixar_arquivo_drive(service, arq["id"], tmp):
+            log.warning("[Restore Startup] Falha no download do banco")
+            return False
+
+        try:
+            conn = sqlite3.connect(tmp)
+            res  = conn.execute("PRAGMA integrity_check").fetchone()
+            conn.close()
+            if not res or res[0] != "ok":
+                raise ValueError(f"integrity_check retornou: {res}")
+        except Exception as ex:
+            log.warning("[Restore Startup] Banco invalido: %s", ex)
+            try: os.remove(tmp)
+            except Exception: pass
+            return False
+
+        shutil.move(tmp, _caminho_db)
+        log.info("[Restore Startup] Banco restaurado com sucesso: %s", _nome_arq)
+        return True
+
+    except Exception as ex:
+        log.warning("[Restore Startup] Erro (nao critico): %s", ex)
+        tmp = _caminho_db + "._restore"
+        try:
+            if os.path.exists(tmp):
+                os.remove(tmp)
+        except Exception:
+            pass
+        return False
+
+
 def notify_db_changed() -> None:
     """
     Chamado sempre que o banco e alterado (INSERT/UPDATE/DELETE).
