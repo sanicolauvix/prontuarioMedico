@@ -188,7 +188,7 @@ def executar_limpeza(callback_log=None) -> dict:
     # Busca resultados não vinculados OU com nivel sem_referencia/nao_identificado
     cur.execute("""
         SELECT id, parametro, valor, exame_padrao_id
-        FROM resultados_estruturados
+        FROM exame_resultados
         WHERE (
             exame_padrao_id IS NULL
             OR nivel_interpretacao IN ('sem_referencia', 'nao_identificado', NULL)
@@ -221,7 +221,7 @@ def executar_limpeza(callback_log=None) -> dict:
             # Já vinculado — só recalcula o nível com sexo/idade corretos
             nivel = calcular_nivel(valor or "", padrao_id_atual, sexo, idade)
             cur.execute("""
-                UPDATE resultados_estruturados
+                UPDATE exame_resultados
                 SET nivel_interpretacao = ?
                 WHERE id = ?
             """, (nivel, resultado_id))
@@ -231,7 +231,7 @@ def executar_limpeza(callback_log=None) -> dict:
             if exame:
                 nivel = calcular_nivel(valor or "", exame["id"], sexo, idade)
                 cur.execute("""
-                    UPDATE resultados_estruturados
+                    UPDATE exame_resultados
                     SET exame_padrao_id = ?,
                         nivel_interpretacao = ?
                     WHERE id = ?
@@ -239,7 +239,7 @@ def executar_limpeza(callback_log=None) -> dict:
                 vinculados += 1
             else:
                 cur.execute("""
-                    UPDATE resultados_estruturados
+                    UPDATE exame_resultados
                     SET nivel_interpretacao = 'nao_identificado'
                     WHERE id = ?
                 """, (resultado_id,))
@@ -262,7 +262,7 @@ def buscar_nao_identificados() -> list[dict]:
     cur = conn.cursor()
     cur.execute("""
         SELECT DISTINCT r.parametro, COUNT(*) as ocorrencias
-        FROM resultados_estruturados r
+        FROM exame_resultados r
         WHERE r.nivel_interpretacao = 'nao_identificado'
           AND r.parametro IS NOT NULL
         GROUP BY UPPER(TRIM(r.parametro))
@@ -283,7 +283,7 @@ def vincular_manualmente(parametro_original: str, exame_padrao_id: int):
 
     # Atualiza todos os resultados com este parâmetro
     cur.execute("""
-        UPDATE resultados_estruturados
+        UPDATE exame_resultados
         SET exame_padrao_id = ?,
             nivel_interpretacao = NULL
         WHERE UPPER(TRIM(parametro)) = UPPER(TRIM(?))
@@ -291,14 +291,14 @@ def vincular_manualmente(parametro_original: str, exame_padrao_id: int):
 
     # Recalcula o nível de interpretação
     cur.execute("""
-        SELECT id, valor FROM resultados_estruturados
+        SELECT id, valor FROM exame_resultados
         WHERE exame_padrao_id = ? AND nivel_interpretacao IS NULL
     """, (exame_padrao_id,))
     pendentes = cur.fetchall()
 
     for res_id, valor in pendentes:
         nivel = calcular_nivel(valor or "", exame_padrao_id)
-        cur.execute("UPDATE resultados_estruturados SET nivel_interpretacao = ? WHERE id = ?",
+        cur.execute("UPDATE exame_resultados SET nivel_interpretacao = ? WHERE id = ?",
                     (nivel, res_id))
 
     # Adiciona como sinônimo no exame padrão
@@ -347,7 +347,7 @@ def ignorar_parametro(parametro: str):
     conn = sqlite3.connect(DB_PATH, timeout=30)
     cur = conn.cursor()
     cur.execute("""
-        UPDATE resultados_estruturados
+        UPDATE exame_resultados
         SET nivel_interpretacao = 'ignorado'
         WHERE UPPER(TRIM(parametro)) = UPPER(TRIM(?))
     """, (parametro,))

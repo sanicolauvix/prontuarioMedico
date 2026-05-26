@@ -70,6 +70,21 @@ def _prontuario_connect(*args, **kwargs):
 sqlite3.connect = _prontuario_connect
 # ─────────────────────────────────────────────────────────────────────────────
 
+import datetime as _datetime
+
+
+def normalizar_data(s):
+    """Converte DD/MM/YYYY para YYYY-MM-DD. Datas ja em ISO passam sem alteracao."""
+    if not s:
+        return s
+    s = str(s).strip()
+    if len(s) == 10 and s[2] == '/' and s[5] == '/':
+        try:
+            return _datetime.datetime.strptime(s, "%d/%m/%Y").strftime("%Y-%m-%d")
+        except ValueError:
+            pass
+    return s
+
 
 def _migrar_medicos():
     """Adiciona colunas 'especialidade' e 'medico_solicit' se não existirem."""
@@ -213,6 +228,18 @@ def _migrar_remedio_fotos():
         print(f"[MODEL] _migrar_remedio_fotos: {ex}")
 
 
+def _migrar_receita_foto_path():
+    """Adiciona coluna foto_path em receitas para caminho local da imagem."""
+    try:
+        with sqlite3.connect(DB_PATH, timeout=30) as conn:
+            cols = [r[1] for r in conn.execute("PRAGMA table_info(receitas)").fetchall()]
+            if "foto_path" not in cols:
+                conn.execute("ALTER TABLE receitas ADD COLUMN foto_path TEXT")
+                print("[MODEL] coluna foto_path adicionada em receitas")
+    except Exception as ex:
+        print(f"[MODEL] _migrar_receita_foto_path: {ex}")
+
+
 def _migrar_consulta_pauta():
     """Adiciona coluna pauta (JSON) em consultas para itens a tratar."""
     try:
@@ -223,6 +250,563 @@ def _migrar_consulta_pauta():
                 print("[MODEL] coluna pauta adicionada em consultas")
     except Exception as ex:
         print(f"[MODEL] _migrar_consulta_pauta: {ex}")
+
+
+def _migrar_exames_internacao_id():
+    """Adiciona internacao_id em exames para vincular exames realizados durante internacao."""
+    try:
+        with sqlite3.connect(DB_PATH, timeout=30) as conn:
+            cols = [r[1] for r in conn.execute("PRAGMA table_info(exames)").fetchall()]
+            if "internacao_id" not in cols:
+                conn.execute(
+                    "ALTER TABLE exames ADD COLUMN internacao_id INTEGER REFERENCES internacoes(id)")
+                print("[MODEL] coluna internacao_id adicionada em exames")
+    except Exception as ex:
+        print(f"[MODEL] _migrar_exames_internacao_id: {ex}")
+
+
+def _migrar_fonte_dados():
+    """Adiciona fonte_dados em internacoes para rastreabilidade (importado|manual)."""
+    try:
+        with sqlite3.connect(DB_PATH, timeout=30) as conn:
+            cols = [r[1] for r in conn.execute("PRAGMA table_info(internacoes)").fetchall()]
+            if "fonte_dados" not in cols:
+                conn.execute(
+                    "ALTER TABLE internacoes ADD COLUMN fonte_dados TEXT DEFAULT 'importado'")
+                print("[MODEL] coluna fonte_dados adicionada em internacoes")
+    except Exception as ex:
+        print(f"[MODEL] _migrar_fonte_dados: {ex}")
+
+
+def _migrar_internacoes_gatilho():
+    """Adiciona campo gatilho em internacoes para categorizar causa do evento."""
+    try:
+        with sqlite3.connect(DB_PATH, timeout=30) as conn:
+            cols = [r[1] for r in conn.execute("PRAGMA table_info(internacoes)").fetchall()]
+            if "gatilho" not in cols:
+                conn.execute(
+                    "ALTER TABLE internacoes ADD COLUMN gatilho TEXT")
+                print("[MODEL] coluna gatilho adicionada em internacoes")
+    except Exception as ex:
+        print(f"[MODEL] _migrar_internacoes_gatilho: {ex}")
+
+
+def _migrar_internacoes_modalidade():
+    """Adiciona campo modalidade em internacoes: ps | internacao | ps_internacao."""
+    try:
+        with sqlite3.connect(DB_PATH, timeout=30) as conn:
+            cols = [r[1] for r in conn.execute("PRAGMA table_info(internacoes)").fetchall()]
+            if "modalidade" not in cols:
+                conn.execute(
+                    "ALTER TABLE internacoes ADD COLUMN modalidade TEXT DEFAULT 'internacao'")
+                print("[MODEL] coluna modalidade adicionada em internacoes")
+    except Exception as ex:
+        print(f"[MODEL] _migrar_internacoes_modalidade: {ex}")
+
+
+def _migrar_marcadores_internacao_id():
+    """Adiciona internacao_id em marcadores_leituras para vincular leituras a internacoes."""
+    try:
+        with sqlite3.connect(DB_PATH, timeout=30) as conn:
+            cols = [r[1] for r in conn.execute(
+                "PRAGMA table_info(marcadores_leituras)").fetchall()]
+            if "internacao_id" not in cols:
+                conn.execute(
+                    "ALTER TABLE marcadores_leituras "
+                    "ADD COLUMN internacao_id INTEGER REFERENCES internacoes(id)")
+                print("[MODEL] coluna internacao_id adicionada em marcadores_leituras")
+    except Exception as ex:
+        print(f"[MODEL] _migrar_marcadores_internacao_id: {ex}")
+
+
+def _migrar_diagnosticos_internacao():
+    """Popula diagnosticos_internacao com dados existentes em internacoes (migracao unica)."""
+    try:
+        with sqlite3.connect(DB_PATH, timeout=30) as conn:
+            rows = conn.execute(
+                "SELECT id, cid_entrada, motivo, cid_saida, diagnostico_saida FROM internacoes"
+            ).fetchall()
+            for iid, cid_ent, motivo, cid_sai, diag_sai in rows:
+                count = conn.execute(
+                    "SELECT COUNT(*) FROM diagnosticos_internacao WHERE internacao_id=?",
+                    (iid,)
+                ).fetchone()[0]
+                if count > 0:
+                    continue
+                if cid_ent or motivo:
+                    conn.execute(
+                        "INSERT INTO diagnosticos_internacao "
+                        "(internacao_id, cid, descricao, tipo, certeza, fonte) VALUES (?,?,?,?,?,?)",
+                        (iid, cid_ent or None, motivo or None,
+                         "entrada", "confirmado", "importado")
+                    )
+                if cid_sai or diag_sai:
+                    conn.execute(
+                        "INSERT INTO diagnosticos_internacao "
+                        "(internacao_id, cid, descricao, tipo, certeza, fonte) VALUES (?,?,?,?,?,?)",
+                        (iid, cid_sai or None, diag_sai or None,
+                         "saida", "confirmado", "importado")
+                    )
+    except Exception as ex:
+        print(f"[MODEL] _migrar_diagnosticos_internacao: {ex}")
+
+
+def _migrar_diagnosticos_especialidade():
+    """Adiciona colunas especialidade e refinado em diagnosticos_internacao."""
+    try:
+        with sqlite3.connect(DB_PATH, timeout=30) as conn:
+            cols = [r[1] for r in conn.execute(
+                "PRAGMA table_info(diagnosticos_internacao)").fetchall()]
+            if "especialidade" not in cols:
+                conn.execute(
+                    "ALTER TABLE diagnosticos_internacao ADD COLUMN especialidade TEXT")
+                print("[MODEL] coluna especialidade adicionada em diagnosticos_internacao")
+            if "refinado" not in cols:
+                conn.execute(
+                    "ALTER TABLE diagnosticos_internacao ADD COLUMN refinado INTEGER DEFAULT 0")
+                print("[MODEL] coluna refinado adicionada em diagnosticos_internacao")
+    except Exception as ex:
+        print(f"[MODEL] _migrar_diagnosticos_especialidade: {ex}")
+
+
+def _migrar_pdf_paginas():
+    """Cria tabela pdf_paginas e importacoes_pdf; adiciona colunas novas se necessario."""
+    try:
+        with sqlite3.connect(DB_PATH, timeout=30) as conn:
+            # tabela de controle de importacoes (uma row por PDF importado)
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS importacoes_pdf (
+                    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+                    arquivo_local   TEXT NOT NULL,   -- caminho completo do PDF original
+                    nome_arquivo    TEXT,            -- nome base para exibicao
+                    hash_pdf        TEXT,            -- SHA1 do arquivo para detectar duplicatas
+                    fase_atual      INTEGER DEFAULT 0,
+                    -- 0=registrado  1=separado(local)  2=drive_ok  3=classificado  4=concluido
+                    total_paginas   INTEGER DEFAULT 0,
+                    internacao_ids  TEXT,            -- JSON array de internacao_ids vinculados
+                    criado_em       TEXT DEFAULT (datetime('now')),
+                    atualizado_em   TEXT DEFAULT (datetime('now'))
+                )
+            """)
+            # tabela de paginas
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS pdf_paginas (
+                    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+                    importacao_id   INTEGER REFERENCES importacoes_pdf(id),
+                    internacao_id   INTEGER REFERENCES internacoes(id),
+                    pdf_origem      TEXT,
+                    pagina_num      INTEGER,
+                    jpeg_local      TEXT,            -- caminho local do JPEG (fase 1)
+                    pdf_local       TEXT,            -- caminho local do PDF da pagina (fase 1)
+                    drive_img_id    TEXT,            -- ID do JPEG no Drive (fase 2)
+                    drive_pdf_id    TEXT,            -- ID do PDF no Drive (fase 2)
+                    tipo            TEXT,            -- classificacao Claude
+                    grupo           TEXT,            -- A | B | C
+                    dados_json      TEXT,            -- JSON extraido pelo Claude
+                    status          TEXT DEFAULT 'pendente_local',
+                    -- pendente_local | pendente_drive | classificado | gravado | descartado
+                    exame_id        INTEGER,
+                    dado_bruto_id   INTEGER,
+                    criado_em       TEXT DEFAULT (datetime('now'))
+                )
+            """)
+            # adicionar colunas novas em pdf_paginas se banco antigo
+            _cols_pag = [r[1] for r in conn.execute("PRAGMA table_info(pdf_paginas)").fetchall()]
+            for col, dfn in [
+                ("importacao_id", "INTEGER"),
+                ("jpeg_local",    "TEXT"),
+                ("pdf_local",     "TEXT"),
+            ]:
+                if col not in _cols_pag:
+                    conn.execute(f"ALTER TABLE pdf_paginas ADD COLUMN {col} {dfn}")
+            # migrar status antigo 'pendente' -> 'pendente_local' se houver
+            conn.execute(
+                "UPDATE pdf_paginas SET status='pendente_local' WHERE status='pendente'"
+            )
+    except Exception as ex:
+        print(f"[MODEL] _migrar_pdf_paginas: {ex}")
+
+
+def _criar_periodos_uso_remedio():
+    """Cria tabela periodos_uso_remedio — histórico de períodos de uso por remédio."""
+    try:
+        with sqlite3.connect(DB_PATH, timeout=30) as conn:
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS periodos_uso_remedio (
+                    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+                    remedio_id    INTEGER NOT NULL REFERENCES remedios(id) ON DELETE CASCADE,
+                    receita_id    INTEGER REFERENCES receitas(id),
+                    data_inicio   TEXT NOT NULL,
+                    data_fim      TEXT,
+                    ativo         INTEGER DEFAULT 1,
+                    motivo_fim    TEXT,
+                    observacoes   TEXT,
+                    criado_em     TEXT DEFAULT (datetime('now','localtime'))
+                )
+            """)
+            # Índices para busca rápida
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_periodo_remedio ON periodos_uso_remedio(remedio_id)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_periodo_ativo   ON periodos_uso_remedio(remedio_id, ativo)")
+    except Exception as ex:
+        print(f"[MODEL] _criar_periodos_uso_remedio: {ex}")
+
+
+def iniciar_periodo_uso(remedio_id: int, data_inicio: str, receita_id: int = None, observacoes: str = None) -> int:
+    """Inicia novo período de uso para um remédio. Encerra período ativo anterior se existir."""
+    with sqlite3.connect(DB_PATH, timeout=30) as conn:
+        # Encerra período ativo anterior sem data_fim
+        conn.execute("""
+            UPDATE periodos_uso_remedio SET ativo=0, data_fim=?
+            WHERE remedio_id=? AND ativo=1 AND data_fim IS NULL
+        """, (data_inicio, remedio_id))
+        cur = conn.execute("""
+            INSERT INTO periodos_uso_remedio (remedio_id, receita_id, data_inicio, ativo, observacoes)
+            VALUES (?, ?, ?, 1, ?)
+        """, (remedio_id, receita_id, data_inicio, observacoes))
+        return cur.lastrowid
+
+
+def encerrar_periodo_uso(remedio_id: int, data_fim: str, motivo: str = None) -> bool:
+    """Encerra o período de uso ativo de um remédio (suspensão ou alta)."""
+    with sqlite3.connect(DB_PATH, timeout=30) as conn:
+        cur = conn.execute("""
+            UPDATE periodos_uso_remedio
+            SET ativo=0, data_fim=?, motivo_fim=?
+            WHERE remedio_id=? AND ativo=1
+        """, (data_fim, motivo, remedio_id))
+        return cur.rowcount > 0
+
+
+def listar_periodos_uso(remedio_id: int) -> list:
+    """Retorna todos os períodos de uso de um remédio, mais recente primeiro."""
+    with sqlite3.connect(DB_PATH, timeout=30) as conn:
+        conn.row_factory = sqlite3.Row
+        rows = conn.execute("""
+            SELECT p.*, r.data as receita_data, r.observacoes as receita_obs,
+                   r.foto_path as receita_foto,
+                   m.nome as medico_nome
+            FROM periodos_uso_remedio p
+            LEFT JOIN receitas r ON r.id = p.receita_id
+            LEFT JOIN medicos m  ON m.id = (SELECT medico_id FROM receitas WHERE id=p.receita_id)
+            WHERE p.remedio_id = ?
+            ORDER BY p.data_inicio DESC
+        """, (remedio_id,)).fetchall()
+        resultado = []
+        hoje = __import__("datetime").date.today().isoformat()
+        for r in rows:
+            d = dict(r)
+            # Calcular dias de uso
+            try:
+                import datetime as _dt
+                ini = _dt.date.fromisoformat(d["data_inicio"])
+                fim = _dt.date.fromisoformat(d["data_fim"]) if d["data_fim"] else _dt.date.today()
+                d["dias_uso"] = (fim - ini).days
+            except Exception:
+                d["dias_uso"] = 0
+            resultado.append(d)
+        return resultado
+
+
+def total_dias_uso(remedio_id: int) -> int:
+    """Soma todos os dias de uso em todos os períodos de um remédio."""
+    periodos = listar_periodos_uso(remedio_id)
+    return sum(p["dias_uso"] for p in periodos)
+
+
+def vincular_receita_remedio(receita_id: int, remedio_id: int, data_inicio: str) -> None:
+    """Associa uma receita a um remédio e inicia novo período de uso."""
+    with sqlite3.connect(DB_PATH, timeout=30) as conn:
+        conn.execute("UPDATE remedios SET receita_id=? WHERE id=?", (receita_id, remedio_id))
+    iniciar_periodo_uso(remedio_id, data_inicio, receita_id=receita_id)
+
+
+def _migrar_linha_do_tempo():
+    """Cria tabela linha_do_tempo — uma linha por data encontrada em uma importacao."""
+    try:
+        with sqlite3.connect(DB_PATH, timeout=30) as conn:
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS linha_do_tempo (
+                    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+                    importacao_id  INTEGER REFERENCES importacoes_pdf(id),
+                    data_doc       TEXT NOT NULL,        -- YYYY-MM-DD extraida das paginas
+                    pasta_local    TEXT,                 -- caminho temp/ingestao/{id}/{data}/
+                    total_paginas  INTEGER DEFAULT 0,
+                    internacao_id  INTEGER REFERENCES internacoes(id),  -- vinculo apos fase 4
+                    criado_em      TEXT DEFAULT (datetime('now'))
+                )
+            """)
+    except Exception as ex:
+        print(f"[MODEL] _migrar_linha_do_tempo: {ex}")
+
+
+def _migrar_prontuarios():
+    """
+    Cria tabelas prontuarios (pai) e prontuario_paginas (filho).
+
+    prontuarios      — um registro por PDF importado; dados gerais do documento.
+    prontuario_paginas — uma linha por pagina; data extraida + caminho do PDF da pagina.
+    """
+    try:
+        with sqlite3.connect(DB_PATH, timeout=30) as conn:
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS prontuarios (
+                    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+                    importacao_id   INTEGER REFERENCES importacoes_pdf(id),
+                    nome_arquivo    TEXT,            -- nome exibido ao usuario
+                    hash_pdf        TEXT,            -- SHA1 para detectar duplicatas
+                    total_paginas   INTEGER DEFAULT 0,
+                    data_inicio     TEXT,            -- menor data encontrada nas paginas
+                    data_fim        TEXT,            -- maior data encontrada nas paginas
+                    hospital        TEXT,            -- nome do hospital/clinica extraido das paginas
+                    plano           TEXT,            -- nome do plano de saude extraido das paginas
+                    criado_em       TEXT DEFAULT (datetime('now'))
+                )
+            """)
+            # adicionar colunas em bancos antigos que ja tem a tabela
+            _cols = [r[1] for r in conn.execute("PRAGMA table_info(prontuarios)").fetchall()]
+            for col, dfn in [("hospital", "TEXT"), ("plano", "TEXT")]:
+                if col not in _cols:
+                    conn.execute(f"ALTER TABLE prontuarios ADD COLUMN {col} {dfn}")
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS prontuario_paginas (
+                    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+                    prontuario_id   INTEGER NOT NULL REFERENCES prontuarios(id),
+                    pdf_pagina_id   INTEGER REFERENCES pdf_paginas(id),
+                    pagina_num      INTEGER,
+                    data_pagina     TEXT,            -- YYYY-MM-DD extraida pelo Claude
+                    resumo          TEXT,            -- identificacao curta do conteudo
+                    dados_json      TEXT,            -- JSON completo retornado pelo Claude
+                    ignorado        INTEGER DEFAULT 0, -- 1 = pagina ignorada nas proximas fases
+                    pdf_local       TEXT,            -- caminho local do PDF desta pagina
+                    jpeg_local      TEXT,            -- caminho local do JPEG desta pagina
+                    criado_em       TEXT DEFAULT (datetime('now'))
+                )
+            """)
+            # adicionar colunas em bancos antigos
+            _cols_pp = [r[1] for r in conn.execute("PRAGMA table_info(prontuario_paginas)").fetchall()]
+            if "resumo" not in _cols_pp:
+                conn.execute("ALTER TABLE prontuario_paginas ADD COLUMN resumo TEXT")
+            if "dados_json" not in _cols_pp:
+                conn.execute("ALTER TABLE prontuario_paginas ADD COLUMN dados_json TEXT")
+            if "ignorado" not in _cols_pp:
+                conn.execute("ALTER TABLE prontuario_paginas ADD COLUMN ignorado INTEGER DEFAULT 0")
+            if "status" not in _cols_pp:
+                conn.execute("ALTER TABLE prontuario_paginas ADD COLUMN status TEXT DEFAULT 'pendente'")
+                # retroativamente: paginas com data → ok, ignorado=1 → ignorado
+                conn.execute(
+                    "UPDATE prontuario_paginas SET status='ok' "
+                    "WHERE data_pagina IS NOT NULL AND (ignorado IS NULL OR ignorado=0)")
+                conn.execute(
+                    "UPDATE prontuario_paginas SET status='ignorado' WHERE ignorado=1")
+                print("[MODEL] coluna status adicionada em prontuario_paginas")
+            if "jpeg_drive_id" not in _cols_pp:
+                conn.execute("ALTER TABLE prontuario_paginas ADD COLUMN jpeg_drive_id TEXT")
+                print("[MODEL] coluna jpeg_drive_id adicionada em prontuario_paginas")
+            if "internacao_id" not in _cols_pp:
+                conn.execute(
+                    "ALTER TABLE prontuario_paginas ADD COLUMN internacao_id INTEGER REFERENCES internacoes(id)")
+                print("[MODEL] coluna internacao_id adicionada em prontuario_paginas")
+            # sempre: marcar documentos administrativos como ignorado se ainda nao estiverem
+            n = conn.execute("""
+                UPDATE prontuario_paginas
+                SET ignorado=1, status='ignorado'
+                WHERE ignorado=0
+                  AND resumo IS NOT NULL
+                  AND lower(resumo) LIKE '%administrativo%'
+            """).rowcount
+            if n:
+                print(f"[MODEL] {n} pagina(s) administrativa(s) marcadas como ignorado")
+    except Exception as ex:
+        print(f"[MODEL] _migrar_prontuarios: {ex}")
+
+
+def _migrar_internacoes_medico_responsavel():
+    """Adiciona coluna medico_responsavel em internacoes (nome livre, vindo da ficha de admissao)."""
+    try:
+        with sqlite3.connect(DB_PATH, timeout=30) as conn:
+            conn.execute("ALTER TABLE internacoes ADD COLUMN medico_responsavel TEXT")
+    except Exception:
+        pass  # coluna já existe
+
+
+def _migrar_registros_clinicos():
+    """Cria tabela registros_clinicos — evolucoes e prescricoes estruturadas por internacao."""
+    try:
+        with sqlite3.connect(DB_PATH, timeout=30) as conn:
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS registros_clinicos (
+                    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+                    internacao_id   INTEGER REFERENCES internacoes(id),
+                    tipo            TEXT NOT NULL,   -- prescricao_enfermagem | evolucao_medica | ...
+                    data_registro   TEXT,
+                    hora_registro   TEXT,
+                    profissional    TEXT,
+                    quadro_clinico  TEXT,
+                    observacoes     TEXT,
+                    intercorrencias TEXT,
+                    dispositivos    TEXT,            -- JSON array
+                    sinais_vitais   TEXT,            -- JSON dict {pa, fc, temp, spo2, glasgow}
+                    dados_extras    TEXT,            -- JSON com campos adicionais do tipo
+                    pdf_pagina_id   INTEGER REFERENCES pdf_paginas(id),
+                    criado_em       TEXT DEFAULT (datetime('now'))
+                )
+            """)
+    except Exception as ex:
+        print(f"[MODEL] _migrar_registros_clinicos: {ex}")
+
+
+def _migrar_sinais_internacao():
+    """Cria tabela sinais_internacao em bancos antigos que nao a tem."""
+    try:
+        with sqlite3.connect(DB_PATH, timeout=30) as conn:
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS sinais_internacao (
+                    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+                    internacao_id   INTEGER REFERENCES internacoes(id),
+                    sinal           TEXT NOT NULL,
+                    momento         TEXT DEFAULT 'entrada',
+                    valor           TEXT,
+                    unidade         TEXT,
+                    interpretacao   TEXT,
+                    fonte           TEXT DEFAULT 'manual',
+                    criado_em       TEXT DEFAULT (datetime('now'))
+                )
+            """)
+    except Exception as ex:
+        print(f"[MODEL] _migrar_sinais_internacao: {ex}")
+
+
+def listar_sinais_internacao(internacao_id: int) -> list[dict]:
+    """Retorna sinais clinicos de uma internacao, ordenados por sinal e momento."""
+    try:
+        with sqlite3.connect(DB_PATH, timeout=10) as conn:
+            rows = conn.execute("""
+                SELECT id, internacao_id, sinal, momento, valor, unidade, interpretacao, fonte, criado_em
+                FROM sinais_internacao
+                WHERE internacao_id = ?
+                ORDER BY sinal ASC, momento ASC
+            """, (internacao_id,)).fetchall()
+        cols = ["id","internacao_id","sinal","momento","valor","unidade","interpretacao","fonte","criado_em"]
+        return [dict(zip(cols, r)) for r in rows]
+    except Exception as ex:
+        print(f"[MODEL] listar_sinais_internacao: {ex}")
+        return []
+
+
+def salvar_sinal_internacao(dados: dict) -> int:
+    """Cria ou atualiza um sinal clinico. Retorna id."""
+    try:
+        with sqlite3.connect(DB_PATH, timeout=10) as conn:
+            sid = dados.get("id")
+            if sid:
+                conn.execute("""
+                    UPDATE sinais_internacao
+                    SET sinal=?, momento=?, valor=?, unidade=?, interpretacao=?, fonte=?
+                    WHERE id=?
+                """, (
+                    dados.get("sinal"), dados.get("momento","entrada"),
+                    dados.get("valor"), dados.get("unidade"),
+                    dados.get("interpretacao"), dados.get("fonte","manual"),
+                    sid,
+                ))
+                return sid
+            cur = conn.execute("""
+                INSERT INTO sinais_internacao
+                  (internacao_id, sinal, momento, valor, unidade, interpretacao, fonte)
+                VALUES (?,?,?,?,?,?,?)
+            """, (
+                dados["internacao_id"], dados["sinal"],
+                dados.get("momento","entrada"), dados.get("valor"),
+                dados.get("unidade"), dados.get("interpretacao"),
+                dados.get("fonte","manual"),
+            ))
+            return cur.lastrowid
+    except Exception as ex:
+        print(f"[MODEL] salvar_sinal_internacao: {ex}")
+        return 0
+
+
+def excluir_sinal_internacao(sinal_id: int) -> bool:
+    try:
+        with sqlite3.connect(DB_PATH, timeout=10) as conn:
+            conn.execute("DELETE FROM sinais_internacao WHERE id=?", (sinal_id,))
+        return True
+    except Exception as ex:
+        print(f"[MODEL] excluir_sinal_internacao: {ex}")
+        return False
+
+
+def _migrar_remedios_internacao_id():
+    """Adiciona internacao_id em remedios para vincular medicamentos de internacao."""
+    try:
+        with sqlite3.connect(DB_PATH, timeout=30) as conn:
+            cols = [r[1] for r in conn.execute("PRAGMA table_info(remedios)").fetchall()]
+            if "internacao_id" not in cols:
+                conn.execute(
+                    "ALTER TABLE remedios ADD COLUMN internacao_id INTEGER REFERENCES internacoes(id)")
+                print("[MODEL] coluna internacao_id adicionada em remedios")
+    except Exception as ex:
+        print(f"[MODEL] _migrar_remedios_internacao_id: {ex}")
+
+
+def _migrar_internacoes_documento():
+    """Adiciona campos de localizacao, objetivo e drive em internacoes."""
+    try:
+        with sqlite3.connect(DB_PATH, timeout=30) as conn:
+            cols = [r[1] for r in conn.execute("PRAGMA table_info(internacoes)").fetchall()]
+            novos = [
+                ("documento_local", "TEXT"),
+                ("cidade",          "TEXT"),
+                ("uf",              "TEXT"),
+                ("objetivo",        "TEXT DEFAULT 'tratamento'"),
+                ("drive_file_id",   "TEXT"),
+                ("drive_link",      "TEXT"),
+            ]
+            for col, tipo in novos:
+                if col not in cols:
+                    conn.execute(f"ALTER TABLE internacoes ADD COLUMN {col} {tipo}")
+                    print(f"[MODEL] coluna {col} adicionada em internacoes")
+    except Exception as ex:
+        print(f"[MODEL] _migrar_internacoes_documento: {ex}")
+
+
+def _migrar_datas_iso():
+    """Converte datas em formato DD/MM/YYYY para YYYY-MM-DD em todas as tabelas."""
+    tabelas_campos = [
+        ("consultas",          ["data"]),
+        ("receitas",           ["data"]),
+        ("remedios",           ["data_inicio", "data_fim"]),
+        ("internacoes",        ["data_entrada", "data_saida"]),
+        ("exames",             ["data_exame"]),
+        ("marcadores_leituras", ["data_medicao"]),
+    ]
+    try:
+        with sqlite3.connect(DB_PATH, timeout=30) as conn:
+            total = 0
+            for tabela, campos in tabelas_campos:
+                for campo in campos:
+                    try:
+                        rows = conn.execute(
+                            f"SELECT id, {campo} FROM {tabela} "
+                            f"WHERE {campo} LIKE '__/__/____'").fetchall()
+                        for row_id, val in rows:
+                            if not val:
+                                continue
+                            try:
+                                novo = _datetime.datetime.strptime(
+                                    val[:10], "%d/%m/%Y").strftime("%Y-%m-%d")
+                                conn.execute(
+                                    f"UPDATE {tabela} SET {campo}=? WHERE id=?",
+                                    (novo, row_id))
+                                total += 1
+                            except Exception:
+                                pass
+                    except Exception:
+                        pass
+            if total:
+                print(f"[MODEL] _migrar_datas_iso: {total} datas convertidas para ISO")
+    except Exception as ex:
+        print(f"[MODEL] _migrar_datas_iso: {ex}")
 
 
 def _migrar_exame_anexos_imagens():
@@ -269,6 +853,8 @@ def _criar_rotinas():
                     nome      TEXT NOT NULL,
                     icone     TEXT DEFAULT 'today_rounded',
                     cor       TEXT DEFAULT '#58A6FF',
+                    tipo      TEXT DEFAULT 'alimentacao',
+                    horario   TEXT,
                     padrao    INTEGER DEFAULT 0,
                     ativo     INTEGER DEFAULT 1,
                     criado_em TEXT DEFAULT (datetime('now'))
@@ -289,27 +875,292 @@ def _criar_rotinas():
                     momento_id INTEGER NOT NULL REFERENCES momentos_rotina(id) ON DELETE CASCADE,
                     tipo       TEXT NOT NULL DEFAULT 'alimento',
                     descricao  TEXT NOT NULL,
+                    quantidade TEXT,
+                    unidade    TEXT DEFAULT 'Unidade',
                     detalhe    TEXT,
                     horario    TEXT,
+                    frequencia TEXT DEFAULT 'diario',
+                    calorias   REAL,
+                    proteinas  REAL,
+                    vitaminas  TEXT,
                     remedio_id INTEGER REFERENCES remedios(id),
                     ordem      INTEGER DEFAULT 0,
                     criado_em  TEXT DEFAULT (datetime('now'))
                 );
+
+                CREATE TABLE IF NOT EXISTS rotina_diario (
+                    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                    data        TEXT NOT NULL,
+                    item_id     INTEGER REFERENCES itens_momento(id) ON DELETE SET NULL,
+                    item_nome   TEXT,
+                    tipo        TEXT NOT NULL,
+                    descricao   TEXT NOT NULL,
+                    motivo      TEXT,
+                    data_fim    TEXT,
+                    criado_em   TEXT DEFAULT (datetime('now'))
+                );
+                CREATE INDEX IF NOT EXISTS idx_rotina_diario_data
+                    ON rotina_diario(data DESC);
             """)
+        # Migrações para bancos antigos
+        for sql in [
+            "ALTER TABLE rotinas_templates ADD COLUMN tipo    TEXT DEFAULT 'alimentacao'",
+            "ALTER TABLE rotinas_templates ADD COLUMN horario TEXT",
+            "ALTER TABLE itens_momento     ADD COLUMN frequencia  TEXT DEFAULT 'diario'",
+            "ALTER TABLE itens_momento     ADD COLUMN quantidade  TEXT",
+            "ALTER TABLE itens_momento     ADD COLUMN unidade     TEXT DEFAULT 'Unidade'",
+            "ALTER TABLE itens_momento     ADD COLUMN calorias    REAL",
+            "ALTER TABLE itens_momento     ADD COLUMN proteinas   REAL",
+            "ALTER TABLE itens_momento     ADD COLUMN vitaminas   TEXT",
+        ]:
+            try: conn.execute(sql)
+            except Exception: pass
     except Exception as ex:
         print(f"[MODEL] _criar_rotinas: {ex}")
 
 
-def _migrar_pai_id():
-    """Adiciona pai_id em resultados_estruturados para sub-resultados (ex: eRFG filho de Creatinina)."""
+def _migrar_renomear_exame_resultados():
+    """Renomeia resultados_estruturados para exame_resultados em bancos existentes."""
     try:
         with sqlite3.connect(DB_PATH, timeout=10) as conn:
-            cols = [r[1] for r in conn.execute('PRAGMA table_info(resultados_estruturados)').fetchall()]
+            tabelas = [r[0] for r in conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table'").fetchall()]
+            if 'resultados_estruturados' in tabelas and 'exame_resultados' not in tabelas:
+                conn.execute('ALTER TABLE resultados_estruturados RENAME TO exame_resultados')
+                print('[MODEL] tabela resultados_estruturados renomeada para exame_resultados')
+    except Exception as ex:
+        print(f'[MODEL] _migrar_renomear_exame_resultados: {ex}')
+
+
+def _migrar_pai_id():
+    """Adiciona pai_id em exame_resultados para sub-resultados (ex: eRFG filho de Creatinina)."""
+    try:
+        with sqlite3.connect(DB_PATH, timeout=10) as conn:
+            cols = [r[1] for r in conn.execute('PRAGMA table_info(exame_resultados)').fetchall()]
             if 'pai_id' not in cols:
-                conn.execute('ALTER TABLE resultados_estruturados ADD COLUMN pai_id INTEGER REFERENCES resultados_estruturados(id)')
-                print('[MODEL] coluna pai_id adicionada em resultados_estruturados')
+                conn.execute('ALTER TABLE exame_resultados ADD COLUMN pai_id INTEGER REFERENCES exame_resultados(id)')
+                print('[MODEL] coluna pai_id adicionada em exame_resultados')
     except Exception as ex:
         print(f'[MODEL] _migrar_pai_id: {ex}')
+
+
+def _migrar_sinonimos_exames_padrao():
+    """
+    Garante que exames_padrao com sinônimos incompletos sejam corrigidos.
+    Roda no startup — idempotente: só atualiza se o sinônimo novo não constar.
+    Também remove duplicatas ruins (ex: id=137 POTASSIO vs id=54 Potássio).
+    """
+    import json as _j
+    _CORRECOES = [
+        # (nome_oficial_canônico, sinônimos_completos, unidade, categoria)
+        ("Potássio",
+         ["POTASSIO", "POTÁSSIO", "K", "POTASSIO SERICO", "K+",
+          "POTÁSSIO SÉRICO", "POTASSIO IONICO"],
+         "mEq/L", "Minerais"),
+        ("Sódio",
+         ["SODIO", "SÓDIO", "NA", "SODIO SERICO", "NA+",
+          "SÓDIO SÉRICO", "SODIO IONICO"],
+         "mEq/L", "Minerais"),
+        ("Magnésio",
+         ["MAGNESIO", "MAGNÉSIO", "MG", "MAGNESIO SERICO",
+          "MAGNÉSIO SÉRICO", "MG2+"],
+         "mg/dL", "Minerais"),
+        ("Cálcio",
+         ["CALCIO", "CÁLCIO", "CALCIO TOTAL", "CALCIO SERICO",
+          "CALCIO RESULTADO", "CÁlcio Total", "Cálcio Sérico Total (CaT)",
+          "CA", "CA TOTAL"],
+         "mg/dL", "Minerais"),
+        ("Cálcio Ionizado (mmol/L)",
+         ["CÁLCIO IÔNICO", "CALCIO IONICO", "CALCIO IONIZADO MMOL",
+          "CÁlcio Ionizado (Ca++) (em mmol/L)", "CA IONICO", "CA++",
+          "CÁLCIO IONIZADO MMOL/L", "CALCIO IONICO MMOL"],
+         "mmol/L", "Minerais"),
+        ("Cálcio Ionizado (mg/dL)",
+         ["CALCIO IONIZADO", "CÁLCIO IONIZADO",
+          "CÁlcio Ionizado (Ca++) (em mg/dL)", "CA IONIZADO MG"],
+         "mg/dL", "Minerais"),
+        ("Fósforo",
+         ["FOSFORO", "FÓSFORO", "P", "FOSFORO SERICO", "FOSFATO",
+          "FOSFORO INORGANICO", "FÓSFORO SÉRICO"],
+         "mg/dL", "Minerais"),
+        ("Cloro",
+         ["CLORO", "CLORETO", "CL", "CL-", "CLORETOS"],
+         "mEq/L", "Minerais"),
+        # ── Hemograma ──────────────────────────────────────────────
+        ("Hemoglobina",
+         ["HEMOGLOBINA", "HB", "HGB", "HEMOGLOBINA TOTAL", "Hb", "Hgb"],
+         "g/dL", "Hemograma"),
+        ("Hematócrito",
+         ["HEMATOCRITO", "HEMATÓCRITO", "HCT", "HT", "Hematocrito",
+          "HEMATOCRITO %"],
+         "%", "Hemograma"),
+        ("Hemácias",
+         ["HEMACIAS", "HEMÁCIAS", "ERITROCITOS", "ERITRÓCITOS",
+          "GLOBULOS VERMELHOS", "RBC", "HEMACIAS MILHOES",
+          "Eritrócitos", "Eritrocitos"],
+         "milhões/mm³", "Hemograma"),
+        ("Leucócitos",
+         ["LEUCOCITOS", "LEUCÓCITOS", "GLOBULOS BRANCOS", "WBC",
+          "CONTAGEM DE LEUCOCITOS", "LEUCOCITOS TOTAIS",
+          "Leucócitos Totais", "Leucocitos Totais"],
+         "/mm³", "Hemograma"),
+        ("Plaquetas",
+         ["PLAQUETAS", "TROMBOCITOS", "TROMBÓCITOS", "PLT",
+          "CONTAGEM DE PLAQUETAS", "Plaquetas (PLT)"],
+         "/mm³", "Hemograma"),
+        ("VCM",
+         ["VCM", "VOLUME CORPUSCULAR MEDIO", "VOLUME CORPUSCULAR MÉDIO",
+          "MCV", "V.C.M", "V.C.M."],
+         "fL", "Hemograma"),
+        ("HCM",
+         ["HCM", "HEMOGLOBINA CORPUSCULAR MEDIA", "HEMOGLOBINA CORPUSCULAR MÉDIA",
+          "MCH", "H.C.M", "H.C.M."],
+         "pg", "Hemograma"),
+        ("CHCM",
+         ["CHCM", "CONCENTRACAO DE HEMOGLOBINA CORPUSCULAR", "MCHC",
+          "C.H.C.M", "C.H.C.M.", "CONCENTRAÇÃO HEMOGLOBINA CORPUSCULAR"],
+         "g/dL", "Hemograma"),
+        ("RDW",
+         ["RDW", "INDICE DE ANISOCITOSE", "AMPLITUDE DE DISTRIBUICAO",
+          "R.D.W", "R.D.W.", "R.D.W. (SD)", "RDW-CV", "RDW-SD"],
+         "%", "Hemograma"),
+        ("Neutrófilos",
+         ["NEUTROFILOS", "NEUTRÓFILOS", "SEGMENTADOS", "NEUTROFILOS SEGMENTADOS",
+          "NEUTROFILOS TOTAIS", "Neutrófilos Segmentados", "Neutrofilos",
+          "GRAN", "Granulócitos"],
+         "%", "Hemograma"),
+        ("Linfócitos",
+         ["LINFOCITOS", "LINFÓCITOS", "LYMPHOCYTES", "Linfócitos típicos",
+          "LINFOCITOS TIPICOS", "Linfócitos Atípicos", "LINFOCITOS ATIPICOS"],
+         "%", "Hemograma"),
+        ("Monócitos",
+         ["MONOCITOS", "MONÓCITOS", "MONOCYTES", "Monócitos"],
+         "%", "Hemograma"),
+        ("Eosinófilos",
+         ["EOSINOFILOS", "EOSINÓFILOS", "EOSINOPHILS", "Eosinófilos"],
+         "%", "Hemograma"),
+        ("Basófilos",
+         ["BASOFILOS", "BASÓFILOS", "BASOPHILS", "Basófilos"],
+         "%", "Hemograma"),
+        ("Neutrófilos Bastonetes",
+         ["BASTONETES", "NEUTROFILOS BASTONETES", "NEUTRÓFILOS BASTONETES",
+          "Bastões", "BASTOS", "BAND"],
+         "%", "Hemograma"),
+        ("Reticulócitos",
+         ["RETICULOCITOS", "RETICULÓCITOS", "RETICULOCITOS %",
+          "RETICULOS", "RET"],
+         "%", "Hemograma"),
+        ("MPV",
+         ["MPV", "VOLUME PLAQUETARIO MEDIO", "M.P.V", "M.P.V.",
+          "VOLUME MÉDIO DE PLAQUETAS"],
+         "fL", "Hemograma"),
+    ]
+    _DUPLICATAS_REMOVER = [
+        # IDs que são duplicatas ruins — migra resultados para o canônico e deleta
+        # (id_ruim, nome_oficial_canonico)
+        (137, "Potássio"),
+        (139, "Fósforo"),
+        (147, "Cálcio"),
+        (136, "Hematócrito"),   # duplicata sem acento
+    ]
+
+    conn = None
+    try:
+        conn = sqlite3.connect(DB_PATH, timeout=30)
+        cur  = conn.cursor()
+
+        # 1. Corrigir sinônimos dos canônicos
+        for nome, sinonimos, unidade, categoria in _CORRECOES:
+            row = cur.execute(
+                "SELECT id, sinonimos FROM exames_padrao WHERE nome_oficial=?", (nome,)
+            ).fetchone()
+            if not row:
+                continue
+            ep_id, sin_raw = row
+            try:
+                sin_atual = _j.loads(sin_raw) if sin_raw else []
+            except Exception:
+                sin_atual = [sin_raw] if sin_raw else []
+            sin_set = set(s.upper() for s in sin_atual)
+            novos = [s for s in sinonimos if s.upper() not in sin_set]
+            if novos:
+                sin_novo = sin_atual + novos
+                cur.execute(
+                    "UPDATE exames_padrao SET sinonimos=?, unidade=?, categoria=? WHERE id=?",
+                    (_j.dumps(sin_novo, ensure_ascii=False), unidade, categoria, ep_id)
+                )
+                print(f"[MIGR] exames_padrao id={ep_id} ({nome}): +{len(novos)} sinônimos")
+
+        # 2. Remover duplicatas — migrar resultados para o canônico primeiro
+        for id_ruim, nome_canonico in _DUPLICATAS_REMOVER:
+            row_ruim = cur.execute(
+                "SELECT id FROM exames_padrao WHERE id=?", (id_ruim,)
+            ).fetchone()
+            if not row_ruim:
+                continue
+            row_can = cur.execute(
+                "SELECT id FROM exames_padrao WHERE nome_oficial=?", (nome_canonico,)
+            ).fetchone()
+            if not row_can:
+                continue
+            id_can = row_can[0]
+            if id_ruim == id_can:
+                continue
+            # migrar exame_resultados
+            n = cur.execute(
+                "UPDATE exame_resultados SET exame_padrao_id=? WHERE exame_padrao_id=?",
+                (id_can, id_ruim)
+            ).rowcount
+            # migrar referencias_padrao
+            cur.execute(
+                "UPDATE referencias_padrao SET exame_padrao_id=? WHERE exame_padrao_id=?",
+                (id_can, id_ruim)
+            )
+            cur.execute("DELETE FROM exames_padrao WHERE id=?", (id_ruim,))
+            if n > 0:
+                print(f"[MIGR] duplicata id={id_ruim} removida → canônico id={id_can} ({nome_canonico}), {n} resultado(s) migrado(s)")
+            else:
+                print(f"[MIGR] duplicata id={id_ruim} removida → canônico id={id_can} ({nome_canonico})")
+
+        # 3. Reparar exame_resultados com exame_padrao_id=NULL
+        #    Para cada linha sem padrao_id, tenta casar o parametro com os sinônimos atualizados
+        rows_sem = cur.execute(
+            "SELECT id, parametro FROM exame_resultados WHERE exame_padrao_id IS NULL"
+        ).fetchall()
+        if rows_sem:
+            # Recarregar mapeamento sinonimo→id após as correções acima
+            ep_rows = cur.execute(
+                "SELECT id, nome_oficial, sinonimos FROM exames_padrao"
+            ).fetchall()
+            sin_map = {}  # sinonimo_upper → ep_id
+            for ep_id, nome_of, sin_raw in ep_rows:
+                sin_map[nome_of.upper()] = ep_id
+                try:
+                    sins = _j.loads(sin_raw) if sin_raw else []
+                except Exception:
+                    sins = [sin_raw] if sin_raw else []
+                for s in sins:
+                    sin_map[s.upper()] = ep_id
+            consertados = 0
+            for res_id, param in rows_sem:
+                if not param:
+                    continue
+                ep_id_match = sin_map.get(param.upper())
+                if ep_id_match:
+                    cur.execute(
+                        "UPDATE exame_resultados SET exame_padrao_id=? WHERE id=?",
+                        (ep_id_match, res_id)
+                    )
+                    consertados += 1
+            if consertados:
+                print(f"[MIGR] {consertados} resultado(s) sem exame_padrao_id reparado(s)")
+
+        conn.commit()
+    except Exception as ex:
+        print(f"[MIGR] _migrar_sinonimos_exames_padrao: {ex}")
+    finally:
+        if conn:
+            conn.close()
 
 
 def _migrar_referencias_padrao():
@@ -541,10 +1392,10 @@ def criar_tabelas():
         -- ────────────────────────────────────────────────────────
         -- RESULTADOS NUMÉRICOS
         -- ────────────────────────────────────────────────────────
-        CREATE TABLE IF NOT EXISTS resultados_estruturados (
+        CREATE TABLE IF NOT EXISTS exame_resultados (
             id                  INTEGER PRIMARY KEY AUTOINCREMENT,
             exame_id            INTEGER REFERENCES exames(id),
-            pai_id              INTEGER REFERENCES resultados_estruturados(id),
+            pai_id              INTEGER REFERENCES exame_resultados(id),
             parametro           TEXT,
             valor               TEXT,
             unidade             TEXT,
@@ -573,6 +1424,48 @@ def criar_tabelas():
             drive_file_id   TEXT,
             nome_arquivo    TEXT,
             ordem           INTEGER DEFAULT 0,
+            criado_em       TEXT DEFAULT (datetime('now'))
+        );
+
+        -- ────────────────────────────────────────────────────────
+        -- DIAGNÓSTICOS ESTRUTURADOS POR INTERNAÇÃO
+        -- ────────────────────────────────────────────────────────
+        CREATE TABLE IF NOT EXISTS diagnosticos_internacao (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            internacao_id   INTEGER REFERENCES internacoes(id),
+            cid             TEXT,
+            descricao       TEXT,
+            tipo            TEXT DEFAULT 'saida',
+            certeza         TEXT DEFAULT 'confirmado',
+            fonte           TEXT DEFAULT 'manual',
+            criado_em       TEXT DEFAULT (datetime('now'))
+        );
+
+        -- ────────────────────────────────────────────────────────
+        -- DADOS BRUTOS / SEM CLASSIFICAÇÃO POR INTERNAÇÃO
+        -- ────────────────────────────────────────────────────────
+        CREATE TABLE IF NOT EXISTS internacao_dados_brutos (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            internacao_id   INTEGER REFERENCES internacoes(id),
+            categoria       TEXT DEFAULT 'outro',
+            conteudo        TEXT,
+            pagina_origem   INTEGER,
+            fonte           TEXT DEFAULT 'importado',
+            criado_em       TEXT DEFAULT (datetime('now'))
+        );
+
+        -- ────────────────────────────────────────────────────────
+        -- SINAIS CLÍNICOS POR INTERNAÇÃO
+        -- ────────────────────────────────────────────────────────
+        CREATE TABLE IF NOT EXISTS sinais_internacao (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            internacao_id   INTEGER REFERENCES internacoes(id),
+            sinal           TEXT NOT NULL,
+            momento         TEXT DEFAULT 'entrada',  -- 'entrada' | 'saida' | 'evolucao'
+            valor           TEXT,
+            unidade         TEXT,
+            interpretacao   TEXT,
+            fonte           TEXT DEFAULT 'manual',   -- 'manual' | 'importado' | 'claude_refinado'
             criado_em       TEXT DEFAULT (datetime('now'))
         );
 
@@ -775,6 +1668,21 @@ def criar_tabelas():
         );
 
         -- ────────────────────────────────────────────────────────
+        -- OBSERVACOES DO MEDICO (via hub_medico)
+        -- ────────────────────────────────────────────────────────
+        CREATE TABLE IF NOT EXISTS observacoes_medico (
+            id            INTEGER PRIMARY KEY AUTOINCREMENT,
+            medico_id     INTEGER REFERENCES medicos(id),
+            nome_medico   TEXT,
+            data          TEXT,
+            texto         TEXT NOT NULL,
+            drive_file_id TEXT,
+            nome_arquivo  TEXT,
+            lida_paciente INTEGER DEFAULT 0,
+            criado_em     TEXT DEFAULT (datetime('now'))
+        );
+
+        -- ────────────────────────────────────────────────────────
         -- COMPARTILHAMENTOS (LGPD - auditoria)
         -- ────────────────────────────────────────────────────────
         CREATE TABLE IF NOT EXISTS compartilhamentos (
@@ -831,6 +1739,24 @@ def criar_tabelas():
             atualizado_em   TEXT DEFAULT (datetime('now'))
         );
 
+        -- HISTÓRICO MÉDICO PESSOAL (declarado pelo paciente)
+        -- ────────────────────────────────────────────────────────
+        CREATE TABLE IF NOT EXISTS historico_medico (
+            id            INTEGER PRIMARY KEY AUTOINCREMENT,
+            data_aprox    TEXT,          -- YYYY, YYYY-MM ou YYYY-MM-DD
+            tipo          TEXT NOT NULL, -- 'evento_cardiaco'|'cirurgia'|'internacao'|'diagnostico'|'procedimento'|'condicao_cronica'|'alergia'|'infancia'
+            titulo        TEXT NOT NULL,
+            descricao     TEXT,
+            local         TEXT,          -- hospital / cidade
+            medico        TEXT,
+            sequela       TEXT,          -- consequências permanentes
+            alerta        INTEGER DEFAULT 0,  -- 1 = mostrar no topo da ficha
+            fonte         TEXT DEFAULT 'paciente',  -- 'paciente'|'documento'|'exame'
+            internacao_id INTEGER REFERENCES internacoes(id),
+            exame_id      INTEGER REFERENCES exames(id),
+            criado_em     TEXT DEFAULT (datetime('now'))
+        );
+
         -- ROTINA DIÁRIA (dieta, suplementos, refeições)
         -- ────────────────────────────────────────────────────────
         CREATE TABLE IF NOT EXISTS rotina_itens (
@@ -882,6 +1808,45 @@ def criar_tabelas():
             criado_em    TEXT DEFAULT (datetime('now'))
         );
 
+        -- ────────────────────────────────────────────────────────
+        -- INTERNACOES
+        -- ────────────────────────────────────────────────────────
+        CREATE TABLE IF NOT EXISTS internacoes (
+            id            INTEGER PRIMARY KEY AUTOINCREMENT,
+            hospital      TEXT NOT NULL,
+            clinica_id    INTEGER REFERENCES clinicas(id),
+            medico_id     INTEGER REFERENCES medicos(id),
+            data_entrada  TEXT NOT NULL,
+            data_saida    TEXT,
+            tipo          TEXT DEFAULT 'eletiva',
+            motivo        TEXT,
+            cid_entrada   TEXT,
+            diagnostico_saida TEXT,
+            cid_saida     TEXT,
+            observacoes   TEXT,
+            documento_local TEXT,
+            criado_em     TEXT DEFAULT (datetime('now'))
+        );
+
+        -- ────────────────────────────────────────────────────────
+        -- PROCEDIMENTOS
+        -- ────────────────────────────────────────────────────────
+        CREATE TABLE IF NOT EXISTS procedimentos (
+            id            INTEGER PRIMARY KEY AUTOINCREMENT,
+            internacao_id INTEGER REFERENCES internacoes(id),
+            medico_id     INTEGER REFERENCES medicos(id),
+            nome          TEXT NOT NULL,
+            tipo          TEXT DEFAULT 'cirurgico',
+            data          TEXT NOT NULL,
+            hora          TEXT,
+            local         TEXT,
+            anestesia     TEXT DEFAULT 'sem',
+            cid           TEXT,
+            resultado     TEXT,
+            observacoes   TEXT,
+            criado_em     TEXT DEFAULT (datetime('now'))
+        );
+
     """)
 
         conn.commit()
@@ -889,18 +1854,39 @@ def criar_tabelas():
         conn.close()
     print("[OK] Tabelas MÓDULO criadas (prontuario.db)")
     _migrar_campos_perfil()
+    _migrar_renomear_exame_resultados()
     _migrar_pai_id()
     _migrar_referencias_padrao()
+    _migrar_sinonimos_exames_padrao()
     _migrar_medicos()
     _migrar_principio_ativo()
     _migrar_marcadores()
     _migrar_marcadores_contexto()
     _migrar_tipo_prescrito()
     _migrar_remedio_fotos()
+    _migrar_receita_foto_path()
     _migrar_consulta_pauta()
     _migrar_compromisso()
     _criar_rotinas()
     _migrar_exame_anexos_imagens()
+    _migrar_exames_internacao_id()
+    _migrar_internacoes_documento()
+    _migrar_datas_iso()
+    _migrar_remedios_internacao_id()
+    _migrar_fonte_dados()
+    _migrar_internacoes_gatilho()
+    _migrar_internacoes_modalidade()
+    _migrar_marcadores_internacao_id()
+    _migrar_diagnosticos_internacao()
+    _migrar_diagnosticos_especialidade()
+    _migrar_sinais_internacao()
+    _migrar_pdf_paginas()
+    _migrar_linha_do_tempo()
+    _migrar_prontuarios()
+    _migrar_internacoes_medico_responsavel()
+    _migrar_registros_clinicos()
+    _migrar_desafios()
+    _criar_periodos_uso_remedio()
     # Registrar módulo no core
     try:
         _conn = sqlite3.connect(CORE_DB, timeout=30)
@@ -1169,15 +2155,21 @@ def salvar_exame(dados: dict, status: str = "ativo") -> int:
         if nome_medico:
             medico_id = upsert_medico_simples(cur, nome_medico)
 
+        # status_sugerido='revisao' quando extrator nao conseguiu extrair data
+        status_final = status
+        if status == "ativo" and dados.get("status_sugerido") == "revisao":
+            status_final = "revisao"
+
         # Inserir exame
         cur.execute("""
             INSERT INTO exames
-            (paciente_id, medico_id, tipo, tipo_exame, data_exame, laboratorio,
+            (paciente_id, medico_id, internacao_id, tipo, tipo_exame, data_exame, laboratorio,
              medico_solicit, resultado_texto, arquivo_origem, drive_file_id, status)
-            VALUES (?,?,?,?,?,?,?,?,?,?,?)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
         """, (
             paciente_id,
             medico_id,
+            dados.get("internacao_id"),
             dados.get("tipo", "numerico"),
             dados.get("tipo_exame"),
             dados.get("data_exame"),
@@ -1186,7 +2178,7 @@ def salvar_exame(dados: dict, status: str = "ativo") -> int:
             dados.get("resultado_texto"),
             dados.get("arquivo_origem"),
             dados.get("drive_file_id"),
-            status,
+            status_final,
         ))
         exame_id = cur.lastrowid
 
@@ -1194,7 +2186,7 @@ def salvar_exame(dados: dict, status: str = "ativo") -> int:
         for r in dados.get("resultados", []):
             padrao_id = _buscar_padrao_id(_padrao_idx, r.get("parametro"))
             cur.execute("""
-                INSERT INTO resultados_estruturados
+                INSERT INTO exame_resultados
                 (exame_id, pai_id, parametro, valor, unidade, referencia, exame_padrao_id)
                 VALUES (?,?,?,?,?,?,?)
             """, (exame_id, None, r.get("parametro"), r.get("valor"),
@@ -1203,7 +2195,7 @@ def salvar_exame(dados: dict, status: str = "ativo") -> int:
             for sub in r.get("sub_resultados", []):
                 sub_padrao_id = _buscar_padrao_id(_padrao_idx, sub.get("parametro"))
                 cur.execute("""
-                    INSERT INTO resultados_estruturados
+                    INSERT INTO exame_resultados
                     (exame_id, pai_id, parametro, valor, unidade, referencia, exame_padrao_id)
                     VALUES (?,?,?,?,?,?,?)
                 """, (exame_id, pai_id, sub.get("parametro"), sub.get("valor"),
@@ -1286,9 +2278,9 @@ def sincronizar_anexos_pendentes() -> int:
         return 0
 
     try:
-        from utils.drive_sync import _get_creds, garantir_pasta, upload_foto
+        from utils.drive_sync import _get_creds, _EXAME_IMAGENS_ID, upload_foto
         creds    = _get_creds()
-        pasta_id = garantir_pasta("EXAME_IMAGENS", creds=creds)
+        pasta_id = _EXAME_IMAGENS_ID
     except Exception as ex:
         print(f"[MODEL] sincronizar_anexos_pendentes (drive): {ex}")
         return 0
@@ -1349,7 +2341,7 @@ def verificar_duplicata(nome_arquivo: str) -> dict:
             return {"duplicado": False}
         exame_id, importado_em, status, tipo_exame = row
         qtd = conn.execute(
-            "SELECT COUNT(*) FROM resultados_estruturados WHERE exame_id=?",
+            "SELECT COUNT(*) FROM exame_resultados WHERE exame_id=?",
             (exame_id,)
         ).fetchone()[0]
         return {
@@ -1374,7 +2366,7 @@ def substituir_exame(exame_id_antigo: int, dados: dict) -> int:
     cur  = conn.cursor()
     try:
         # Remove antigo
-        cur.execute("DELETE FROM resultados_estruturados WHERE exame_id=?", (exame_id_antigo,))
+        cur.execute("DELETE FROM exame_resultados WHERE exame_id=?", (exame_id_antigo,))
         cur.execute("DELETE FROM exames WHERE id=?", (exame_id_antigo,))
 
         # Insere novo (reutiliza lógica de salvar_exame inline)
@@ -1410,7 +2402,7 @@ def substituir_exame(exame_id_antigo: int, dados: dict) -> int:
 
         for r in dados.get("resultados", []):
             cur.execute("""
-                INSERT INTO resultados_estruturados
+                INSERT INTO exame_resultados
                 (exame_id, pai_id, parametro, valor, unidade, referencia)
                 VALUES (?,?,?,?,?,?)
             """, (novo_id, None, r.get("parametro"), r.get("valor"),
@@ -1418,7 +2410,7 @@ def substituir_exame(exame_id_antigo: int, dados: dict) -> int:
             pai_id = cur.lastrowid
             for sub in r.get("sub_resultados", []):
                 cur.execute("""
-                    INSERT INTO resultados_estruturados
+                    INSERT INTO exame_resultados
                     (exame_id, pai_id, parametro, valor, unidade, referencia)
                     VALUES (?,?,?,?,?,?)
                 """, (novo_id, pai_id, sub.get("parametro"), sub.get("valor"),
@@ -1688,7 +2680,7 @@ def apagar_rascunho(exame_id: int):
     """Remove rascunho e seus resultados do banco."""
     conn = sqlite3.connect(DB_PATH, timeout=30)
     try:
-        conn.execute("DELETE FROM resultados_estruturados WHERE exame_id=?", (exame_id,))
+        conn.execute("DELETE FROM exame_resultados WHERE exame_id=?", (exame_id,))
         conn.execute("DELETE FROM laudos WHERE exame_id=?", (exame_id,))
         conn.execute("DELETE FROM exame_anexos WHERE exame_id=?", (exame_id,))
         conn.execute("DELETE FROM exames WHERE id=? AND status='rascunho'", (exame_id,))
@@ -1806,14 +2798,15 @@ def listar_medicos(so_ativos=True) -> list[dict]:
             SELECT m.id, m.nome, m.crm, m.uf, m.telefone, m.email,
                    m.endereco, m.site, m.redes_sociais, m.foto_drive_id,
                    m.observacoes, m.ativo,
-                   e.nome as especialidade
+                   e.nome as especialidade, m.especialidade_id
             FROM medicos m
             LEFT JOIN especialidades e ON e.id = m.especialidade_id
             {where}
             ORDER BY m.nome
         """)
         cols = ["id","nome","crm","uf","telefone","email","endereco",
-                "site","redes_sociais","foto_drive_id","observacoes","ativo","especialidade"]
+                "site","redes_sociais","foto_drive_id","observacoes","ativo",
+                "especialidade","especialidade_id"]
         rows = cur.fetchall()
         return [dict(zip(cols, r)) for r in rows]
     finally:
@@ -1961,12 +2954,13 @@ def salvar_consulta(dados: dict) -> int:
     conn = sqlite3.connect(DB_PATH, timeout=30)
     try:
         cur  = conn.cursor()
+        _data = normalizar_data(dados["data"])
         if dados.get("id"):
             cur.execute("""
                 UPDATE consultas SET medico_id=?, data=?, hora=?, tipo=?,
                 local=?, observacoes=?, pauta=?, tipo_compromisso=?, clinica_id=?
                 WHERE id=?
-            """, (dados.get("medico_id"), dados["data"], dados.get("hora"),
+            """, (dados.get("medico_id"), _data, dados.get("hora"),
                   dados.get("tipo","agendada"), dados.get("local"),
                   dados.get("observacoes"), pauta_json,
                   dados.get("tipo_compromisso","consulta"), dados.get("clinica_id"),
@@ -1979,7 +2973,7 @@ def salvar_consulta(dados: dict) -> int:
                      pauta, tipo_compromisso, clinica_id)
                 VALUES (?,?,?,?,?,?,?,?,?,?)
             """, (dados.get("medico_id"), dados.get("paciente_id"),
-                  dados["data"], dados.get("hora"),
+                  _data, dados.get("hora"),
                   dados.get("tipo","agendada"), dados.get("local"),
                   dados.get("observacoes"), pauta_json,
                   dados.get("tipo_compromisso","consulta"), dados.get("clinica_id")))
@@ -2064,11 +3058,12 @@ def salvar_receita(dados: dict) -> int:
     try:
         cur  = conn.cursor()
         cur.execute("""
-            INSERT INTO receitas (consulta_id, medico_id, drive_file_id, nome_arquivo, data, observacoes)
-            VALUES (?,?,?,?,?,?)
+            INSERT INTO receitas (consulta_id, medico_id, drive_file_id, nome_arquivo, data, observacoes, foto_path)
+            VALUES (?,?,?,?,?,?,?)
         """, (dados.get("consulta_id"), dados.get("medico_id"),
               dados.get("drive_file_id"), dados.get("nome_arquivo"),
-              dados.get("data"), dados.get("observacoes")))
+              normalizar_data(dados.get("data")), dados.get("observacoes"),
+              dados.get("foto_path")))
         rid = cur.lastrowid
         conn.commit()
         return rid
@@ -2086,13 +3081,13 @@ def listar_receitas(consulta_id: int = None) -> list[dict]:
         where = f"WHERE r.consulta_id = {consulta_id}" if consulta_id else ""
         cur.execute(f"""
             SELECT r.id, r.data, r.nome_arquivo, r.drive_file_id,
-                   r.observacoes, m.nome as medico
+                   r.observacoes, m.nome as medico, r.foto_path
             FROM receitas r
             LEFT JOIN medicos m ON m.id = r.medico_id
             {where}
             ORDER BY r.data DESC
         """)
-        cols = ["id","data","nome_arquivo","drive_file_id","observacoes","medico"]
+        cols = ["id","data","nome_arquivo","drive_file_id","observacoes","medico","foto_path"]
         rows = cur.fetchall()
         return [dict(zip(cols, r)) for r in rows]
     finally:
@@ -2141,33 +3136,39 @@ def salvar_remedio(dados: dict) -> int:
     conn = sqlite3.connect(DB_PATH, timeout=30)
     try:
         cur  = conn.cursor()
+        _di = normalizar_data(dados.get("data_inicio"))
+        _df = dados.get("data_fim")
+        if _df and _df != "continuo":
+            _df = normalizar_data(_df)
         if dados.get("id"):
             cur.execute("""
                 UPDATE remedios SET nome=?, dosagem=?, frequencia=?, data_inicio=?,
                 data_fim=?, medico_id=?, receita_id=?, estoque_atual=?,
                 estoque_minimo=?, ativo=?, observacoes=?, principio_ativo=?,
-                tipo=?, prescrito=? WHERE id=?
+                tipo=?, prescrito=?, internacao_id=? WHERE id=?
             """, (dados["nome"], dados.get("dosagem"), dados.get("frequencia"),
-                  dados.get("data_inicio"), dados.get("data_fim"),
+                  _di, _df,
                   dados.get("medico_id"), dados.get("receita_id"),
                   dados.get("estoque_atual", 0), dados.get("estoque_minimo", 5),
                   dados.get("ativo", 1), dados.get("observacoes"),
                   dados.get("principio_ativo"),
                   dados.get("tipo", "remedio"), dados.get("prescrito", 0),
+                  dados.get("internacao_id"),
                   dados["id"]))
             rid = dados["id"]
         else:
             cur.execute("""
                 INSERT INTO remedios (nome, dosagem, frequencia, data_inicio, data_fim,
                 medico_id, receita_id, estoque_atual, estoque_minimo, observacoes,
-                principio_ativo, tipo, prescrito)
-                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
+                principio_ativo, tipo, prescrito, internacao_id)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
             """, (dados["nome"], dados.get("dosagem"), dados.get("frequencia"),
-                  dados.get("data_inicio"), dados.get("data_fim"),
+                  _di, _df,
                   dados.get("medico_id"), dados.get("receita_id"),
                   dados.get("estoque_atual", 0), dados.get("estoque_minimo", 5),
                   dados.get("observacoes"), dados.get("principio_ativo"),
-                  dados.get("tipo", "remedio"), dados.get("prescrito", 0)))
+                  dados.get("tipo", "remedio"), dados.get("prescrito", 0),
+                  dados.get("internacao_id")))
             rid = cur.lastrowid
         conn.commit()
         return rid
@@ -2920,6 +3921,88 @@ def atualizar_ultimo_acesso(usuario_id: int):
 
 
 # ══════════════════════════════════════════════════════════════
+# HELPERS — OBSERVACOES MEDICO
+# ══════════════════════════════════════════════════════════════
+
+def salvar_observacao_medico(dados: dict) -> int:
+    conn = sqlite3.connect(DB_PATH, timeout=30)
+    try:
+        cur = conn.cursor()
+        cur.execute("""
+            INSERT INTO observacoes_medico
+            (medico_id, nome_medico, data, texto, drive_file_id, nome_arquivo)
+            VALUES (?,?,?,?,?,?)
+        """, (
+            dados.get("medico_id"),
+            dados.get("nome_medico"),
+            dados.get("data"),
+            dados["texto"],
+            dados.get("drive_file_id"),
+            dados.get("nome_arquivo"),
+        ))
+        oid = cur.lastrowid
+        conn.commit()
+        return oid
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
+def listar_observacoes_medico(medico_id: int = None) -> list[dict]:
+    conn = sqlite3.connect(DB_PATH, timeout=30)
+    try:
+        cur = conn.cursor()
+        if medico_id:
+            cur.execute("""
+                SELECT id, medico_id, nome_medico, data, texto,
+                       drive_file_id, nome_arquivo, lida_paciente, criado_em
+                FROM observacoes_medico
+                WHERE medico_id = ?
+                ORDER BY data DESC, criado_em DESC
+            """, (medico_id,))
+        else:
+            cur.execute("""
+                SELECT id, medico_id, nome_medico, data, texto,
+                       drive_file_id, nome_arquivo, lida_paciente, criado_em
+                FROM observacoes_medico
+                ORDER BY data DESC, criado_em DESC
+            """)
+        cols = ["id","medico_id","nome_medico","data","texto",
+                "drive_file_id","nome_arquivo","lida_paciente","criado_em"]
+        return [dict(zip(cols, r)) for r in cur.fetchall()]
+    finally:
+        conn.close()
+
+
+def marcar_observacao_lida(obs_id: int):
+    conn = sqlite3.connect(DB_PATH, timeout=30)
+    try:
+        conn.execute(
+            "UPDATE observacoes_medico SET lida_paciente = 1 WHERE id = ?",
+            (obs_id,))
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
+def contar_observacoes_nao_lidas() -> int:
+    conn = sqlite3.connect(DB_PATH, timeout=30)
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT COUNT(*) FROM observacoes_medico WHERE lida_paciente = 0")
+        row = cur.fetchone()
+        return row[0] if row else 0
+    finally:
+        conn.close()
+
+
+# ══════════════════════════════════════════════════════════════
 # HELPERS — COMPARTILHAMENTOS
 # ══════════════════════════════════════════════════════════════
 
@@ -3294,14 +4377,14 @@ def listar_templates(so_ativos=True) -> list[dict]:
         with sqlite3.connect(DB_PATH, timeout=10) as conn:
             where = "WHERE ativo=1" if so_ativos else ""
             rows = conn.execute(f"""
-                SELECT t.id, t.nome, t.icone, t.cor, t.padrao, t.ativo,
+                SELECT t.id, t.nome, t.icone, t.cor, t.tipo, t.horario, t.padrao, t.ativo,
                        COUNT(m.id) as total_momentos
                 FROM rotinas_templates t
                 LEFT JOIN momentos_rotina m ON m.template_id = t.id
                 {where}
-                GROUP BY t.id ORDER BY t.padrao DESC, t.nome
+                GROUP BY t.id ORDER BY t.horario NULLS LAST, t.nome
             """).fetchall()
-            cols = ["id","nome","icone","cor","padrao","ativo","total_momentos"]
+            cols = ["id","nome","icone","cor","tipo","horario","padrao","ativo","total_momentos"]
             return [dict(zip(cols, r)) for r in rows]
     except Exception as ex:
         print(f"[MODEL] listar_templates: {ex}")
@@ -3312,17 +4395,20 @@ def salvar_template(dados: dict) -> int:
     try:
         with sqlite3.connect(DB_PATH, timeout=10) as conn:
             if dados.get("id"):
-                conn.execute("""UPDATE rotinas_templates SET nome=?, icone=?, cor=?, padrao=?, ativo=?
+                conn.execute("""UPDATE rotinas_templates
+                    SET nome=?, tipo=?, horario=?, padrao=?, ativo=?
                     WHERE id=?""",
-                    (dados["nome"], dados.get("icone","today_rounded"),
-                     dados.get("cor","#58A6FF"), 1 if dados.get("padrao") else 0,
+                    (dados["nome"], dados.get("tipo","alimentacao"),
+                     dados.get("horario") or None,
+                     1 if dados.get("padrao") else 0,
                      1 if dados.get("ativo", True) else 0, dados["id"]))
                 return dados["id"]
             else:
-                cur = conn.execute("""INSERT INTO rotinas_templates (nome,icone,cor,padrao,ativo)
+                cur = conn.execute("""INSERT INTO rotinas_templates (nome,tipo,horario,padrao,ativo)
                     VALUES (?,?,?,?,?)""",
-                    (dados["nome"], dados.get("icone","today_rounded"),
-                     dados.get("cor","#58A6FF"), 1 if dados.get("padrao") else 0, 1))
+                    (dados["nome"], dados.get("tipo","alimentacao"),
+                     dados.get("horario") or None,
+                     1 if dados.get("padrao") else 0, 1))
                 return cur.lastrowid
     except Exception as ex:
         print(f"[MODEL] salvar_template: {ex}")
@@ -3387,13 +4473,17 @@ def listar_itens(momento_id: int) -> list[dict]:
     try:
         with sqlite3.connect(DB_PATH, timeout=10) as conn:
             rows = conn.execute("""
-                SELECT i.id, i.tipo, i.descricao, i.detalhe, i.horario, i.ordem,
+                SELECT i.id, i.tipo, i.descricao, i.quantidade, i.unidade,
+                       i.detalhe, i.horario, i.frequencia,
+                       i.calorias, i.proteinas, i.vitaminas, i.ordem,
                        r.nome as remedio_nome, r.dosagem as remedio_dosagem
                 FROM itens_momento i
                 LEFT JOIN remedios r ON r.id = i.remedio_id
                 WHERE i.momento_id=? ORDER BY i.ordem, i.id
             """, (momento_id,)).fetchall()
-            cols = ["id","tipo","descricao","detalhe","horario","ordem",
+            cols = ["id","tipo","descricao","quantidade","unidade",
+                    "detalhe","horario","frequencia",
+                    "calorias","proteinas","vitaminas","ordem",
                     "remedio_nome","remedio_dosagem"]
             return [dict(zip(cols, r)) for r in rows]
     except Exception as ex:
@@ -3405,23 +4495,68 @@ def salvar_item(dados: dict) -> int:
     try:
         with sqlite3.connect(DB_PATH, timeout=10) as conn:
             if dados.get("id"):
-                conn.execute("""UPDATE itens_momento SET tipo=?, descricao=?, detalhe=?,
-                    horario=?, remedio_id=?, ordem=? WHERE id=?""",
+                conn.execute("""UPDATE itens_momento SET tipo=?, descricao=?,
+                    quantidade=?, unidade=?, detalhe=?,
+                    horario=?, frequencia=?, remedio_id=?, ordem=? WHERE id=?""",
                     (dados.get("tipo","alimento"), dados["descricao"],
+                     dados.get("quantidade"), dados.get("unidade","Unidade"),
                      dados.get("detalhe"), dados.get("horario"),
+                     dados.get("frequencia","diario"),
                      dados.get("remedio_id"), dados.get("ordem", 0), dados["id"]))
                 return dados["id"]
             else:
                 cur = conn.execute("""INSERT INTO itens_momento
-                    (momento_id,tipo,descricao,detalhe,horario,remedio_id,ordem)
-                    VALUES (?,?,?,?,?,?,?)""",
+                    (momento_id,tipo,descricao,quantidade,unidade,
+                     detalhe,horario,frequencia,remedio_id,ordem)
+                    VALUES (?,?,?,?,?,?,?,?,?,?)""",
                     (dados["momento_id"], dados.get("tipo","alimento"), dados["descricao"],
+                     dados.get("quantidade"), dados.get("unidade","Unidade"),
                      dados.get("detalhe"), dados.get("horario"),
+                     dados.get("frequencia","diario"),
                      dados.get("remedio_id"), dados.get("ordem", 0)))
                 return cur.lastrowid
     except Exception as ex:
         print(f"[MODEL] salvar_item: {ex}")
         return 0
+
+
+def listar_nutricao_por_template() -> dict:
+    """Retorna {template_id: {calorias, proteinas, vitaminas_set}} para todos os templates ativos."""
+    try:
+        with sqlite3.connect(DB_PATH, timeout=10) as conn:
+            rows = conn.execute("""
+                SELECT t.id,
+                       SUM(COALESCE(i.calorias,  0)) AS cal,
+                       SUM(COALESCE(i.proteinas, 0)) AS prot,
+                       GROUP_CONCAT(i.vitaminas, ',')  AS vits
+                FROM rotinas_templates t
+                LEFT JOIN momentos_rotina m ON m.template_id = t.id
+                LEFT JOIN itens_momento   i ON i.momento_id  = m.id
+                WHERE t.ativo = 1
+                GROUP BY t.id
+            """).fetchall()
+        resultado = {}
+        for tid, cal, prot, vits_raw in rows:
+            vits = sorted(set(
+                v.strip()
+                for v in (vits_raw or "").split(",")
+                if v.strip()
+            ))
+            resultado[tid] = {"calorias": cal or 0, "proteinas": prot or 0, "vitaminas": vits}
+        return resultado
+    except Exception as ex:
+        print(f"[MODEL] listar_nutricao_por_template: {ex}")
+        return {}
+
+
+def salvar_nutricao_item(item_id: int, calorias, proteinas, vitaminas: str) -> None:
+    try:
+        with sqlite3.connect(DB_PATH, timeout=10) as conn:
+            conn.execute(
+                "UPDATE itens_momento SET calorias=?, proteinas=?, vitaminas=? WHERE id=?",
+                (calorias, proteinas, vitaminas, item_id))
+    except Exception as ex:
+        print(f"[MODEL] salvar_nutricao_item: {ex}")
 
 
 def excluir_item(iid: int) -> None:
@@ -3462,6 +4597,7 @@ def listar_leituras_marcador(termos: list[str], limite: int = 200) -> list[dict]
 def salvar_leitura_marcador(dados: dict) -> int:
     """Insere ou atualiza uma leitura em marcadores_leituras. Retorna o id."""
     try:
+        _dm = normalizar_data(dados.get("data_medicao"))
         with sqlite3.connect(DB_PATH, timeout=30) as conn:
             if dados.get("id"):
                 conn.execute("""
@@ -3473,7 +4609,7 @@ def salvar_leitura_marcador(dados: dict) -> int:
                 """, (dados["parametro"], dados.get("categoria"),
                       dados.get("valor"), dados.get("valor_txt"),
                       dados.get("unidade"), dados.get("referencia"),
-                      dados["data_medicao"], dados.get("hora_medicao"),
+                      _dm, dados.get("hora_medicao"),
                       dados.get("fonte","manual"), dados.get("observacoes"),
                       dados["id"]))
                 return dados["id"]
@@ -3486,7 +4622,7 @@ def salvar_leitura_marcador(dados: dict) -> int:
                 """, (dados["parametro"], dados.get("categoria"),
                       dados.get("valor"), dados.get("valor_txt"),
                       dados.get("unidade","mg/dL"), dados.get("referencia"),
-                      dados["data_medicao"], dados.get("hora_medicao"),
+                      _dm, dados.get("hora_medicao"),
                       dados.get("fonte","manual"), dados.get("observacoes")))
                 _notify()
                 return cur.lastrowid
@@ -3505,22 +4641,27 @@ def excluir_leitura_marcador(leitura_id: int) -> None:
 
 
 def listar_exames_glicemia(termos: list[str], limite: int = 100) -> list[dict]:
-    """Retorna resultados de lab vinculados a glicemia, filtrando pelo nome/categoria do exame padrao."""
+    """Retorna resultados de lab vinculados a glicemia.
+    Busca pelo nome_oficial/categoria do exame_padrao OU pelo parametro direto em exame_resultados.
+    Usa LEFT JOIN para incluir resultados sem exame_padrao_id.
+    """
     like = [f"%{t.lower()}%" for t in termos]
-    conds_nome = " OR ".join(["LOWER(ep.nome_oficial) LIKE ?" for _ in termos])
-    conds_cat  = " OR ".join(["LOWER(ep.categoria) LIKE ?"   for _ in termos])
-    params = like + like + [limite]
+    conds_nome  = " OR ".join(["LOWER(ep.nome_oficial) LIKE ?" for _ in termos])
+    conds_cat   = " OR ".join(["LOWER(ep.categoria)    LIKE ?" for _ in termos])
+    conds_param = " OR ".join(["LOWER(r.parametro)     LIKE ?" for _ in termos])
+    params = like + like + like + [limite]
     try:
         with sqlite3.connect(DB_PATH, timeout=30) as conn:
             cur = conn.execute(f"""
-                SELECT r.id, r.exame_padrao_id, ep.nome_oficial AS parametro,
+                SELECT r.id, r.exame_padrao_id,
+                       COALESCE(ep.nome_oficial, r.parametro) AS parametro,
                        r.valor, r.unidade, r.referencia, r.nivel_interpretacao,
                        e.data_exame, e.arquivo_origem, e.laboratorio,
                        e.drive_file_id, e.id AS exame_id
-                FROM resultados_estruturados r
+                FROM exame_resultados r
                 JOIN exames e ON r.exame_id = e.id
-                JOIN exames_padrao ep ON r.exame_padrao_id = ep.id
-                WHERE ({conds_nome} OR {conds_cat})
+                LEFT JOIN exames_padrao ep ON r.exame_padrao_id = ep.id
+                WHERE ({conds_nome} OR {conds_cat} OR {conds_param})
                   AND r.valor IS NOT NULL AND r.valor != ''
                 ORDER BY e.data_exame DESC
                 LIMIT ?
@@ -3532,6 +4673,669 @@ def listar_exames_glicemia(termos: list[str], limite: int = 100) -> list[dict]:
     except Exception as ex:
         print(f"[MODEL] listar_exames_glicemia: {ex}")
         return []
+
+
+# ══════════════════════════════════════════════════════════════
+# ÁGUA DIÁRIA
+# ══════════════════════════════════════════════════════════════
+
+def registrar_agua(ml: int, data: str = None) -> int:
+    """Registra um copo/dose de água em marcadores_leituras. Retorna id."""
+    import datetime as _dt
+    data = data or _dt.date.today().isoformat()
+    dados = {
+        "parametro":    "Agua Ingerida",
+        "categoria":    "Hidratacao",
+        "valor":        float(ml),
+        "valor_txt":    str(ml),
+        "unidade":      "ml",
+        "referencia":   "2500",
+        "data_medicao": data,
+        "fonte":        "manual",
+        "observacoes":  "[agua]",
+    }
+    return salvar_leitura_marcador(dados)
+
+
+def total_agua_dia(data: str = None) -> int:
+    """Retorna o total de ml de água registrados em uma data."""
+    import datetime as _dt
+    data = data or _dt.date.today().isoformat()
+    try:
+        with sqlite3.connect(DB_PATH, timeout=30) as conn:
+            row = conn.execute("""
+                SELECT COALESCE(SUM(valor), 0)
+                FROM marcadores_leituras
+                WHERE LOWER(parametro) LIKE '%agua%'
+                  AND LOWER(observacoes) LIKE '%[agua]%'
+                  AND data_medicao = ?
+            """, (data,)).fetchone()
+            return int(row[0]) if row else 0
+    except Exception:
+        return 0
+
+
+def meta_agua_template() -> int:
+    """Retorna a meta diária de água do template padrão (ml). Padrão 2500."""
+    try:
+        with sqlite3.connect(DB_PATH, timeout=30) as conn:
+            row = conn.execute("""
+                SELECT meta_agua_ml FROM rotinas_templates
+                WHERE padrao = 1 AND ativo = 1 LIMIT 1
+            """).fetchone()
+            if row and row[0]:
+                return int(row[0])
+    except Exception:
+        pass
+    return 2500
+
+
+def salvar_meta_agua(ml: int, template_id: int = None):
+    """Salva meta de água no template padrão ou no template_id dado."""
+    try:
+        with sqlite3.connect(DB_PATH, timeout=30) as conn:
+            if template_id:
+                conn.execute("UPDATE rotinas_templates SET meta_agua_ml=? WHERE id=?",
+                             (ml, template_id))
+            else:
+                conn.execute("""UPDATE rotinas_templates SET meta_agua_ml=?
+                                WHERE padrao=1 AND ativo=1""", (ml,))
+            conn.commit()
+    except Exception as ex:
+        print(f"[MODEL] salvar_meta_agua: {ex}")
+
+
+# ══════════════════════════════════════════════════════════════
+# DESAFIOS DE SUSPENSÃO
+# ══════════════════════════════════════════════════════════════
+
+def _migrar_desafios():
+    """Cria tabela desafios_ativos e adiciona meta_agua_ml em rotinas_templates."""
+    try:
+        with sqlite3.connect(DB_PATH, timeout=30) as conn:
+            conn.executescript("""
+                CREATE TABLE IF NOT EXISTS desafios_ativos (
+                    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+                    nome            TEXT NOT NULL,
+                    tipo            TEXT DEFAULT 'suspensao',
+                    descricao       TEXT,
+                    motivo_marcador TEXT,
+                    data_inicio     TEXT NOT NULL,
+                    data_fim        TEXT,
+                    ativo           INTEGER DEFAULT 1,
+                    criado_em       TEXT DEFAULT (datetime('now'))
+                );
+                CREATE INDEX IF NOT EXISTS idx_desafios_ativo
+                    ON desafios_ativos(ativo, data_inicio DESC);
+            """)
+            # migração segura
+            for sql in [
+                "ALTER TABLE rotinas_templates ADD COLUMN meta_agua_ml INTEGER DEFAULT 2500",
+            ]:
+                try: conn.execute(sql)
+                except Exception: pass
+            conn.commit()
+    except Exception as ex:
+        print(f"[MODEL] _migrar_desafios: {ex}")
+
+
+def listar_desafios_ativos() -> list[dict]:
+    try:
+        with sqlite3.connect(DB_PATH, timeout=30) as conn:
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute("""
+                SELECT * FROM desafios_ativos
+                WHERE ativo = 1
+                ORDER BY data_inicio DESC
+            """).fetchall()
+            return [dict(r) for r in rows]
+    except Exception:
+        return []
+
+
+def salvar_desafio(dados: dict) -> int:
+    try:
+        with sqlite3.connect(DB_PATH, timeout=30) as conn:
+            if dados.get("id"):
+                conn.execute("""
+                    UPDATE desafios_ativos
+                    SET nome=?, tipo=?, descricao=?, motivo_marcador=?,
+                        data_inicio=?, data_fim=?, ativo=?
+                    WHERE id=?
+                """, (dados["nome"], dados.get("tipo","suspensao"),
+                      dados.get("descricao"), dados.get("motivo_marcador"),
+                      dados["data_inicio"], dados.get("data_fim"),
+                      int(dados.get("ativo", 1)), dados["id"]))
+                conn.commit()
+                return dados["id"]
+            else:
+                cur = conn.execute("""
+                    INSERT INTO desafios_ativos
+                        (nome, tipo, descricao, motivo_marcador, data_inicio, data_fim, ativo)
+                    VALUES (?, ?, ?, ?, ?, ?, 1)
+                """, (dados["nome"], dados.get("tipo","suspensao"),
+                      dados.get("descricao"), dados.get("motivo_marcador"),
+                      dados["data_inicio"], dados.get("data_fim")))
+                conn.commit()
+                return cur.lastrowid
+    except Exception as ex:
+        print(f"[MODEL] salvar_desafio: {ex}")
+        return 0
+
+
+def encerrar_desafio(desafio_id: int):
+    try:
+        with sqlite3.connect(DB_PATH, timeout=30) as conn:
+            conn.execute("UPDATE desafios_ativos SET ativo=0 WHERE id=?",
+                         (desafio_id,))
+            conn.commit()
+    except Exception as ex:
+        print(f"[MODEL] encerrar_desafio: {ex}")
+
+
+# ══════════════════════════════════════════════════════════════
+# HELPERS — INTERNACOES
+# ══════════════════════════════════════════════════════════════
+
+def listar_internacoes() -> list[dict]:
+    try:
+        with sqlite3.connect(DB_PATH, timeout=30) as conn:
+            cur = conn.execute("""
+                SELECT i.id, i.hospital, i.data_entrada, i.data_saida, i.tipo,
+                       i.motivo, i.cid_entrada, i.diagnostico_saida, i.cid_saida,
+                       i.observacoes, i.medico_id, i.clinica_id, i.criado_em,
+                       i.documento_local, m.nome AS medico_nome,
+                       i.cidade, i.uf, i.objetivo,
+                       i.drive_file_id, i.drive_link, i.fonte_dados, i.gatilho,
+                       i.medico_responsavel
+                FROM internacoes i
+                LEFT JOIN medicos m ON m.id = i.medico_id
+                ORDER BY i.data_entrada DESC, i.criado_em DESC
+            """)
+            cols = ["id","hospital","data_entrada","data_saida","tipo","motivo",
+                    "cid_entrada","diagnostico_saida","cid_saida","observacoes",
+                    "medico_id","clinica_id","criado_em","documento_local","medico_nome",
+                    "cidade","uf","objetivo","drive_file_id","drive_link","fonte_dados","gatilho",
+                    "medico_responsavel"]
+            return [dict(zip(cols, r)) for r in cur.fetchall()]
+    except Exception as ex:
+        print(f"[MODEL] listar_internacoes: {ex}")
+        return []
+
+
+def listar_marcadores_internacao(internacao_id: int,
+                                  data_entrada: str, data_saida: str) -> list[dict]:
+    """Retorna marcadores vinculados a uma internacao.
+    Prioriza registros com internacao_id explícito; fallback por intervalo de datas."""
+    try:
+        with sqlite3.connect(DB_PATH, timeout=30) as conn:
+            data_fim = data_saida or _datetime.date.today().isoformat()
+            rows = conn.execute("""
+                SELECT id, parametro, categoria, valor, valor_txt, unidade, referencia,
+                       data_medicao, hora_medicao, fonte, observacoes
+                FROM marcadores_leituras
+                WHERE internacao_id = ?
+                   OR (internacao_id IS NULL AND data_medicao BETWEEN ? AND ?)
+                ORDER BY data_medicao ASC, hora_medicao ASC
+            """, (internacao_id, data_entrada, data_fim)).fetchall()
+            cols = ["id","parametro","categoria","valor","valor_txt","unidade","referencia",
+                    "data_medicao","hora_medicao","fonte","observacoes"]
+            return [dict(zip(cols, r)) for r in rows]
+    except Exception as ex:
+        print(f"[MODEL] listar_marcadores_internacao: {ex}")
+        return []
+
+
+def buscar_internacao_similar(hospital: str, data_entrada: str,
+                              cidade: str = "", uf: str = "") -> list[dict]:
+    """Retorna internacoes com mesmo hospital (fuzzy) e mesma data de entrada.
+
+    Estrategia em camadas para tolerar variacoes de nome entre reprocessamentos:
+      1. Primeiros 6 chars do hospital (ex: "SAMED" cobre "SAMEDIL..." e "SAMEDIL-SERVICOS...")
+      2. Se nao achar: mesma data + mesma cidade + mesmo UF (quando preenchidos)
+    """
+    import unicodedata, re as _re
+
+    def _norm6(s: str) -> str:
+        s = unicodedata.normalize("NFKD", (s or "")).encode("ascii", "ignore").decode()
+        s = _re.sub(r"[^a-z0-9]+", "", s.lower())
+        return s[:6]
+
+    d = normalizar_data(data_entrada)
+    cols = ["id","hospital","data_entrada","data_saida","motivo","objetivo","cidade","uf"]
+    try:
+        with sqlite3.connect(DB_PATH, timeout=30) as conn:
+            # camada 1: data + primeiros 6 chars normalizados do hospital
+            rows = conn.execute(
+                "SELECT id,hospital,data_entrada,data_saida,motivo,objetivo,cidade,uf "
+                "FROM internacoes WHERE data_entrada = ?", (d,)
+            ).fetchall()
+            h6 = _norm6(hospital)
+            matches = [r for r in rows if _norm6(r[1])[:6] == h6]
+            if matches:
+                return [dict(zip(cols, r)) for r in matches]
+            # camada 2: mesma data + cidade + uf quando informados
+            if cidade and uf:
+                matches2 = [
+                    r for r in rows
+                    if (r[6] or "").strip().lower() == cidade.strip().lower()
+                    and (r[7] or "").strip().upper() == uf.strip().upper()
+                ]
+                if matches2:
+                    return [dict(zip(cols, r)) for r in matches2]
+        return []
+    except Exception as ex:
+        print(f"[MODEL] buscar_internacao_similar: {ex}")
+        return []
+
+
+def buscar_exame_similar(tipo_exame: str, data_exame: str, laboratorio: str = "") -> bool:
+    """Retorna True se ja existe exame com mesmo tipo/data/laboratorio."""
+    try:
+        with sqlite3.connect(DB_PATH, timeout=30) as conn:
+            row = conn.execute("""
+                SELECT id FROM exames
+                WHERE LOWER(tipo_exame) = ? AND data_exame = ?
+                  AND LOWER(COALESCE(laboratorio,'')) = ?
+            """, (tipo_exame.lower(), normalizar_data(data_exame),
+                  (laboratorio or "").lower())).fetchone()
+            return row is not None
+    except Exception as ex:
+        print(f"[MODEL] buscar_exame_similar: {ex}")
+        return False
+
+
+def listar_exames_internacao(internacao_id: int) -> list[dict]:
+    """Retorna exames vinculados a uma internacao, ordenados por data."""
+    try:
+        with sqlite3.connect(DB_PATH, timeout=10) as conn:
+            rows = conn.execute("""
+                SELECT id, tipo_exame, data_exame, laboratorio, medico_solicit, status,
+                       drive_file_id, resultado_texto
+                FROM exames WHERE internacao_id = ? ORDER BY data_exame DESC
+            """, (internacao_id,)).fetchall()
+        cols = ["id","tipo_exame","data_exame","laboratorio","medico_solicit","status",
+                "drive_file_id","resultado_texto"]
+        return [dict(zip(cols, r)) for r in rows]
+    except Exception as ex:
+        print(f"[MODEL] listar_exames_internacao: {ex}")
+        return []
+
+
+def vincular_laudo_exame(exame_id: int, drive_file_id: str, arquivo_local: str = None) -> bool:
+    """Salva drive_file_id (laudo) no registro de exame. Retorna True se OK."""
+    try:
+        with sqlite3.connect(DB_PATH, timeout=10) as conn:
+            conn.execute(
+                "UPDATE exames SET drive_file_id=? WHERE id=?",
+                (drive_file_id, exame_id)
+            )
+        return True
+    except Exception as ex:
+        print(f"[MODEL] vincular_laudo_exame: {ex}")
+        return False
+
+
+def listar_diagnosticos_internacao(internacao_id: int) -> list[dict]:
+    """Retorna diagnosticos estruturados vinculados a uma internacao."""
+    try:
+        with sqlite3.connect(DB_PATH, timeout=10) as conn:
+            rows = conn.execute("""
+                SELECT id, internacao_id, cid, descricao, tipo, certeza, fonte, criado_em
+                FROM diagnosticos_internacao
+                WHERE internacao_id = ?
+                ORDER BY tipo DESC, criado_em ASC
+            """, (internacao_id,)).fetchall()
+        cols = ["id","internacao_id","cid","descricao","tipo","certeza","fonte","criado_em"]
+        return [dict(zip(cols, r)) for r in rows]
+    except Exception as ex:
+        print(f"[MODEL] listar_diagnosticos_internacao: {ex}")
+        return []
+
+
+def salvar_diagnostico_internacao(dados: dict) -> int:
+    """Cria ou atualiza um diagnostico de internacao. Retorna id."""
+    try:
+        with sqlite3.connect(DB_PATH, timeout=10) as conn:
+            did = dados.get("id")
+            if did:
+                conn.execute("""
+                    UPDATE diagnosticos_internacao
+                    SET cid=?, descricao=?, tipo=?, certeza=?, fonte=?
+                    WHERE id=?
+                """, (
+                    dados.get("cid"), dados.get("descricao"),
+                    dados.get("tipo","saida"), dados.get("certeza","confirmado"),
+                    dados.get("fonte","manual"), did
+                ))
+                return did
+            else:
+                cur = conn.execute("""
+                    INSERT INTO diagnosticos_internacao
+                    (internacao_id, cid, descricao, tipo, certeza, fonte)
+                    VALUES (?,?,?,?,?,?)
+                """, (
+                    dados["internacao_id"], dados.get("cid"), dados.get("descricao"),
+                    dados.get("tipo","saida"), dados.get("certeza","confirmado"),
+                    dados.get("fonte","manual")
+                ))
+                return cur.lastrowid
+    except Exception as ex:
+        print(f"[MODEL] salvar_diagnostico_internacao: {ex}")
+        return 0
+
+
+def excluir_diagnostico_internacao(diagnostico_id: int) -> bool:
+    """Remove um diagnostico de internacao."""
+    try:
+        with sqlite3.connect(DB_PATH, timeout=10) as conn:
+            conn.execute(
+                "DELETE FROM diagnosticos_internacao WHERE id=?", (diagnostico_id,))
+        return True
+    except Exception as ex:
+        print(f"[MODEL] excluir_diagnostico_internacao: {ex}")
+        return False
+
+
+def listar_dados_brutos_internacao(internacao_id: int) -> list[dict]:
+    """Retorna dados brutos/nao-classificados vinculados a uma internacao."""
+    try:
+        with sqlite3.connect(DB_PATH, timeout=10) as conn:
+            rows = conn.execute("""
+                SELECT id, internacao_id, categoria, conteudo, pagina_origem, fonte, criado_em
+                FROM internacao_dados_brutos
+                WHERE internacao_id = ?
+                ORDER BY pagina_origem ASC, criado_em ASC
+            """, (internacao_id,)).fetchall()
+        cols = ["id","internacao_id","categoria","conteudo","pagina_origem","fonte","criado_em"]
+        return [dict(zip(cols, r)) for r in rows]
+    except Exception as ex:
+        print(f"[MODEL] listar_dados_brutos_internacao: {ex}")
+        return []
+
+
+def salvar_dado_bruto_internacao(dados: dict) -> int:
+    """Grava dado bruto vinculado a internacao. Retorna id."""
+    try:
+        with sqlite3.connect(DB_PATH, timeout=10) as conn:
+            did = dados.get("id")
+            if did:
+                conn.execute("""
+                    UPDATE internacao_dados_brutos
+                    SET categoria=?, conteudo=?, pagina_origem=?, fonte=?
+                    WHERE id=?
+                """, (
+                    dados.get("categoria","outro"), dados.get("conteudo"),
+                    dados.get("pagina_origem"), dados.get("fonte","manual"), did
+                ))
+                return did
+            else:
+                cur = conn.execute("""
+                    INSERT INTO internacao_dados_brutos
+                    (internacao_id, categoria, conteudo, pagina_origem, fonte)
+                    VALUES (?,?,?,?,?)
+                """, (
+                    dados["internacao_id"], dados.get("categoria","outro"),
+                    dados.get("conteudo"), dados.get("pagina_origem"),
+                    dados.get("fonte","manual")
+                ))
+                return cur.lastrowid
+    except Exception as ex:
+        print(f"[MODEL] salvar_dado_bruto_internacao: {ex}")
+        return 0
+
+
+def excluir_dado_bruto_internacao(dado_id: int) -> bool:
+    """Remove dado bruto."""
+    try:
+        with sqlite3.connect(DB_PATH, timeout=10) as conn:
+            conn.execute(
+                "DELETE FROM internacao_dados_brutos WHERE id=?", (dado_id,))
+        return True
+    except Exception as ex:
+        print(f"[MODEL] excluir_dado_bruto_internacao: {ex}")
+        return False
+
+
+def listar_remedios_internacao(hospital: str) -> list[dict]:
+    """Retorna remedios com ativo=0 vinculados a internacao pelo nome do hospital."""
+    try:
+        prefixo = f"[Internacao: {hospital}]"
+        with sqlite3.connect(DB_PATH, timeout=10) as conn:
+            rows = conn.execute("""
+                SELECT id, nome, dosagem, frequencia, principio_ativo,
+                       data_inicio, data_fim, observacoes
+                FROM remedios
+                WHERE observacoes LIKE ? AND ativo = 0
+                ORDER BY nome
+            """, (prefixo + "%",)).fetchall()
+        cols = ["id","nome","dosagem","frequencia","principio_ativo",
+                "data_inicio","data_fim","observacoes"]
+        return [dict(zip(cols, r)) for r in rows]
+    except Exception as ex:
+        print(f"[MODEL] listar_remedios_internacao: {ex}")
+        return []
+
+
+def _inferir_modalidade(data_entrada: str, data_saida: str) -> str:
+    """Infere modalidade pelo número de dias: ps=mesmo dia, internacao=pernoite."""
+    if not data_entrada or not data_saida:
+        return "internacao"
+    try:
+        import datetime as _dt
+        de = _dt.date.fromisoformat(data_entrada[:10])
+        ds = _dt.date.fromisoformat(data_saida[:10])
+        return "ps" if (ds - de).days == 0 else "internacao"
+    except Exception:
+        return "internacao"
+
+
+def salvar_internacao(dados: dict) -> int:
+    conn = sqlite3.connect(DB_PATH, timeout=30)
+    try:
+        cur = conn.cursor()
+        _de = normalizar_data(dados["data_entrada"])
+        _ds = normalizar_data(dados.get("data_saida"))
+        _fonte = dados.get("fonte_dados") or (
+            "importado" if (dados.get("documento_local") or dados.get("drive_link")) else "manual")
+        _modalidade = dados.get("modalidade") or _inferir_modalidade(_de, _ds)
+        if dados.get("id"):
+            cur.execute("""
+                UPDATE internacoes SET hospital=?, medico_id=?, clinica_id=?,
+                data_entrada=?, data_saida=?, tipo=?, motivo=?, cid_entrada=?,
+                diagnostico_saida=?, cid_saida=?, observacoes=?, documento_local=?,
+                cidade=?, uf=?, objetivo=?, drive_file_id=?, drive_link=?, fonte_dados=?,
+                gatilho=?, modalidade=?
+                WHERE id=?
+            """, (dados["hospital"], dados.get("medico_id"), dados.get("clinica_id"),
+                  _de, _ds, dados.get("tipo","eletiva"),
+                  dados.get("motivo"), dados.get("cid_entrada"), dados.get("diagnostico_saida"),
+                  dados.get("cid_saida"), dados.get("observacoes"), dados.get("documento_local"),
+                  dados.get("cidade"), dados.get("uf"), dados.get("objetivo","tratamento"),
+                  dados.get("drive_file_id"), dados.get("drive_link"), _fonte,
+                  dados.get("gatilho"), _modalidade,
+                  dados["id"]))
+            rid = dados["id"]
+        else:
+            cur.execute("""
+                INSERT INTO internacoes (hospital, medico_id, clinica_id, data_entrada,
+                data_saida, tipo, motivo, cid_entrada, diagnostico_saida, cid_saida,
+                observacoes, documento_local, cidade, uf, objetivo, drive_file_id, drive_link,
+                fonte_dados, gatilho, modalidade)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            """, (dados["hospital"], dados.get("medico_id"), dados.get("clinica_id"),
+                  _de, _ds, dados.get("tipo","eletiva"),
+                  dados.get("motivo"), dados.get("cid_entrada"), dados.get("diagnostico_saida"),
+                  dados.get("cid_saida"), dados.get("observacoes"), dados.get("documento_local"),
+                  dados.get("cidade"), dados.get("uf"), dados.get("objetivo","tratamento"),
+                  dados.get("drive_file_id"), dados.get("drive_link"), _fonte,
+                  dados.get("gatilho"), _modalidade))
+            rid = cur.lastrowid
+        conn.commit()
+        return rid
+    except Exception:
+        conn.rollback(); raise
+    finally:
+        conn.close()
+
+
+def excluir_internacao(internacao_id: int) -> None:
+    conn = sqlite3.connect(DB_PATH, timeout=30)
+    try:
+        conn.execute("UPDATE procedimentos SET internacao_id=NULL WHERE internacao_id=?",
+                     (internacao_id,))
+        conn.execute("DELETE FROM internacoes WHERE id=?", (internacao_id,))
+        conn.commit()
+    finally:
+        conn.close()
+
+
+# ══════════════════════════════════════════════════════════════
+# HELPERS — PROCEDIMENTOS
+# ══════════════════════════════════════════════════════════════
+
+def listar_procedimentos(internacao_id: int = None) -> list[dict]:
+    try:
+        with sqlite3.connect(DB_PATH, timeout=30) as conn:
+            where = "WHERE p.internacao_id = ?" if internacao_id else ""
+            params = (internacao_id,) if internacao_id else ()
+            cur = conn.execute(f"""
+                SELECT p.id, p.internacao_id, p.medico_id, p.nome, p.tipo,
+                       p.data, p.hora, p.local, p.anestesia, p.cid,
+                       p.resultado, p.observacoes, p.criado_em,
+                       m.nome AS medico_nome,
+                       i.hospital AS internacao_hospital
+                FROM procedimentos p
+                LEFT JOIN medicos m ON m.id = p.medico_id
+                LEFT JOIN internacoes i ON i.id = p.internacao_id
+                {where}
+                ORDER BY p.data DESC, p.hora DESC
+            """, params)
+            cols = ["id","internacao_id","medico_id","nome","tipo","data","hora","local",
+                    "anestesia","cid","resultado","observacoes","criado_em",
+                    "medico_nome","internacao_hospital"]
+            return [dict(zip(cols, r)) for r in cur.fetchall()]
+    except Exception as ex:
+        print(f"[MODEL] listar_procedimentos: {ex}")
+        return []
+
+
+def salvar_procedimento(dados: dict) -> int:
+    conn = sqlite3.connect(DB_PATH, timeout=30)
+    try:
+        cur = conn.cursor()
+        if dados.get("id"):
+            cur.execute("""
+                UPDATE procedimentos SET internacao_id=?, medico_id=?, nome=?, tipo=?,
+                data=?, hora=?, local=?, anestesia=?, cid=?, resultado=?, observacoes=?
+                WHERE id=?
+            """, (dados.get("internacao_id"), dados.get("medico_id"), dados["nome"],
+                  dados.get("tipo","cirurgico"), dados["data"], dados.get("hora"),
+                  dados.get("local"), dados.get("anestesia","sem"), dados.get("cid"),
+                  dados.get("resultado"), dados.get("observacoes"), dados["id"]))
+            rid = dados["id"]
+        else:
+            cur.execute("""
+                INSERT INTO procedimentos (internacao_id, medico_id, nome, tipo, data,
+                hora, local, anestesia, cid, resultado, observacoes)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?)
+            """, (dados.get("internacao_id"), dados.get("medico_id"), dados["nome"],
+                  dados.get("tipo","cirurgico"), dados["data"], dados.get("hora"),
+                  dados.get("local"), dados.get("anestesia","sem"), dados.get("cid"),
+                  dados.get("resultado"), dados.get("observacoes")))
+            rid = cur.lastrowid
+        conn.commit()
+        return rid
+    except Exception:
+        conn.rollback(); raise
+    finally:
+        conn.close()
+
+
+def excluir_procedimento(proc_id: int) -> None:
+    conn = sqlite3.connect(DB_PATH, timeout=30)
+    try:
+        conn.execute("DELETE FROM procedimentos WHERE id=?", (proc_id,))
+        conn.commit()
+    finally:
+        conn.close()
+
+
+# ── Rotina Diario (log de excecoes e observacoes) ─────────────────────────────
+
+def listar_rotina_diario(limite: int = 60) -> list[dict]:
+    """Historico de alteracoes/observacoes, mais recentes primeiro."""
+    try:
+        with sqlite3.connect(DB_PATH, timeout=10) as conn:
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute("""
+                SELECT rd.*, im.descricao as item_descricao_fk
+                FROM rotina_diario rd
+                LEFT JOIN itens_momento im ON im.id = rd.item_id
+                ORDER BY rd.data DESC, rd.criado_em DESC
+                LIMIT ?
+            """, (limite,)).fetchall()
+            return [dict(r) for r in rows]
+    except Exception as ex:
+        print(f"[MODEL] listar_rotina_diario: {ex}")
+        return []
+
+
+def listar_alteracoes_ativas(data_ref: str) -> list[dict]:
+    """Retorna alteracoes cujo data_fim >= data_ref ou data_fim IS NULL (ainda ativas)."""
+    try:
+        with sqlite3.connect(DB_PATH, timeout=10) as conn:
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute("""
+                SELECT * FROM rotina_diario
+                WHERE (data_fim IS NULL OR data_fim >= ?)
+                  AND tipo IN ('suspensao','reducao','adicao')
+                ORDER BY data DESC
+            """, (data_ref,)).fetchall()
+            return [dict(r) for r in rows]
+    except Exception as ex:
+        print(f"[MODEL] listar_alteracoes_ativas: {ex}")
+        return []
+
+
+def salvar_rotina_diario(dados: dict) -> int | None:
+    """INSERT ou UPDATE de registro no diario de rotina. Retorna id."""
+    try:
+        with sqlite3.connect(DB_PATH, timeout=10) as conn:
+            if dados.get("id"):
+                conn.execute("""
+                    UPDATE rotina_diario
+                    SET data=?, item_id=?, item_nome=?, tipo=?, descricao=?, motivo=?, data_fim=?
+                    WHERE id=?
+                """, (
+                    dados.get("data"), dados.get("item_id"), dados.get("item_nome"),
+                    dados.get("tipo"), dados.get("descricao"), dados.get("motivo"),
+                    dados.get("data_fim"), dados["id"],
+                ))
+                return dados["id"]
+            else:
+                cur = conn.execute("""
+                    INSERT INTO rotina_diario (data, item_id, item_nome, tipo, descricao, motivo, data_fim)
+                    VALUES (?,?,?,?,?,?,?)
+                """, (
+                    dados.get("data"), dados.get("item_id"), dados.get("item_nome"),
+                    dados.get("tipo"), dados.get("descricao"), dados.get("motivo"),
+                    dados.get("data_fim"),
+                ))
+                return cur.lastrowid
+    except Exception as ex:
+        print(f"[MODEL] salvar_rotina_diario: {ex}")
+        return None
+
+
+def excluir_rotina_diario(registro_id: int) -> bool:
+    try:
+        with sqlite3.connect(DB_PATH, timeout=10) as conn:
+            conn.execute("DELETE FROM rotina_diario WHERE id=?", (registro_id,))
+        return True
+    except Exception as ex:
+        print(f"[MODEL] excluir_rotina_diario: {ex}")
+        return False
 
 
 if __name__ == "__main__":

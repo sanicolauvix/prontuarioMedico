@@ -1,12 +1,12 @@
 # -*- coding: utf-8 -*-
 # KOIOS v1.0 | gerado: 2026-03-12 07:18 | extrator_pdf.py
-EXTRATOR_VERSION = "2026-05-07-visao-log"
+EXTRATOR_VERSION = "2026-05-07-texto"
 """
 extrator_pdf.py - Extrator universal para múltiplos laboratórios
 Suporta: Laboratório Pretti, Cremasco, Tommasi, Virchow (e similares)
 
 Tipos de retorno:
-  tipo = "numerico" → resultados com valor numérico → salvar em resultados_estruturados
+  tipo = "numerico" → resultados com valor numérico → salvar em exame_resultados
   tipo = "laudo"    → texto descritivo              → salvar em laudos
 """
 
@@ -71,6 +71,7 @@ def detectar_laboratorio(texto: str) -> str:
     if "medsenior"  in t: return "MedSênior"
     if "zeiss"      in t: return "Zeiss"
     if "heidelberg" in t: return "Heidelberg"
+    if "medicina diagn" in t: return "Medicina Diagnóstica"
     # Marcadores alternativos (quando o nome do lab está só em imagem)
     if "id lamina:" in t or "no.exames:" in t: return "Cremasco"
     return "Desconhecido"
@@ -97,6 +98,12 @@ PALAVRAS_IMAGEM = [
     "procedure : color", "procedure : red free",
     "fundus", "retinography", "oct ", "angiography",
     "field angle", "print date",
+    "ultrassonografia", "ultra-sonografia", "ultrasonografia",
+    "doppler de ", "doppler arterial", "doppler venoso",
+    "ecocardiograma", "ecocardiografia",
+    "tomografia", "ressonância", "ressonancia",
+    "radiografia", "raio-x", "raio x",
+    "cintilografia", "densitometria ossea", "densitometria óssea",
 ]
 
 PALAVRAS_LAUDO = [
@@ -1615,18 +1622,8 @@ def extrair_pdf_bytes(conteudo_bytes: bytes, nome_arquivo: str,
             break
 
     # ── Tentativa via API Claude (primaria) ──────────────────
-    # PDFs escaneados (<200 chars) OU laudos endoscopicos → caminho de visão
-    # (garante deteccao de multiplos laudos no mesmo PDF)
-    _KEYS_VISAO = frozenset([
-        "endoscopia", "colonoscopia", "gastroenterologia",
-        "laudo de video", "video endoscopia", "esofago",
-        "estomago", "duodeno", "colon", "reto",
-    ])
-    _texto_lower   = texto_completo.lower()
-    _pdf_escaneado = (
-        len(texto_completo.strip()) < 200 or
-        any(k in _texto_lower for k in _KEYS_VISAO)
-    )
+    # PDFs escaneados (<200 chars) → caminho de visão; senão → texto
+    _pdf_escaneado = len(texto_completo.strip()) < 200
     try:
         if _pdf_escaneado:
             _prog("api_visao", 0, total_pags, 0, 0, 0)
@@ -1642,6 +1639,8 @@ def extrair_pdf_bytes(conteudo_bytes: bytes, nome_arquivo: str,
             _dados_api["drive_file_id"]  = drive_file_id
             if not _pdf_escaneado:
                 _dados_api["resultado_texto"] = texto_completo
+            if not _dados_api.get("data_exame"):
+                _dados_api["status_sugerido"] = "revisao"
             if _dados_api.get("multiplos_laudos"):
                 _prog("multiplos_laudos", total_pags, total_pags, 0,
                       len(_dados_api.get("laudos", [])), 0)
@@ -1663,6 +1662,8 @@ def extrair_pdf_bytes(conteudo_bytes: bytes, nome_arquivo: str,
             except Exception:
                 pass
     except Exception as _api_ex:
+        if type(_api_ex).__name__ == "SemCreditosError":
+            raise
         logging.warning(f"[EXTRATOR] API excecao: {_api_ex}")
     # ── Fallback: deteccao e extracao por regex ───────────────
 
@@ -1680,6 +1681,8 @@ def extrair_pdf_bytes(conteudo_bytes: bytes, nome_arquivo: str,
         "data_exame":      cabecalho.get("data_exame"),
         "laboratorio":     cabecalho.get("laboratorio"),
         "medico_solicit":  cabecalho.get("medico_solicit"),
+        # Marca revisao quando data nao extraida — requer conferência manual
+        "status_sugerido": "revisao" if not cabecalho.get("data_exame") else None,
     }
 
     total_linhas = texto_completo.count("\n")

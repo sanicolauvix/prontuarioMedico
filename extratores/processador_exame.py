@@ -79,7 +79,7 @@ def executar_processamento(
                     with sqlite3.connect(DB_PATH, timeout=10) as _c:
                         row = _c.execute(
                             "SELECT id FROM exames "
-                            "WHERE arquivo_origem = ? AND status != 'rascunho'",
+                            "WHERE arquivo_origem = ? AND status NOT IN ('rascunho','revisao')",
                             (nome,)
                         ).fetchone()
                     if row:
@@ -1169,10 +1169,10 @@ def construir_painel_conferencia(
 
         # Tentar upload no Drive; se falhar, salvar local com pendente_sync=1
         try:
-            from utils.drive_sync import _get_creds, garantir_pasta, upload_foto as _up_foto
+            from utils.drive_sync import _get_creds, _EXAME_IMAGENS_ID, upload_foto as _up_foto
             import os as _os
             creds    = _get_creds()
-            pasta_id = garantir_pasta("EXAME_IMAGENS", creds=creds)
+            pasta_id = _EXAME_IMAGENS_ID
             anexos = []
             for img_info in _imagens_selecionadas:
                 try:
