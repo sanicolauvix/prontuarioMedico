@@ -110,7 +110,7 @@ class ClaudiaDB:
             """
             SELECT e.data_exame, r.parametro, r.valor, r.unidade,
                    r.referencia, r.nivel_interpretacao
-            FROM resultados_estruturados r
+            FROM exame_resultados r
             JOIN exames e ON e.id = r.exame_id
             LEFT JOIN exames_padrao ep ON ep.id = r.exame_padrao_id
             WHERE e.paciente_id=?

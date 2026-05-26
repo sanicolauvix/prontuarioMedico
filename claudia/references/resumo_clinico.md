@@ -8,7 +8,7 @@ Compor o sumário cruzando:
 - `pacientes` (idade, sexo).
 - `diario_saude` últimos 30–90 dias (sintomas, humor, sono, peso, PA).
 - `consultas` últimas (o que foi relatado, CID, plano).
-- `exames` + `resultados_estruturados` últimos 6–12 meses.
+- `exames` + `exame_resultados` últimos 6–12 meses.
 - `remedios` ativos + `remedios_tomadas` adesão últimos 30 dias.
 - `receitas` recentes.
 

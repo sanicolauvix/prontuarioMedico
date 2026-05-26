@@ -42,7 +42,7 @@ Estas habilidades já vivem no "cérebro" da Claudia e podem ser acionadas sob d
 - **app prontuario** — sistema de prontuário eletrônico em Python, com interface gráfica (telas) e banco SQLite.
 - Localização: `C:\pessoal\python\Koios\prontuario`
 - Banco: `dados/prontuario.db` (SQLite) com ~27 tabelas
-  - pacientes, consultas, exames, exames_padrao, exame_anexos, resultados_estruturados
+  - pacientes, consultas, exames, exames_padrao, exame_anexos, exame_resultados
   - medicos, especialidades, laudos, links_medico
   - receitas, remedios, remedios_horarios, remedios_tomadas, remedios_compras, remedios_orcamentos, remedio_fotos, farmacias
   - diario_saude, rotina_itens, orcamento_itens

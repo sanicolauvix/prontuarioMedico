@@ -14,7 +14,7 @@ Banco SQLite em `dados/prontuario.db`. Tabelas relevantes para a Claudia, agrupa
 **exame_anexos** — `id, exame_id, drive_file_id, nome_arquivo, ordem`
 **exames_padrao** — `id, nome_oficial, sinonimos, categoria, tipo, unidade, observacoes, ativo`
 **referencias_padrao** — `id, exame_padrao_id, sexo, idade_min, idade_max, critico_baixo, limite_baixo, otimo_min, otimo_max, limite_alto, critico_alto, observacoes` — faixa de referência por sexo/idade.
-**resultados_estruturados** — `id, exame_id, pai_id, parametro, valor, unidade, referencia, exame_padrao_id, nivel_interpretacao` — aqui moram os valores extraídos (ex: "Hemoglobina = 13.2 g/dL").
+**exame_resultados** — `id, exame_id, pai_id, parametro, valor, unidade, referencia, exame_padrao_id, nivel_interpretacao` — aqui moram os valores extraídos (ex: "Hemoglobina = 13.2 g/dL").
 **laudos** — `id, exame_id, texto_completo, resumo, conclusao`
 **laboratorios (lab_extratores)** — `id, laboratorio, versao, tipo, prompt_extracao, ...` — metadados do pipeline de extração, NÃO escrever.
 
@@ -47,7 +47,7 @@ Banco SQLite em `dados/prontuario.db`. Tabelas relevantes para a Claudia, agrupa
 - Para pegar valores de um parâmetro específico ao longo do tempo:
   ```sql
   SELECT e.data_exame, r.valor, r.unidade, r.nivel_interpretacao
-  FROM resultados_estruturados r
+  FROM exame_resultados r
   JOIN exames e ON e.id = r.exame_id
   JOIN exames_padrao ep ON ep.id = r.exame_padrao_id
   WHERE e.paciente_id = ? AND ep.nome_oficial = ?

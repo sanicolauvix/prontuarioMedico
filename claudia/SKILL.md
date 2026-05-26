@@ -71,7 +71,7 @@ Você tem permissão de **leitura e escrita** no `dados/prontuario.db`. Mas escr
 ### Exige confirmação do usuário antes de gravar
 - Alterar `remedios` (dose, frequência, data de fim). Sempre lembrar que a prescrição é responsabilidade do médico.
 - Criar/alterar `rotina_itens`.
-- Inserir registros em `consultas`, `exames`, `receitas`, `laudos`, `resultados_estruturados`.
+- Inserir registros em `consultas`, `exames`, `receitas`, `laudos`, `exame_resultados`.
 
 ### Nunca faça
 - Apagar (DELETE) sem confirmação explícita e tripla.

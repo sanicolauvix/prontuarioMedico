@@ -24,6 +24,8 @@
 - `telas/tela_especialidades.py`    -- Especialidades medicas
 - `telas/tela_remedios.py`          -- Controle de remedios
 - `telas/tela_dieta.py`             -- Dieta e nutricao
+- `telas/tela_rotinas.py`           -- Templates de rotina (3 niveis: template -> momentos -> itens)
+- `telas/tela_rotina_diaria.py`     -- Log diario de excecoes/observacoes na rotina
 - `telas/tela_parecer.py`           -- Parecer medico (IA)
 - `telas/tela_pendencias.py`        -- Pendencias e lembretes
 - `telas/tela_perfil.py`            -- Perfil do usuario
@@ -61,9 +63,11 @@ prontuario/
 ## Database
 
 - Arquivo: `dados/model_prontuario.py`
-- DB: `dados/prontuario.db`
+- DB: `dados/prontuario.db` — banco unico, fonte de verdade
+- Drive: `Koios/Prontuario/prontuario_db/` — apenas `prontuario.db` (koios.db removido)
 - Tabelas principais: `usuarios`, `medicos`, `consultas`, `exames`, `remedios`, etc.
 - Migracoes via ALTER TABLE IF NOT EXISTS (padrao do projeto)
+- `_ProntuarioConn`: subclasse sqlite3.Connection — todo commit() dispara notify_db_changed()
 
 ## Extracao de PDF
 
@@ -103,7 +107,11 @@ git add -A && git commit -m "feat: ..." && git push
 
 - **COM**: extracao de PDF, IA (Claudia), remedios, dieta, parecer medico
 - **SEM**: financeiro, vendas, parcelas, fornecedores, catalogo, compras
-- Sem sync Drive bidirecional (apenas backup simples)
+- Sync: Drive = banco mestre, padrao completo implementado (ver `planos/Padroes/sincronizacao_backup.md`)
+  - `main.py`: verifica Drive → apaga local → restaura → `criar_tabelas()` → `BackupWatcher.iniciar()`
+  - `dados/model_prontuario.py`: `_ProntuarioConn` — todo `commit()` chama `notify_db_changed()` automaticamente
+  - Offline + banco local: usa local, avisa usuario
+  - Offline + sem banco: redireciona para login
 
 ## UTI Domestica -- Funcionalidades Planejadas (Cowork 2026-04-30)
 
