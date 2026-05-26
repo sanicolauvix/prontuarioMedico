@@ -163,6 +163,24 @@ _TOOLS: list[dict[str, Any]] = [
             "required": [],
         },
     },
+    {
+        "name": "buscar_rotina_diario",
+        "description": (
+            "Retorna o historico de alteracoes da rotina diaria do paciente: suspensoes de alimentos, "
+            "reducoes de porcao, adicoes, observacoes e sintomas registrados. "
+            "Use para correlacionar mudancas de habito com variacoes nos exames ou sintomas."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "dias": {
+                    "type": "integer",
+                    "description": "Quantos dias de historico retornar (default 60).",
+                },
+            },
+            "required": [],
+        },
+    },
 ]
 
 
@@ -179,7 +197,7 @@ def _exec_buscar_exames(parametro: str, data_inicio: str = "", data_fim: str = "
             sql = """
                 SELECT e.data_exame, e.laboratorio,
                        r.parametro, r.valor, r.unidade, r.referencia, r.nivel_interpretacao
-                FROM resultados_estruturados r
+                FROM exame_resultados r
                 JOIN exames e ON r.exame_id = e.id
                 WHERE r.parametro LIKE ?
             """
@@ -204,7 +222,7 @@ def _exec_buscar_todos_exames_recentes(meses: int = 12) -> dict:
             rows = conn.execute("""
                 SELECT e.data_exame, e.laboratorio,
                        r.parametro, r.valor, r.unidade, r.nivel_interpretacao
-                FROM resultados_estruturados r
+                FROM exame_resultados r
                 JOIN exames e ON r.exame_id = e.id
                 WHERE e.data_exame >= date('now', ? || ' months')
                 ORDER BY e.data_exame DESC, r.parametro ASC
@@ -285,12 +303,25 @@ def _exec_perfil_paciente() -> dict:
         return {"erro": str(ex)}
 
 
+def _exec_buscar_rotina_diario(dias: int = 60) -> dict:
+    try:
+        from dados.model_prontuario import listar_rotina_diario
+        from datetime import date, timedelta
+        desde = (date.today() - timedelta(days=dias)).isoformat()
+        registros = listar_rotina_diario(limite=200)
+        filtrados = [r for r in registros if r.get("data", "") >= desde]
+        return {"dias": dias, "total": len(filtrados), "registros": filtrados}
+    except Exception as ex:
+        return {"erro": str(ex)}
+
+
 _EXEC_MAP = {
     "buscar_exames":               lambda i: _exec_buscar_exames(**i),
     "buscar_todos_exames_recentes": lambda i: _exec_buscar_todos_exames_recentes(**i),
     "buscar_remedios_ativos":      lambda _: _exec_buscar_remedios_ativos(),
     "buscar_consultas":            lambda i: _exec_buscar_consultas(**i),
     "perfil_paciente":             lambda _: _exec_perfil_paciente(),
+    "buscar_rotina_diario":        lambda i: _exec_buscar_rotina_diario(**i),
 }
 
 
@@ -309,7 +340,7 @@ def enviar_mensagem(historico: list[dict], mensagem_usuario: str) -> dict:
     import anthropic
 
     client    = get_client()
-    mensagens = historico + [{"role": "user", "content": mensagem_usuario}]
+    mensagens = historico[-18:] + [{"role": "user", "content": mensagem_usuario}]
 
     # Agentic loop com tool use
     for _tentativa in range(5):
