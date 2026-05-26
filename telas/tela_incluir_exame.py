@@ -844,12 +844,9 @@ def criar_tela_incluir_exame(page: ft.Page, voltar_fn):
             if not drive_ok:
                 fase[0] = "drive_falhou"; _rebuild(); return
 
-            from utils.drive_sync import garantir_pasta, upload_foto as _upload_foto
-            creds = drive_ou_erro
-
-            _set_status("Preparando pasta no Drive...", VERD, 0.15)
-            pasta_raiz   = garantir_pasta("Koios_Prontuario", creds=creds)
-            pasta_exames = garantir_pasta("EXAMES_PDF", pai_id=pasta_raiz, creds=creds)
+            from utils.drive_sync import _EXAMES_PDF_ID, upload_foto as _upload_foto
+            creds        = drive_ou_erro
+            pasta_exames = _EXAMES_PDF_ID
 
             caminho      = dados_multi.get("arquivo_path", "")
             pdf_bytes    = Path(caminho).read_bytes() if caminho and os.path.exists(caminho) else b""
@@ -1133,11 +1130,25 @@ def criar_tela_incluir_exame(page: ft.Page, voltar_fn):
             vinc_ok  = {v["parametro"] for v in vinculos.get("vinculados", [])}
             pendencias[0] = [{"parametro": p} for p in params if p not in vinc_ok]
 
-            fase[0] = "conferencia"
+            if dados.get("multiplos_laudos"):
+                fase[0] = "selecao_laudo"
+            else:
+                fase[0] = "conferencia"
             try: _rebuild()
             except Exception: pass
 
         except Exception as ex:
+            logging.warning(f"[REPROCESSAR] excecao: {type(ex).__name__}: {ex}")
+            if type(ex).__name__ == "SemCreditosError":
+                _erro_msg[0] = (
+                    "Sem créditos na API Claude\n\n"
+                    "Acesse console.anthropic.com/settings/billing\n"
+                    "para adicionar fundos e tentar novamente."
+                )
+                fase[0] = "erro"
+                try: _rebuild()
+                except Exception as _e: logging.exception(f"[REPROCESSAR] rebuild: {_e}")
+                return
             _log_erro(f"REPROCESSAR ERROR: {ex}")
             logging.exception(f"[REPROCESSAR] {ex}")
             import traceback as _tb
@@ -1461,6 +1472,17 @@ def criar_tela_incluir_exame(page: ft.Page, voltar_fn):
                 except Exception: pass
 
         except Exception as ex:
+            logging.warning(f"[PROCESSAR] excecao: {type(ex).__name__}: {ex}")
+            if type(ex).__name__ == "SemCreditosError":
+                _erro_msg[0] = (
+                    "Sem créditos na API Claude\n\n"
+                    "Acesse console.anthropic.com/settings/billing\n"
+                    "para adicionar fundos e tentar novamente."
+                )
+                fase[0] = "erro"
+                try: _rebuild()
+                except Exception as _e: logging.exception(f"[PROCESSAR] rebuild: {_e}")
+                return
             _log_erro(f"PROCESSAR ERROR: {ex}")
             logging.exception(f"[PROCESSAR] {ex}")
             print(f"[PROCESSAR] ERRO: {ex}")
@@ -1528,12 +1550,9 @@ def criar_tela_incluir_exame(page: ft.Page, voltar_fn):
                 return
 
             # ── Upload Drive ──────────────────────────────────
-            from utils.drive_sync import garantir_pasta, upload_foto as _upload_foto
-            creds = drive_ou_erro  # credenciais validadas por _verificar_drive
-
-            _set_status("Verificando pasta no Drive...", VERD, 0.25)
-            pasta_raiz = garantir_pasta("Koios_Prontuario", creds=creds)
-            pasta_exames = garantir_pasta("EXAMES_PDF", pai_id=pasta_raiz, creds=creds)
+            from utils.drive_sync import _EXAMES_PDF_ID, upload_foto as _upload_foto
+            creds        = drive_ou_erro  # credenciais validadas por _verificar_drive
+            pasta_exames = _EXAMES_PDF_ID
 
             _set_status("Enviando arquivo...", VERD, 0.50)
             caminho  = dados.get("arquivo_path", "")

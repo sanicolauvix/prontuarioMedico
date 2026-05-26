@@ -43,7 +43,7 @@ def criar_tela_grafico_marcador(
                 for termo in termos:
                     rows = conn.execute("""
                         SELECT r.valor, r.unidade, e.data_exame
-                        FROM resultados_estruturados r
+                        FROM exame_resultados r
                         JOIN exames e ON r.exame_id = e.id
                         WHERE LOWER(r.parametro) LIKE ?
                           AND r.valor IS NOT NULL AND r.valor != ''

@@ -240,7 +240,7 @@ def criar_tela_backup(page: ft.Page, voltar_fn=None):
             ft.Text("INFORMACOES", size=10, color=SEC, weight=ft.FontWeight.W_700),
             ft.Container(height=6),
             ft.Text(
-                "Backups salvos em: Google Drive / Koios_Prontuario/\n"
+                "Backups salvos em: Google Drive / Koios/Prontuario/\n"
                 "  prontuario_db/ -- prontuario.db (max 5 versoes)\n"
                 "  koios_db/      -- koios.db       (max 5 versoes)\n\n"
                 "O backup automatico ocorre 30 min apos qualquer alteracao.",

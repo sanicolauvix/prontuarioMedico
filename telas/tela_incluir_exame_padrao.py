@@ -50,8 +50,50 @@ def _tf(label, value="", hint=None, expand=False, width=None, read_only=False):
 def criar_tela_incluir_exame_padrao(page: ft.Page,
                                      parametro: str,
                                      voltar_fn=None):
+    import threading as _thr
+    import logging as _log
+    _logger = _log.getLogger(__name__)
     from dados.model_prontuario import DB_PATH
     from dados.limpeza import vincular_manualmente, executar_limpeza
+
+    _status_banco = ["normal"]
+
+    def _sync(apos_sync_fn=None):
+        ov = ft.Container(
+            content=ft.Container(
+                content=ft.Column([
+                    ft.ProgressRing(color=AZUL, width=36, height=36, stroke_width=3),
+                    ft.Container(height=10),
+                    ft.Text("Sincronizando com Drive...", size=13, color=TXT,
+                            weight=ft.FontWeight.W_600, text_align="center"),
+                    ft.Text("Aguarde", size=11, color=SEC, text_align="center"),
+                ], tight=True, spacing=2,
+                   horizontal_alignment=ft.CrossAxisAlignment.CENTER),
+                bgcolor=CARD, border_radius=14,
+                padding=ft.padding.all(24), width=240,
+            ),
+            bgcolor="#DD000000", expand=True, alignment=ft.Alignment(0, 0),
+        )
+        page.overlay.append(ov)
+        try: page.update()
+        except Exception: pass
+
+        def _run():
+            try:
+                from backup.drive_backup import fazer_backup
+                fazer_backup(forcar=True)
+            except Exception as ex:
+                _logger.warning("[EXPAD] sync: %s", ex)
+            finally:
+                _status_banco[0] = "normal"
+                if ov in page.overlay:
+                    page.overlay.remove(ov)
+                try: page.update()
+                except Exception: pass
+                if apos_sync_fn:
+                    apos_sync_fn()
+
+        _thr.Thread(target=_run, daemon=True).start()
 
     # Separar nome e valor numérico
     match = re.match(r'^(.*?)\s+([\d]+[,.][\d]+|[\d]+)\s*$', parametro.strip())
@@ -62,7 +104,7 @@ def criar_tela_incluir_exame_padrao(page: ft.Page,
     conn = sqlite3.connect(DB_PATH, timeout=30)
     row = conn.execute("""
         SELECT r.valor, r.unidade, r.referencia
-        FROM resultados_estruturados r
+        FROM exame_resultados r
         JOIN exames e ON r.exame_id = e.id
         WHERE r.parametro = ?
           AND r.nivel_interpretacao = 'nao_identificado'
@@ -142,7 +184,7 @@ def criar_tela_incluir_exame_padrao(page: ft.Page,
             ref  = tf_referencia.value.strip()
             if unid or ref:
                 conn.execute("""
-                    UPDATE resultados_estruturados
+                    UPDATE exame_resultados
                     SET unidade    = CASE WHEN ? != '' THEN ? ELSE unidade END,
                         referencia = CASE WHEN ? != '' THEN ? ELSE referencia END
                     WHERE parametro = ?
@@ -159,14 +201,8 @@ def criar_tela_incluir_exame_padrao(page: ft.Page,
         except Exception:
             pass
 
-        page.snack_bar = ft.SnackBar(
-            content=ft.Text(f"'{nome}' criado e vinculado!", color=TXT),
-            bgcolor=CARD)
-        page.snack_bar.open = True
-        page.update()
-
-        if voltar_fn:
-            voltar_fn()
+        _status_banco[0] = "em_edicao"
+        _sync(voltar_fn)
 
     def _bloco(titulo, cor, controles):
         return ft.Container(

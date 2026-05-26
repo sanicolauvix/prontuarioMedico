@@ -5,12 +5,15 @@ Consultas médicas: lista, cadastro, alarme Windows e receitas via IA.
 Padrão visual: idêntico a tela_exames.py (header + barra de abas + área de conteúdo)
 """
 import logging
+import re
 import threading
 import datetime
 import flet as ft
+from shared.auth import IS_ANDROID
 from dados.model_prontuario import (
     listar_consultas, salvar_consulta, listar_medicos,
     salvar_receita, listar_receitas,
+    salvar_remedio, listar_remedios,
 )
 
 logger = logging.getLogger(__name__)
@@ -20,6 +23,30 @@ BG   = "#0D1117";  CARD = "#161B22";  BD  = "#21262D";  BD2 = "#30363D"
 TXT  = "#E6EDF3";  SEC  = "#8B949E";  MUT = "#484F58"
 AZUL = "#58A6FF";  VERD = "#3FB950";  LAR = "#F0883E"
 AMAR = "#D29922";  VERM = "#DA3633";  ROXO = "#BC8CFF"
+
+
+def _flex_parse(s: str) -> "datetime.datetime | None":
+    """Parse de data aceita YYYY-MM-DD e DD/MM/YYYY."""
+    for fmt in ("%Y-%m-%d", "%d/%m/%Y"):
+        try:
+            return datetime.datetime.strptime((s or "")[:10], fmt)
+        except ValueError:
+            pass
+    return None
+
+
+def _para_display(s: str | None) -> str:
+    """Converte YYYY-MM-DD para DD/MM/YYYY para exibicao. DD/MM/YYYY passa sem alteracao."""
+    if not s:
+        return ""
+    s = str(s).strip()
+    if len(s) >= 10 and s[4] == "-":
+        try:
+            return datetime.datetime.strptime(s[:10], "%Y-%m-%d").strftime("%d/%m/%Y")
+        except ValueError:
+            pass
+    return s
+
 
 CORES_TIPO = {
     "agendada":  (AZUL, "calendar_today_rounded"),
@@ -110,7 +137,9 @@ def _centralizar(corpo, page):
 def _agendar_alarme_windows(data_str, hora_str, descricao):
     import subprocess
     try:
-        d = datetime.datetime.strptime(data_str, "%d/%m/%Y")
+        d = _flex_parse(data_str)
+        if d is None:
+            return False, "data invalida"
         data_win = d.strftime("%Y-%m-%d")
         hora_win = hora_str or "08:00"
         nome_tarefa = f"Koios_Consulta_{data_win}_{hora_win.replace(':','')}"
@@ -129,7 +158,7 @@ def _agendar_alarme_windows(data_str, hora_str, descricao):
 # CAMPO MÉDICO — padrão Koios de busca
 # ══════════════════════════════════════════════════════════════
 
-def _campo_medico(page, medicos, med_id_sel, valor_ini=""):
+def _campo_medico(page, medicos, med_id_sel, valor_ini="", read_only=False):
     """Retorna (coluna_com_busca, chip) para uso na ficha."""
 
     med_chip = ft.Container(
@@ -173,12 +202,19 @@ def _campo_medico(page, medicos, med_id_sel, valor_ini=""):
         try: page.update()
         except Exception: pass
 
-    med_chip.on_click = _limpar
+    if not read_only:
+        med_chip.on_click = _limpar
 
     if valor_ini:
         _mostrar_chip(valor_ini)
 
+    if read_only:
+        tf.visible = False
+        sugestoes.visible = False
+
     def _filtrar(e):
+        if read_only:
+            return
         termo = (tf.value or "").strip().upper()
         sugestoes.controls.clear()
         if not termo:
@@ -234,6 +270,9 @@ def _campo_medico(page, medicos, med_id_sel, valor_ini=""):
         sugestoes,
     ], spacing=4)
 
+    col._tf_medico   = tf
+    col._chip_medico = med_chip
+    col._limpar_fn   = _limpar
     return col
 
 
@@ -241,12 +280,50 @@ def _campo_medico(page, medicos, med_id_sel, valor_ini=""):
 # TELA DE RECEITA
 # ══════════════════════════════════════════════════════════════
 
+def _parsear_remedios_texto(texto: str) -> list[dict]:
+    """Converte texto livre da IA em lista de dicts com nome/dosagem/frequencia/obs."""
+    remedios = []
+    for linha in texto.splitlines():
+        linha = linha.strip().lstrip("•-*·").strip()
+        if not linha:
+            continue
+        # Tenta separar "Nome dosagem — instrucoes" ou "Nome dosagem : instrucoes"
+        partes = re.split(r"\s*[—–-]{1,2}\s*|\s*:\s*", linha, maxsplit=1)
+        cabecalho = partes[0].strip()
+        instrucoes = partes[1].strip() if len(partes) > 1 else ""
+        # Extrai dosagem do cabecalho (ex: "Amoxicilina 500mg")
+        m = re.search(r"(\d+\s*(?:mg|mcg|g|ml|UI|ui|cp|comp|cap|cáp|gotas?|%)[^\s]*)", cabecalho, re.I)
+        if m:
+            dosagem = m.group(1)
+            nome = cabecalho[:m.start()].strip()
+        else:
+            dosagem = ""
+            nome = cabecalho
+        if not nome:
+            continue
+        # Tenta extrair frequência das instruções (ex: "de 8 em 8h", "2x ao dia")
+        freq = ""
+        mf = re.search(
+            r"(\d+x?\s*(?:ao\s*dia|por\s*dia|vezes?\s*ao\s*dia)|de\s*\d+\s*em\s*\d+\s*h(?:oras?)?|a\s*cada\s*\d+\s*h(?:oras?)?|\d+\s*[×x]\s*ao\s*dia)",
+            instrucoes, re.I)
+        if mf:
+            freq = mf.group(1)
+        remedios.append({
+            "nome": nome,
+            "dosagem": dosagem,
+            "frequencia": freq,
+            "observacoes": instrucoes,
+        })
+    return remedios
+
+
 def _tela_receita(page, consulta, voltar_fn):
-    lista_rec      = ft.Column(spacing=8)
-    txt_status_ia  = ft.Text("", size=12, color=SEC)
-    txt_instrucoes = _campo("Instruções de uso extraídas",
-                            multiline=True, min_lines=4)
-    foto_path      = [""]
+    lista_rec       = ft.Column(spacing=8)
+    txt_status_ia   = ft.Text("", size=12, color=SEC)
+    txt_instrucoes  = _campo("Instruções de uso extraídas",
+                             multiline=True, min_lines=4)
+    foto_path       = [""]
+    _receita_id_sal = [None]   # id da receita salva (para vincular remédios)
 
     def _carregar_lista():
         lista_rec.controls.clear()
@@ -398,8 +475,9 @@ def _tela_receita(page, consulta, voltar_fn):
                 txt_status_ia.color = VERM
             else:
                 txt_instrucoes.value = msg["texto"]
-                txt_status_ia.value  = "✓ Extração concluída"
+                txt_status_ia.value  = "✓ Extração concluída — revise e salve"
                 txt_status_ia.color  = VERD
+                btn_salvar_remedios.visible = bool(_parsear_remedios_texto(msg["texto"]))
             try: page.update()
             except Exception: pass
 
@@ -409,6 +487,210 @@ def _tela_receita(page, consulta, voltar_fn):
         threading.Thread(target=_analisar, daemon=True).start()
 
     btn_extrair.on_click = _extrair_ia
+
+    def _abrir_overlay_remedios(e):
+        remedios_parsed = _parsear_remedios_texto(txt_instrucoes.value or "")
+        if not remedios_parsed:
+            txt_status_ia.value = "Nenhum medicamento encontrado no texto."
+            txt_status_ia.color = AMAR
+            try: page.update()
+            except Exception: pass
+            return
+
+        ref_ov = [None]
+
+        def _fechar(e=None):
+            if ref_ov[0] in page.overlay:
+                page.overlay.remove(ref_ov[0])
+            try: page.update()
+            except Exception: pass
+
+        # Campos editáveis + checkbox por medicamento
+        itens_ui = []
+        for r in remedios_parsed:
+            sel = ft.Checkbox(value=True, active_color=VERD)
+            fn  = ft.TextField(
+                value=r["nome"], label="Medicamento",
+                bgcolor="#0D1117", border_color=BD2, focused_border_color=VERD,
+                label_style=ft.TextStyle(color=SEC, size=10),
+                text_style=ft.TextStyle(color=TXT, size=13),
+                border_radius=6, expand=True,
+            )
+            fd  = ft.TextField(
+                value=r["dosagem"], label="Dosagem",
+                bgcolor="#0D1117", border_color=BD2, focused_border_color=VERD,
+                label_style=ft.TextStyle(color=SEC, size=10),
+                text_style=ft.TextStyle(color=TXT, size=12),
+                border_radius=6, width=110,
+            )
+            ff  = ft.TextField(
+                value=r["frequencia"], label="Frequência",
+                bgcolor="#0D1117", border_color=BD2, focused_border_color=VERD,
+                label_style=ft.TextStyle(color=SEC, size=10),
+                text_style=ft.TextStyle(color=TXT, size=12),
+                border_radius=6, expand=True,
+            )
+            itens_ui.append({"sel": sel, "fn": fn, "fd": fd, "ff": ff, "obs": r["observacoes"]})
+
+        cards_col = ft.Column(spacing=8)
+        for it in itens_ui:
+            cards_col.controls.append(ft.Container(
+                content=ft.Column([
+                    ft.Row([
+                        it["sel"],
+                        it["fn"],
+                    ], spacing=6, vertical_alignment=ft.CrossAxisAlignment.CENTER),
+                    ft.Row([it["fd"], it["ff"]], spacing=6),
+                ], spacing=6),
+                bgcolor=BD, border_radius=8,
+                padding=ft.padding.symmetric(horizontal=10, vertical=10),
+                border=ft.Border(
+                    top=ft.BorderSide(1, BD2), bottom=ft.BorderSide(1, BD2),
+                    left=ft.BorderSide(2, VERD), right=ft.BorderSide(1, BD2),
+                ),
+            ))
+
+        txt_result = ft.Text("", size=12, color=VERD)
+
+        def _confirmar(e):
+            salvos = 0
+            medico_id = consulta.get("medico_id")
+            data_ini  = consulta.get("data") or datetime.date.today().isoformat()
+            rid_rec   = _receita_id_sal[0]
+
+            # Verifica remédios existentes para evitar duplicata óbvia (inclui inativos)
+            existentes = {r["nome"].strip().upper(): r for r in listar_remedios(so_ativos=False)}
+
+            for it in itens_ui:
+                if not it["sel"].value:
+                    continue
+                nome_val = (it["fn"].value or "").strip()
+                if not nome_val:
+                    continue
+                chave = nome_val.upper()
+                if chave in existentes:
+                    # Atualiza médico, receita e data_inicio se já existe
+                    rem_ex = existentes[chave]
+                    salvar_remedio({
+                        "id":         rem_ex["id"],
+                        "nome":       rem_ex["nome"],
+                        "dosagem":    (it["fd"].value or "").strip() or rem_ex.get("dosagem"),
+                        "frequencia": (it["ff"].value or "").strip() or rem_ex.get("frequencia"),
+                        "data_inicio": data_ini,
+                        "data_fim":   rem_ex.get("data_fim"),
+                        "medico_id":  medico_id or rem_ex.get("medico_id"),
+                        "receita_id": rid_rec or rem_ex.get("receita_id"),
+                        "estoque_atual":  rem_ex.get("estoque_atual", 0),
+                        "estoque_minimo": rem_ex.get("estoque_minimo", 5),
+                        "observacoes": it["obs"] or rem_ex.get("observacoes"),
+                        "ativo":       rem_ex.get("ativo", 1),
+                        "principio_ativo": rem_ex.get("principio_ativo"),
+                        "tipo":       rem_ex.get("tipo", "remedio"),
+                        "prescrito":  1,
+                    })
+                else:
+                    salvar_remedio({
+                        "id":          None,
+                        "nome":        nome_val,
+                        "dosagem":     (it["fd"].value or "").strip() or None,
+                        "frequencia":  (it["ff"].value or "").strip() or None,
+                        "data_inicio": data_ini,
+                        "data_fim":    None,
+                        "medico_id":   medico_id,
+                        "receita_id":  rid_rec,
+                        "estoque_atual":  0,
+                        "estoque_minimo": 5,
+                        "observacoes": it["obs"] or None,
+                        "ativo":       1,
+                        "principio_ativo": None,
+                        "tipo":       "remedio",
+                        "prescrito":  1,
+                    })
+                salvos += 1
+
+            txt_result.value = f"✓ {salvos} medicamento(s) salvos em Remédios"
+            txt_result.color = VERD
+            try: page.update()
+            except Exception: pass
+
+            import threading as _thr
+            def _bkp():
+                try:
+                    from backup.drive_backup import fazer_backup
+                    fazer_backup(forcar=True)
+                except Exception: pass
+            _thr.Thread(target=_bkp, daemon=True).start()
+
+            import threading as _thr2
+            def _fechar_delay():
+                import time; time.sleep(1.5)
+                _fechar()
+            _thr2.Thread(target=_fechar_delay, daemon=True).start()
+
+        btn_conf = ft.Container(
+            content=ft.Row([
+                ft.Icon("medication_rounded", size=14, color=BG),
+                ft.Text("Salvar selecionados", size=13, color=BG,
+                        weight=ft.FontWeight.W_600),
+            ], spacing=6, tight=True, alignment=ft.MainAxisAlignment.CENTER),
+            bgcolor=VERD, border_radius=10, ink=True,
+            padding=ft.padding.symmetric(horizontal=16, vertical=12),
+            expand=True, alignment=ft.alignment.Alignment(0, 0),
+        )
+        btn_conf.on_click = _confirmar
+
+        btn_cancel = ft.Container(
+            content=ft.Text("Cancelar", size=13, color=SEC),
+            padding=ft.padding.symmetric(horizontal=16, vertical=12),
+            border_radius=10, bgcolor=BD, ink=True,
+        )
+        btn_cancel.on_click = _fechar
+
+        ref_ov[0] = ft.Container(
+            content=ft.Container(
+                content=ft.Column([
+                    ft.Row([
+                        ft.Icon("medication_rounded", size=16, color=VERD),
+                        ft.Text("Salvar em Remédios", size=15, color=TXT,
+                                weight=ft.FontWeight.W_700, expand=True),
+                    ], spacing=8),
+                    ft.Text("Revise, desmarque o que não quer salvar e confirme.",
+                            size=11, color=SEC),
+                    ft.Container(height=4),
+                    cards_col,
+                    txt_result,
+                    ft.Container(height=8),
+                    ft.Row([btn_cancel, btn_conf], spacing=8),
+                ], spacing=8, tight=True,
+                   scroll=ft.ScrollMode.AUTO),
+                bgcolor=CARD, border_radius=14,
+                padding=ft.padding.all(20), width=380,
+            ),
+            bgcolor="#CC000000", expand=True, alignment=ft.Alignment(0, 0),
+        )
+        ref_ov[0].on_click = _fechar
+        page.overlay.append(ref_ov[0])
+        try: page.update()
+        except Exception: pass
+
+    btn_salvar_remedios = ft.Container(
+        content=ft.Row([
+            ft.Icon("medication_rounded", size=14, color=VERD),
+            ft.Text("Salvar em Remédios", size=12, color=VERD,
+                    weight=ft.FontWeight.W_600),
+        ], spacing=6, tight=True),
+        padding=ft.padding.symmetric(horizontal=12, vertical=8),
+        border_radius=8,
+        bgcolor=ft.Colors.with_opacity(0.12, VERD),
+        border=ft.Border(
+            top=ft.BorderSide(1, ft.Colors.with_opacity(0.40, VERD)),
+            bottom=ft.BorderSide(1, ft.Colors.with_opacity(0.40, VERD)),
+            left=ft.BorderSide(1, ft.Colors.with_opacity(0.40, VERD)),
+            right=ft.BorderSide(1, ft.Colors.with_opacity(0.40, VERD)),
+        ),
+        ink=True, visible=False,
+    )
+    btn_salvar_remedios.on_click = _abrir_overlay_remedios
 
     def _salvar_receita(e):
         if not foto_path[0] and not txt_instrucoes.value.strip():
@@ -429,19 +711,21 @@ def _tela_receita(page, consulta, voltar_fn):
             except Exception as ex:
                 logger.error("upload receita Drive: %s", str(ex), exc_info=True)
                 nome_arq = foto_path[0].replace("\\", "/").split("/")[-1]
-        salvar_receita({
+        rid = salvar_receita({
             "consulta_id":   consulta["id"],
             "medico_id":     consulta.get("medico_id"),
             "drive_file_id": drive_id,
             "nome_arquivo":  nome_arq,
-            "data":          datetime.date.today().strftime("%d/%m/%Y"),
+            "data":          datetime.date.today().isoformat(),
             "observacoes":   txt_instrucoes.value.strip() or None,
         })
+        _receita_id_sal[0]   = rid
         foto_path[0]         = ""
-        txt_instrucoes.value = ""
-        txt_status_ia.value  = "✓ Receita salva!"
+        txt_status_ia.value  = "✓ Receita salva! Agora salve os remédios →"
         txt_status_ia.color  = VERD
         btn_extrair.visible  = False
+        btn_salvar_remedios.visible = bool(
+            _parsear_remedios_texto(txt_instrucoes.value or ""))
         _carregar_lista()
 
     _carregar_lista()
@@ -496,18 +780,21 @@ def _tela_receita(page, consulta, voltar_fn):
                 ], spacing=8),
                 txt_status_ia,
                 txt_instrucoes,
-                ft.FilledButton(
-                    content=ft.Row([
-                        ft.Icon("save_rounded", size=15),
-                        ft.Text("Salvar Receita", size=13, weight=ft.FontWeight.W_600),
-                    ], spacing=6, tight=True),
-                    style=ft.ButtonStyle(
-                        bgcolor=AZUL,
-                        shape=ft.RoundedRectangleBorder(radius=8),
-                        padding=ft.padding.symmetric(horizontal=20, vertical=12),
+                ft.Row([
+                    ft.FilledButton(
+                        content=ft.Row([
+                            ft.Icon("save_rounded", size=15),
+                            ft.Text("Salvar Receita", size=13, weight=ft.FontWeight.W_600),
+                        ], spacing=6, tight=True),
+                        style=ft.ButtonStyle(
+                            bgcolor=AZUL,
+                            shape=ft.RoundedRectangleBorder(radius=8),
+                            padding=ft.padding.symmetric(horizontal=16, vertical=12),
+                        ),
+                        on_click=_salvar_receita,
                     ),
-                    on_click=_salvar_receita,
-                ),
+                    btn_salvar_remedios,
+                ], spacing=8, wrap=True),
                 ft.Container(height=20),
             ], spacing=10, scroll=ft.ScrollMode.AUTO),
             padding=ft.padding.all(16),
@@ -523,25 +810,102 @@ def _tela_receita(page, consulta, voltar_fn):
 # ══════════════════════════════════════════════════════════════
 
 def _tela_ficha_consulta(page, consulta, voltar_fn, medicos):
-    is_novo = consulta is None
-    titulo  = "Nova Consulta" if is_novo else "Editar Consulta"
+    is_novo      = consulta is None
+    _modo_edicao = [is_novo]
+    _status_banco = ["normal"]
+    _handler_ant  = [None]
+
+    def _sync(apos_sync_fn=None):
+        ov = ft.Container(
+            content=ft.Container(
+                content=ft.Column([
+                    ft.ProgressRing(color=AZUL, width=36, height=36, stroke_width=3),
+                    ft.Container(height=10),
+                    ft.Text("Sincronizando com Drive...", size=13, color=TXT,
+                            weight=ft.FontWeight.W_600, text_align="center"),
+                    ft.Text("Aguarde", size=11, color=SEC, text_align="center"),
+                ], tight=True, spacing=2,
+                   horizontal_alignment=ft.CrossAxisAlignment.CENTER),
+                bgcolor=CARD, border_radius=14, padding=ft.padding.all(24), width=240,
+            ),
+            bgcolor="#DD000000", expand=True, alignment=ft.Alignment(0, 0),
+        )
+        page.overlay.append(ov)
+        try: page.update()
+        except Exception: pass
+        def _run():
+            try:
+                from backup.drive_backup import fazer_backup
+                fazer_backup(forcar=True)
+            except Exception as ex:
+                logger.warning("[consultas] sync erro: %s", ex)
+            finally:
+                _status_banco[0] = "normal"
+                if ov in page.overlay: page.overlay.remove(ov)
+                try: page.update()
+                except Exception: pass
+                if apos_sync_fn: apos_sync_fn()
+        threading.Thread(target=_run, daemon=True).start()
+
+    def _sair(destino_fn):
+        _desregistrar_voltar_hw()
+        if _modo_edicao[0]:
+            _salvar(None)
+        elif _status_banco[0] == "em_edicao":
+            _sync(destino_fn)
+        else:
+            destino_fn()
+
+    def _registrar_voltar_hw():
+        _handler_ant[0] = page.on_keyboard_event
+        def _on_hw(e):
+            if e.key == "Escape": _sair(voltar_fn)
+        page.on_keyboard_event = _on_hw
+
+    def _desregistrar_voltar_hw():
+        page.on_keyboard_event = _handler_ant[0]
+
+    titulo = "Nova Consulta" if is_novo else "Consulta"
+
+    from shared.date_field import campo_data as _campo_data
+    from dados.model_prontuario import normalizar_data as _norm_data
+
+    ro = not _modo_edicao[0]
 
     med_map    = {str(m["id"]): m["nome"] for m in medicos}
     med_id_sel = [str(consulta["medico_id"])
                   if consulta and consulta.get("medico_id") else None]
     valor_ini  = med_map.get(med_id_sel[0], "") if med_id_sel[0] else ""
 
-    col_medico = _campo_medico(page, medicos, med_id_sel, valor_ini)
+    col_medico = _campo_medico(page, medicos, med_id_sel, valor_ini, read_only=ro)
 
-    f_data  = _campo("Data *", consulta["data"] if consulta else "",
-                     hint="DD/MM/AAAA", largura=140)
-    f_hora  = _campo("Hora",   consulta.get("hora", "") if consulta else "",
-                     hint="HH:MM", largura=90)
+    row_data, f_data = _campo_data(
+        page,
+        label="Data",
+        value=consulta["data"] if consulta else "",
+        obrigatorio=True,
+        cor_acento=AZUL,
+        largura=160,
+    )
+    f_hora = _campo("Hora", consulta.get("hora", "") if consulta else "",
+                    hint="HH:MM", largura=90)
+    def _mask_hora_consulta(e):
+        raw = "".join(c for c in (f_hora.value or "") if c.isdigit())[:4]
+        out = (raw[:2] + ":" + raw[2:]) if len(raw) >= 3 else raw
+        if f_hora.value != out:
+            f_hora.value = out
+            try: f_hora.update()
+            except Exception: pass
+    f_hora.on_change = _mask_hora_consulta
+
     f_local = _campo("Local / Clínica",
                      consulta.get("local", "") if consulta else "")
     f_obs   = _campo("Observações",
                      consulta.get("observacoes", "") if consulta else "",
                      multiline=True, min_lines=3)
+    for _f in [f_hora, f_local, f_obs]:
+        _f.read_only = ro
+    f_data.read_only = ro
 
     # ── Pauta (itens a tratar) ────────────────────────────
     import json as _json
@@ -557,19 +921,22 @@ def _tela_ficha_consulta(page, consulta, voltar_fn, medicos):
 
     def _rebuild_pauta():
         pauta_col.controls.clear()
+        em_ro = not _modo_edicao[0]
         for idx, item in enumerate(pauta_itens):
             def _rm(e, i=idx):
                 del pauta_itens[i]
                 _rebuild_pauta()
+            btn_rm = ft.Container(
+                content=ft.Icon("close_rounded", size=13, color=MUT),
+                padding=4, border_radius=4, ink=True,
+                on_click=_rm,
+                visible=not em_ro,
+            )
             pauta_col.controls.append(ft.Container(
                 content=ft.Row([
                     ft.Icon("check_circle_outline_rounded", size=14, color=AZUL),
                     ft.Text(item, size=12, color=TXT, expand=True),
-                    ft.Container(
-                        content=ft.Icon("close_rounded", size=13, color=MUT),
-                        padding=4, border_radius=4, ink=True,
-                        on_click=_rm,
-                    ),
+                    btn_rm,
                 ], spacing=8, vertical_alignment=ft.CrossAxisAlignment.CENTER),
                 bgcolor=CARD,
                 border=ft.border.all(1, BD),
@@ -599,11 +966,14 @@ def _tela_ficha_consulta(page, consulta, voltar_fn, medicos):
             ft.Text("Adicionar", size=12, color=AZUL),
         ], spacing=4, tight=True),
         padding=ft.padding.symmetric(horizontal=10, vertical=8),
-        border_radius=8, bgcolor=AZUL + "18",
-        border=ft.border.all(1, AZUL + "44"),
+        border_radius=8, bgcolor=ft.Colors.with_opacity(0.12, AZUL),
+        border=ft.border.all(1, ft.Colors.with_opacity(0.3, AZUL)),
         ink=True,
     )
     btn_add_item.on_click = _add_item
+
+    row_nova_pauta = ft.Row([f_novo_item, btn_add_item], spacing=8,
+                             visible=not ro)
 
     _rebuild_pauta()
 
@@ -616,11 +986,25 @@ def _tela_ficha_consulta(page, consulta, voltar_fn, medicos):
         chips_row.controls.clear()
         for t in ["agendada", "realizada", "cancelada"]:
             def _on(e, tp=t):
+                if not _modo_edicao[0]:
+                    return
                 tipo_sel[0] = tp
                 _rebuild_chips()
             chips_row.controls.append(_chip_tipo(t, tipo_sel[0], _on))
         try: page.update()
         except Exception: pass
+
+    btn_agendar_alarme = ft.Container(
+        content=ft.Row([
+            ft.Icon("alarm_add_rounded", size=16, color=AMAR),
+            ft.Text("Agendar Alarme", size=13, color=AMAR),
+        ], spacing=6, tight=True),
+        bgcolor=ft.Colors.with_opacity(0.12, AMAR),
+        border=ft.border.all(1, ft.Colors.with_opacity(0.4, AMAR)),
+        border_radius=8, ink=True,
+        padding=ft.padding.symmetric(horizontal=16, vertical=10),
+        visible=not IS_ANDROID,
+    )
 
     def _agendar(e):
         data = f_data.value.strip()
@@ -639,6 +1023,8 @@ def _tela_ficha_consulta(page, consulta, voltar_fn, medicos):
         try: page.update()
         except Exception: pass
 
+    btn_agendar_alarme.on_click = _agendar
+
     def _salvar(e):
         if not f_data.value.strip():
             txt_erro.value = "Data é obrigatória."
@@ -648,16 +1034,54 @@ def _tela_ficha_consulta(page, consulta, voltar_fn, medicos):
         salvar_consulta({
             "id":          consulta["id"] if consulta else None,
             "medico_id":   int(med_id_sel[0]) if med_id_sel[0] else None,
-            "data":        f_data.value.strip(),
+            "data":        _norm_data(f_data.value.strip()),
             "hora":        f_hora.value.strip() or None,
             "tipo":        tipo_sel[0],
             "local":       f_local.value.strip() or None,
             "observacoes": f_obs.value.strip() or None,
             "pauta":       pauta_itens,
         })
-        voltar_fn()
+        _status_banco[0] = "em_edicao"
+        _sync(voltar_fn)
+
+    def _ativar_edicao(e=None):
+        _modo_edicao[0] = True
+        for _f in [f_hora, f_local, f_obs]:
+            _f.read_only = False
+        f_data.read_only = False
+        # reativa médico
+        col_medico._tf_medico.visible   = not bool(med_id_sel[0])
+        col_medico._chip_medico.on_click = col_medico._limpar_fn
+        # reativa pauta
+        row_nova_pauta.visible = True
+        _rebuild_pauta()
+        btn_salvar_hdr.visible = True
+        btn_editar.visible = False
+        try: page.update()
+        except Exception: pass
 
     _rebuild_chips()
+
+    btn_salvar_hdr = ft.Container(
+        content=ft.Row([
+            ft.Icon("save_rounded", size=15, color=AZUL),
+            ft.Text("Salvar", size=13, color=AZUL),
+        ], spacing=4, tight=True),
+        padding=ft.padding.symmetric(horizontal=8, vertical=8),
+        border_radius=8, ink=True, visible=is_novo,
+    )
+    btn_salvar_hdr.on_click = _salvar
+
+    btn_editar = ft.Container(
+        content=ft.Row([
+            ft.Icon("edit_rounded", size=15, color=AZUL),
+            ft.Text("Editar", size=13, color=AZUL),
+        ], spacing=5, tight=True),
+        padding=ft.padding.symmetric(horizontal=10, vertical=8),
+        border_radius=8, bgcolor=ft.Colors.with_opacity(0.12, AZUL), ink=True,
+        visible=not is_novo,
+    )
+    btn_editar.on_click = _ativar_edicao
 
     cabecalho = ft.Container(
         content=ft.Row([
@@ -668,25 +1092,15 @@ def _tela_ficha_consulta(page, consulta, voltar_fn, medicos):
                 ], spacing=4, tight=True),
                 padding=ft.padding.symmetric(horizontal=8, vertical=8),
                 ink=True,
-                on_click=lambda e: voltar_fn(),
+                on_click=lambda e: _sair(voltar_fn),
             ),
             ft.Row([
                 ft.Icon("event_note_rounded", size=18, color=AZUL),
                 ft.Text(titulo, size=18, weight=ft.FontWeight.W_700, color=TXT),
             ], spacing=8, tight=True),
             ft.Container(expand=True),
-            ft.FilledButton(
-                content=ft.Row([
-                    ft.Icon("save_rounded", size=16),
-                    ft.Text("Salvar", size=13, weight=ft.FontWeight.W_600),
-                ], spacing=6, tight=True),
-                style=ft.ButtonStyle(
-                    bgcolor=AZUL,
-                    shape=ft.RoundedRectangleBorder(radius=8),
-                    padding=ft.padding.symmetric(horizontal=18, vertical=10),
-                ),
-                on_click=_salvar,
-            ),
+            btn_editar,
+            btn_salvar_hdr,
         ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
         padding=ft.padding.symmetric(horizontal=16, vertical=14),
         border=ft.Border(bottom=ft.BorderSide(1, BD)),
@@ -699,7 +1113,7 @@ def _tela_ficha_consulta(page, consulta, voltar_fn, medicos):
                 col_medico,
                 ft.Container(height=4),
                 _label_sec("DATA E HORA"),
-                ft.Row([f_data, f_hora], spacing=8),
+                ft.Row([row_data, f_hora], spacing=8),
                 ft.Container(height=4),
                 _label_sec("STATUS"),
                 chips_row,
@@ -708,24 +1122,13 @@ def _tela_ficha_consulta(page, consulta, voltar_fn, medicos):
                 f_local,
                 ft.Container(height=4),
                 _label_sec("ITENS A TRATAR"),
-                ft.Row([f_novo_item, btn_add_item], spacing=8),
+                row_nova_pauta,
                 pauta_col,
                 ft.Container(height=4),
                 _label_sec("OBSERVAÇÕES"),
                 f_obs,
                 ft.Container(height=8),
-                ft.OutlinedButton(
-                    content=ft.Row([
-                        ft.Icon("alarm_add_rounded", size=16, color=AMAR),
-                        ft.Text("Agendar Alarme", size=13, color=AMAR),
-                    ], spacing=6, tight=True),
-                    style=ft.ButtonStyle(
-                        side=ft.BorderSide(1, AMAR),
-                        shape=ft.RoundedRectangleBorder(radius=8),
-                        padding=ft.padding.symmetric(horizontal=16, vertical=10),
-                    ),
-                    on_click=_agendar,
-                ),
+                btn_agendar_alarme,
                 txt_alarme,
                 txt_erro,
                 ft.Container(height=20),
@@ -735,6 +1138,7 @@ def _tela_ficha_consulta(page, consulta, voltar_fn, medicos):
         ),
     ], expand=True, spacing=0)
 
+    _registrar_voltar_hw()
     return _centralizar(corpo, page)
 
 
@@ -812,7 +1216,10 @@ def criar_tela_consultas_medicas(page: ft.Page, voltar_fn):
 
             info_data = ""
             try:
-                dt = datetime.datetime.strptime(c["data"], "%d/%m/%Y").date()
+                _dt = _flex_parse(c["data"])
+                dt = _dt.date() if _dt else None
+                if dt is None:
+                    raise ValueError("data invalida")
                 delta = (dt - hoje).days
                 if c["tipo"] == "agendada":
                     if delta == 0:   info_data = "Hoje!"

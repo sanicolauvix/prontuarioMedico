@@ -11,6 +11,8 @@ COR  = "#BC8CFF"
 VERM = "#DA3633"
 SEC  = "#8B949E"
 BD   = "#21262D"
+TXT  = "#E6EDF3"
+CARD = "#161B22"
 
 
 def criar_tela_especialidades(page: ft.Page, voltar_fn):
@@ -155,7 +157,9 @@ def criar_tela_especialidades(page: ft.Page, voltar_fn):
         except Exception: pass
 
     def abrir_ficha(esp=None):
-        is_novo = esp is None
+        is_novo      = esp is None
+        _modo_ed     = [is_novo]
+        ro           = not _modo_ed[0]
 
         f_nome = ft.TextField(
             label="Nome da especialidade *",
@@ -163,7 +167,7 @@ def criar_tela_especialidades(page: ft.Page, voltar_fn):
             bgcolor="#0D1117", border_color="#30363D",
             label_style=ft.TextStyle(color="#8B949E"),
             text_style=ft.TextStyle(color="#E6EDF3"),
-            border_radius=6,
+            border_radius=6, read_only=ro,
         )
         f_desc = ft.TextField(
             label="Descrição",
@@ -171,12 +175,12 @@ def criar_tela_especialidades(page: ft.Page, voltar_fn):
             bgcolor="#0D1117", border_color="#30363D",
             label_style=ft.TextStyle(color="#8B949E"),
             text_style=ft.TextStyle(color="#E6EDF3"),
-            border_radius=6, multiline=True, min_lines=2,
+            border_radius=6, multiline=True, min_lines=2, read_only=ro,
         )
         sw_ativo = ft.Switch(
             label="Ativa",
             value=bool(esp.get("ativo", 1)) if esp else True,
-            active_color=COR,
+            active_color=COR, disabled=ro,
         )
         txt_erro = ft.Text("", color="#FF4444", size=11)
 
@@ -203,20 +207,42 @@ def criar_tela_especialidades(page: ft.Page, voltar_fn):
             _fechar_form()
             carregar()
 
+        def _ativar_edicao_esp(e=None):
+            _modo_ed[0] = True
+            f_nome.read_only = False
+            f_desc.read_only = False
+            sw_ativo.disabled = False
+            btn_editar_esp.visible = False
+            btn_salvar_esp.visible = True
+            try: page.update()
+            except Exception: pass
+
+        btn_editar_esp = ft.Container(
+            content=ft.Row([
+                ft.Icon("edit_rounded", size=13, color=COR),
+                ft.Text("Editar", size=12, color=COR),
+            ], spacing=4, tight=True),
+            padding=ft.padding.symmetric(horizontal=10, vertical=6),
+            border_radius=8, bgcolor=f"{COR}18", ink=True,
+            visible=not is_novo,
+        )
+        btn_editar_esp.on_click = _ativar_edicao_esp
+
         btn_cancel_form = ft.Container(
-            content=ft.Text("Cancelar", size=13, color=SEC),
+            content=ft.Text("Fechar", size=13, color=SEC),
             padding=ft.padding.symmetric(horizontal=12, vertical=8),
             border_radius=8, bgcolor=f"{SEC}22", ink=True,
         )
         btn_cancel_form.on_click = _fechar_form
 
-        btn_salvar = ft.Container(
+        btn_salvar_esp = ft.Container(
             content=ft.Text("Salvar", size=13, color=COR,
                             weight=ft.FontWeight.W_600),
             padding=ft.padding.symmetric(horizontal=12, vertical=8),
             border_radius=8, bgcolor=f"{COR}22", ink=True,
+            visible=is_novo,
         )
-        btn_salvar.on_click = salvar
+        btn_salvar_esp.on_click = salvar
 
         ref[0] = ft.Container(
             content=ft.Container(
@@ -224,13 +250,15 @@ def criar_tela_especialidades(page: ft.Page, voltar_fn):
                     ft.Row([
                         ft.Icon("local_hospital_rounded", color=COR, size=18),
                         ft.Text(
-                            "Nova Especialidade" if is_novo else "Editar Especialidade",
-                            size=15, weight=ft.FontWeight.W_600, color=TXT),
+                            "Nova Especialidade" if is_novo else "Especialidade",
+                            size=15, weight=ft.FontWeight.W_600, color=TXT,
+                            expand=True),
+                        btn_editar_esp,
                     ], spacing=8),
                     ft.Container(height=12),
                     f_nome, f_desc, sw_ativo, txt_erro,
                     ft.Container(height=12),
-                    ft.Row([btn_cancel_form, btn_salvar], spacing=8,
+                    ft.Row([btn_cancel_form, btn_salvar_esp], spacing=8,
                            alignment=ft.MainAxisAlignment.END),
                 ], spacing=6, tight=True),
                 bgcolor=CARD, border_radius=14,

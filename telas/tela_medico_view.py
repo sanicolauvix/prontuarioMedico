@@ -274,7 +274,7 @@ def _conteudo_remedios(page: ft.Page, medico_id: int, nome_medico: str) -> list:
         try:
             salvar_receita({
                 "medico_id":    medico_id,
-                "data":         f_data.value or date.today().strftime("%d/%m/%Y"),
+                "data":         f_data.value or date.today().isoformat(),
                 "nome_arquivo": f"Receita — {nome_medico}",
                 "observacoes":  obs,
             })

@@ -63,7 +63,7 @@ def _aba_parametros(page, voltar_fn):
                 (c for c in ["data_exame", "data_coleta", "data", "created_at", "id"] if c in cols), "id")
             row = conn.execute(f"""
                 SELECT e.drive_file_id
-                FROM resultados_estruturados r
+                FROM exame_resultados r
                 JOIN exames e ON r.exame_id = e.id
                 WHERE r.parametro = ?
                   AND e.drive_file_id IS NOT NULL
@@ -481,7 +481,7 @@ def _aba_conferencia(page, voltar_fn):
             LEFT JOIN pacientes p ON e.paciente_id = p.id
             WHERE e.tipo = 'numerico'
               AND NOT EXISTS (
-                  SELECT 1 FROM resultados_estruturados r WHERE r.exame_id = e.id)
+                  SELECT 1 FROM exame_resultados r WHERE r.exame_id = e.id)
             ORDER BY e.data_exame DESC
         """).fetchall()
 
@@ -489,7 +489,7 @@ def _aba_conferencia(page, voltar_fn):
             SELECT r.parametro, COUNT(*) as ocorrencias,
                    COUNT(DISTINCT r.exame_id) as exames,
                    MAX(r.unidade) as unidade
-            FROM resultados_estruturados r
+            FROM exame_resultados r
             WHERE (r.exame_padrao_id IS NULL OR r.exame_padrao_id = 0)
               AND (r.nivel_interpretacao IS NULL
                    OR r.nivel_interpretacao NOT IN ('ignorado'))
@@ -501,7 +501,7 @@ def _aba_conferencia(page, voltar_fn):
                    COUNT(re.id) as usos
             FROM exames_padrao ep
             LEFT JOIN referencias_padrao r ON ep.id = r.exame_padrao_id
-            LEFT JOIN resultados_estruturados re ON ep.id = re.exame_padrao_id
+            LEFT JOIN exame_resultados re ON ep.id = re.exame_padrao_id
             WHERE ep.ativo = 1
             GROUP BY ep.id HAVING COUNT(r.id) = 0
             ORDER BY usos DESC

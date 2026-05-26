@@ -11,8 +11,9 @@ import flet as ft
 from dados.model_prontuario import (
     listar_rotina, salvar_rotina_item, excluir_rotina_item,
     listar_diario, salvar_diario_entrada, excluir_diario_entrada,
-    tendencias_diario, tags_frequentes,
+    tendencias_diario, tags_frequentes, normalizar_data as _norm_data,
 )
+from shared.date_field import campo_data as _campo_data
 
 logger = logging.getLogger(__name__)
 
@@ -275,6 +276,13 @@ def _conteudo_rotina(page, wrapper):
             })
             _carregar()
             _mostrar_lista()
+            def _fazer_sync():
+                try:
+                    from backup.drive_backup import fazer_backup
+                    fazer_backup(forcar=True)
+                except Exception as ex:
+                    logger.warning("[dieta] sync erro: %s", ex)
+            threading.Thread(target=_fazer_sync, daemon=True).start()
 
         def _excluir(e):
             if item and item.get("id"):
@@ -540,12 +548,21 @@ def _conteudo_diario(page):
     def _abrir_formulario(entrada=None):
         is_nova = entrada is None
 
-        f_data    = _campo("Data *",
-                            entrada["data"] if entrada else date.today().isoformat(),
-                            largura=140)
+        row_data, f_data = _campo_data(
+            page, "Data",
+            value=entrada["data"] if entrada else date.today().isoformat(),
+            obrigatorio=True, cor_acento=AZUL, largura=160)
         f_hora    = _campo("Hora", (entrada.get("hora") or "")[:5] if entrada else
                             datetime.now().strftime("%H:%M"),
                             largura=90, keyboard=ft.KeyboardType.DATETIME)
+        def _mask_hora_dieta(e):
+            raw = "".join(c for c in (f_hora.value or "") if c.isdigit())[:4]
+            out = (raw[:2] + ":" + raw[2:]) if len(raw) >= 3 else raw
+            if f_hora.value != out:
+                f_hora.value = out
+                try: f_hora.update()
+                except Exception: pass
+        f_hora.on_change = _mask_hora_dieta
         f_relato  = _campo("Relato *",
                             entrada.get("relato","") if entrada else "",
                             multiline=True, min_lines=4,
@@ -621,7 +638,7 @@ def _conteudo_diario(page):
 
             salvar_diario_entrada({
                 "id": entrada["id"] if entrada else None,
-                "data": f_data.value.strip() or date.today().isoformat(),
+                "data": _norm_data(f_data.value.strip()) or date.today().isoformat(),
                 "hora": f_hora.value.strip() or None,
                 "humor": humor_sel[0],
                 "energia": energia_sel[0],
@@ -675,7 +692,7 @@ def _conteudo_diario(page):
                     border=ft.Border(bottom=ft.BorderSide(1, BD))),
                 ft.Container(
                     content=ft.Column([
-                        ft.Row([f_data, f_hora], spacing=8),
+                        ft.Row([row_data, f_hora], spacing=8),
                         ft.Container(height=4),
                         _label_sec("COMO VOCÊ SE SENTE"),
                         humor_row, energia_row,
@@ -877,12 +894,21 @@ def _conteudo_diario(page):
     def _orig_abrir_v2(entrada=None):
         is_nova = entrada is None
 
-        f_data    = _campo("Data *",
-                            entrada["data"] if entrada else date.today().isoformat(),
-                            largura=140)
+        row_data, f_data = _campo_data(
+            page, "Data",
+            value=entrada["data"] if entrada else date.today().isoformat(),
+            obrigatorio=True, cor_acento=AZUL, largura=160)
         f_hora    = _campo("Hora", (entrada.get("hora") or "")[:5] if entrada else
                             datetime.now().strftime("%H:%M"),
                             largura=90, keyboard=ft.KeyboardType.DATETIME)
+        def _mask_hora_dieta(e):
+            raw = "".join(c for c in (f_hora.value or "") if c.isdigit())[:4]
+            out = (raw[:2] + ":" + raw[2:]) if len(raw) >= 3 else raw
+            if f_hora.value != out:
+                f_hora.value = out
+                try: f_hora.update()
+                except Exception: pass
+        f_hora.on_change = _mask_hora_dieta
         f_relato  = _campo("Relato *",
                             entrada.get("relato","") if entrada else "",
                             multiline=True, min_lines=4,
@@ -951,7 +977,7 @@ def _conteudo_diario(page):
 
             salvar_diario_entrada({
                 "id": entrada["id"] if entrada else None,
-                "data": f_data.value.strip() or date.today().isoformat(),
+                "data": _norm_data(f_data.value.strip()) or date.today().isoformat(),
                 "hora": f_hora.value.strip() or None,
                 "humor": humor_sel[0],
                 "energia": energia_sel[0],
@@ -1005,7 +1031,7 @@ def _conteudo_diario(page):
                     border=ft.Border(bottom=ft.BorderSide(1, BD))),
                 ft.Container(
                     content=ft.Column([
-                        ft.Row([f_data, f_hora], spacing=8),
+                        ft.Row([row_data, f_hora], spacing=8),
                         ft.Container(height=4),
                         _label_sec("COMO VOCÊ SE SENTE"),
                         humor_row, energia_row,

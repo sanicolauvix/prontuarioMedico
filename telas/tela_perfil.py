@@ -19,7 +19,57 @@ VERM = "#F85149"
 
 
 def criar_tela_perfil(page: ft.Page, voltar_fn=None):
-    _montado = [False]
+    _montado      = [False]
+    _status_banco = ["normal"]
+    _handler_ant  = [None]
+
+    def _sync(apos_sync_fn=None):
+        ov = ft.Container(
+            content=ft.Container(
+                content=ft.Column([
+                    ft.ProgressRing(color=AZUL, width=36, height=36, stroke_width=3),
+                    ft.Container(height=10),
+                    ft.Text("Sincronizando com Drive...", size=13, color=TXT,
+                            weight=ft.FontWeight.W_600, text_align="center"),
+                    ft.Text("Aguarde", size=11, color=SEC, text_align="center"),
+                ], tight=True, spacing=2,
+                   horizontal_alignment=ft.CrossAxisAlignment.CENTER),
+                bgcolor=CARD, border_radius=14, padding=ft.padding.all(24), width=240,
+            ),
+            bgcolor="#DD000000", expand=True, alignment=ft.Alignment(0, 0),
+        )
+        page.overlay.append(ov)
+        try: page.update()
+        except Exception: pass
+        def _run():
+            try:
+                from backup.drive_backup import fazer_backup
+                fazer_backup(forcar=True)
+            except Exception as ex:
+                logging.warning("[perfil] sync erro: %s", ex)
+            finally:
+                _status_banco[0] = "normal"
+                if ov in page.overlay: page.overlay.remove(ov)
+                try: page.update()
+                except Exception: pass
+                if apos_sync_fn: apos_sync_fn()
+        threading.Thread(target=_run, daemon=True).start()
+
+    def _sair():
+        _desregistrar_voltar_hw()
+        if _status_banco[0] == "em_edicao":
+            _sync(voltar_fn)
+        elif voltar_fn:
+            voltar_fn()
+
+    def _registrar_voltar_hw():
+        _handler_ant[0] = page.on_keyboard_event
+        def _on_hw(e):
+            if e.key == "Escape": _sair()
+        page.on_keyboard_event = _on_hw
+
+    def _desregistrar_voltar_hw():
+        page.on_keyboard_event = _handler_ant[0]
 
     def _atualizar_ui():
         if _montado[0]:
@@ -136,12 +186,15 @@ def criar_tela_perfil(page: ft.Page, voltar_fn=None):
             salvar_perfil(dados)
             txt_status.value = "Perfil salvo!"
             txt_status.color = VERD
+            _status_banco[0] = "em_edicao"
             logging.info("[PERFIL] Salvo")
         except Exception as ex:
             txt_status.value = f"Erro: {ex}"
             txt_status.color = VERM
             logging.exception("[PERFIL] Erro ao salvar")
         _atualizar_ui()
+        if _status_banco[0] == "em_edicao":
+            _sync()
 
     # ── Backup / Restore ─────────────────────────────────────────
     txt_backup_status = ft.Text("", size=12, color=SEC)
@@ -342,7 +395,7 @@ def criar_tela_perfil(page: ft.Page, voltar_fn=None):
     btn_salvar_hdr.on_click = _salvar
 
     header = lay.criar_cabecalho(
-        "Perfil", voltar_fn or (lambda: None),
+        "Perfil", lambda e=None: _sair(),
         icone_titulo="manage_accounts_rounded",
         cor_titulo=AZUL,
         acoes=[btn_salvar_hdr],
@@ -408,4 +461,5 @@ def criar_tela_perfil(page: ft.Page, voltar_fn=None):
 
     corpo = lay.criar_corpo(header, area)
     _montado[0] = True
+    _registrar_voltar_hw()
     return ft.Container(bgcolor=BG, expand=True, content=corpo)

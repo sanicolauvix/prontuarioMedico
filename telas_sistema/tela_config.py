@@ -551,7 +551,7 @@ def criar_tela_config(page: ft.Page, voltar_fn=None, aba_inicial: int = 0):
             ),
             ft.Container(
                 content=ft.Text(
-                    "Backups em: Google Drive / Koios_Prontuario/\n"
+                    "Backups em: Google Drive / Koios/Prontuario/\n"
                     "  prontuario_db/ · koios_db/ (max 5 versoes)",
                     size=10, color=MUT,
                 ),

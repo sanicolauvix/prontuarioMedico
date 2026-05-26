@@ -2,12 +2,16 @@
 # Prontuario | telas/tela_rotinas.py
 import flet as ft
 import logging
+import threading
+import json
+from datetime import date
 from shared.layout import Layout
 from dados.model_prontuario import (
     listar_templates, salvar_template, excluir_template,
     listar_momentos, salvar_momento, excluir_momento,
     listar_itens, salvar_item, excluir_item,
-    listar_remedios,
+    listar_remedios, salvar_rotina_diario,
+    salvar_nutricao_item, listar_nutricao_por_template,
 )
 
 log = logging.getLogger(__name__)
@@ -63,8 +67,7 @@ def _campo(label, valor="", hint=None, multiline=False, min_lines=1,
 
 
 def _label_sec(txt, cor=SEC):
-    return ft.Text(txt, size=10, color=cor, weight=ft.FontWeight.W_600,
-                   letter_spacing=1.0)
+    return ft.Text(txt, size=10, color=cor, weight=ft.FontWeight.W_600)
 
 
 def criar_tela_rotinas(page: ft.Page, voltar_fn, navegar_fn=None) -> ft.Container:
@@ -104,7 +107,7 @@ def criar_tela_rotinas(page: ft.Page, voltar_fn, navegar_fn=None) -> ft.Containe
             bgcolor=CARD, border_radius=ft.BorderRadius(14, 14, 0, 0),
             padding=ft.padding.all(20),
             width=min(480, (page.width or 480)),
-            max_height=page.height * 0.85 if page.height else 600,
+            height=min(page.height * 0.85 if page.height else 600, 600),
         )
         ref[0] = ft.Container(
             content=ft.Column(
@@ -123,109 +126,327 @@ def criar_tela_rotinas(page: ft.Page, voltar_fn, navegar_fn=None) -> ft.Containe
     # FORM: TEMPLATE
     # ══════════════════════════════════════════════════════
 
+    _TIPOS_TEMPLATE_FORM = [
+        ("alimentacao", "restaurant_rounded",      VERD, "Alimentacao"),
+        ("exercicio",   "directions_run_rounded",  LAR,  "Exercicios"),
+        ("trabalho",    "work_rounded",            AZUL, "Trabalho"),
+        ("lazer",       "weekend_rounded",         ROXO, "Lazer"),
+    ]
+    _TIPO_ITEM_MAP = {
+        "alimentacao": ("refeicao",  "alimento",  "Itens da refeicao"),
+        "exercicio":   ("atividade", "atividade", "Atividades"),
+        "trabalho":    ("trabalho",  "atividade", "Tarefas"),
+        "lazer":       ("outro",     "atividade", "Atividades de lazer"),
+    }
+    _FREQUENCIAS = [
+        ("diario",     "Diario"),
+        ("2x_semana",  "2x/sem"),
+        ("3x_semana",  "3x/sem"),
+        ("semanal",    "Semanal"),
+        ("eventual",   "Eventual"),
+    ]
+    _UNIDADES = [
+        ("Unidade", "Unidade"),
+        ("g",       "g"),
+        ("kg",      "kg"),
+        ("ml",      "ml"),
+        ("Litro",   "Litro"),
+        ("Xicara",  "Xicara"),
+        ("C.Sopa",  "C.Sopa"),
+        ("C.Cha",   "C.Cha"),
+        ("Fatia",   "Fatia"),
+        ("Porcao",  "Porcao"),
+    ]
+
+    def _cor_de_tipo(tipo):
+        m = {t[0]: t[2] for t in _TIPOS_TEMPLATE_FORM}
+        return m.get(tipo, AZUL)
+
     def _form_template(template=None):
-        f_nome = _campo("Nome da rotina *", template["nome"] if template else "",
-                        hint="ex: Dia de Trabalho, Final de Semana…")
-        icone_sel = [template["icone"] if template else "today_rounded"]
-        cor_sel   = [template["cor"] if template else "#58A6FF"]
-        padrao    = [bool(template.get("padrao", False)) if template else False]
+        f_nome    = _campo("Nome *", template["nome"] if template else "",
+                           hint="ex: Cafe da Manha, Treino, Trabalho…")
+        f_horario = _campo("Horario (HH:MM)", template.get("horario","") if template else "",
+                           hint="ex: 07:00", keyboard=ft.KeyboardType.NUMBER)
+        tipo_sel  = [template.get("tipo","alimentacao") if template else "alimentacao"]
+        row_tipos = ft.Row(spacing=6, wrap=True)
 
-        row_icones = ft.Row(spacing=6, wrap=True)
-        row_cores  = ft.Row(spacing=6, wrap=True)
-        sw_padrao  = ft.Switch(
-            label="Rotina padrao (aparece primeiro)",
-            value=padrao[0], active_color=AZUL,
-            label_style=ft.TextStyle(color=SEC, size=12),
-        )
+        # ── Itens inline ──────────────────────────────────────────
+        # Cada entrada: {"f": TextField, "freq": [str], "susp_de": TextField,
+        #                "susp_ate": TextField, "susp_open": [bool], "id": int|None}
+        itens_data = []
+        itens_col  = ft.Column(spacing=8, tight=True)
+        lbl_itens  = ft.Text("Itens", size=10, color=SEC, weight=ft.FontWeight.W_600)
 
-        def _rebuild_icones():
-            row_icones.controls.clear()
-            for ic in _ICONES_TEMPLATE:
-                sel = ic == icone_sel[0]
+        def _novo_item_entry(desc="", qty="", unid="Unidade", freq="diario", iid=None):
+            dd = ft.Dropdown(
+                label="Unidade",
+                options=[ft.dropdown.Option(key=k, text=v) for k, v in _UNIDADES],
+                value=unid,
+                bgcolor=CARD, border_color=BD2, focused_border_color=AZUL,
+                label_style=ft.TextStyle(color=SEC, size=11),
+                text_style=ft.TextStyle(color=TXT, size=12),
+                border_radius=8,
+            )
+            dd.on_change = lambda e: None
+            return {
+                "f":         _campo("Descricao *", desc,
+                                    hint="ex: ovos caipiras - omeletes"),
+                "qty":       _campo("Qtd", qty, hint="3", keyboard=ft.KeyboardType.NUMBER),
+                "unidade_dd": dd,
+                "freq":      [freq],
+                "susp_de":   _campo("De (AAAA-MM-DD)", hint=date.today().isoformat(),
+                                    keyboard=ft.KeyboardType.NUMBER),
+                "susp_ate":  _campo("Ate (AAAA-MM-DD)", hint="indefinido = vazio",
+                                    keyboard=ft.KeyboardType.NUMBER),
+                "susp_open": [False],
+                "id":        iid,
+            }
+
+        if template:
+            try:
+                moms = listar_momentos(template["id"])
+                if moms:
+                    for it in listar_itens(moms[0]["id"]):
+                        itens_data.append(_novo_item_entry(
+                            it.get("descricao",""),
+                            it.get("quantidade","") or "",
+                            it.get("unidade","Unidade") or "Unidade",
+                            it.get("frequencia","diario"),
+                            it.get("id")))
+            except Exception:
+                pass
+
+        def _freq_row(entry):
+            row = ft.Row(spacing=4, wrap=True)
+            for chave, label in _FREQUENCIAS:
+                sel = chave == entry["freq"][0]
+                cor = AZUL if sel else SEC
+                btn = ft.Container(
+                    content=ft.Text(label, size=10, color=cor,
+                                    weight=ft.FontWeight.W_600 if sel else ft.FontWeight.NORMAL),
+                    padding=ft.padding.symmetric(horizontal=8, vertical=4),
+                    border_radius=12, ink=True,
+                    bgcolor=f"{AZUL}22" if sel else BD,
+                    border=ft.Border(
+                        top=ft.BorderSide(1, f"{AZUL}88" if sel else BD2),
+                        bottom=ft.BorderSide(1, f"{AZUL}88" if sel else BD2),
+                        left=ft.BorderSide(1, f"{AZUL}88" if sel else BD2),
+                        right=ft.BorderSide(1, f"{AZUL}88" if sel else BD2)),
+                )
+                def _sel_f(e, k=chave, en=entry):
+                    en["freq"][0] = k
+                    _refresh_itens()
+                    try: page.update()
+                    except Exception: pass
+                btn.on_click = _sel_f
+                row.controls.append(btn)
+            return row
+
+        def _refresh_itens():
+            _, _, lbl = _TIPO_ITEM_MAP.get(tipo_sel[0], ("outro","atividade","Itens"))
+            lbl_itens.value = lbl
+            itens_col.controls.clear()
+            for i, en in enumerate(itens_data):
+                btn_rem = ft.Container(
+                    content=ft.Icon("close_rounded", size=14, color=VERM),
+                    padding=ft.padding.all(4), ink=True, border_radius=6)
+                def _rem(e, idx=i):
+                    itens_data.pop(idx)
+                    _refresh_itens()
+                    try: page.update()
+                    except Exception: pass
+                btn_rem.on_click = _rem
+
+                aberto = en["susp_open"][0]
+                cor_susp = VERM if aberto else MUT
+                lbl_susp = "Cancelar suspensao" if aberto else "Suspender por periodo"
+                btn_susp = ft.Container(
+                    content=ft.Row([
+                        ft.Icon("event_busy_rounded", size=11, color=cor_susp),
+                        ft.Text(lbl_susp, size=10, color=cor_susp),
+                    ], spacing=4, tight=True),
+                    padding=ft.padding.symmetric(horizontal=8, vertical=3),
+                    border_radius=10, ink=True,
+                )
+                def _toggle_susp(e, en=en):
+                    en["susp_open"][0] = not en["susp_open"][0]
+                    if not en["susp_open"][0]:
+                        en["susp_de"].value  = ""
+                        en["susp_ate"].value = ""
+                    _refresh_itens()
+                    try: page.update()
+                    except Exception: pass
+                btn_susp.on_click = _toggle_susp
+
+                filhos = [
+                    ft.Row([en["f"], btn_rem], spacing=4),
+                    ft.Row([
+                        ft.Container(content=en["qty"], width=80),
+                        ft.Container(content=en["unidade_dd"], expand=True),
+                    ], spacing=6),
+                    _freq_row(en),
+                    btn_susp,
+                ]
+                if aberto:
+                    filhos += [
+                        ft.Row([en["susp_de"], en["susp_ate"]], spacing=6),
+                    ]
+
+                itens_col.controls.append(ft.Container(
+                    content=ft.Column(filhos, spacing=4, tight=True),
+                    bgcolor=BG, border_radius=8,
+                    padding=ft.padding.symmetric(horizontal=8, vertical=6),
+                    border=ft.Border(
+                        top=ft.BorderSide(1, f"{VERM}55" if aberto else BD2),
+                        bottom=ft.BorderSide(1, f"{VERM}55" if aberto else BD2),
+                        left=ft.BorderSide(3, VERM if aberto else BD2),
+                        right=ft.BorderSide(1, f"{VERM}55" if aberto else BD2)),
+                ))
+
+        _refresh_itens()
+
+        btn_add = ft.Container(
+            content=ft.Row([
+                ft.Icon("add_rounded", size=12, color=AZUL),
+                ft.Text("Adicionar item", size=12, color=AZUL),
+            ], spacing=4, tight=True),
+            padding=ft.padding.symmetric(horizontal=10, vertical=6),
+            border_radius=8, ink=True,
+            border=ft.Border(
+                top=ft.BorderSide(1, f"{AZUL}55"), bottom=ft.BorderSide(1, f"{AZUL}55"),
+                left=ft.BorderSide(1, f"{AZUL}55"), right=ft.BorderSide(1, f"{AZUL}55")))
+        def _add_item(e=None):
+            itens_data.append(_novo_item_entry())
+            _refresh_itens()
+            try: page.update()
+            except Exception: pass
+        btn_add.on_click = _add_item
+
+        def _unidade_label(k):
+            return dict(_UNIDADES).get(k, k)
+
+        # ── Tipo buttons ──────────────────────────────────────────
+        def _rebuild_tipos():
+            row_tipos.controls.clear()
+            for k, icone, cor, label in _TIPOS_TEMPLATE_FORM:
+                sel = k == tipo_sel[0]
                 c = ft.Container(
-                    content=ft.Icon(ic, size=20, color=cor_sel[0] if sel else SEC),
-                    bgcolor=f"{cor_sel[0]}33" if sel else CARD,
-                    border_radius=8, width=40, height=40,
+                    content=ft.Column([
+                        ft.Icon(icone, size=16, color=cor if sel else SEC),
+                        ft.Text(label, size=9, color=cor if sel else SEC),
+                    ], spacing=2, horizontal_alignment=ft.CrossAxisAlignment.CENTER, tight=True),
+                    bgcolor=f"{cor}22" if sel else CARD,
+                    border_radius=8, width=72, height=52,
                     alignment=ft.alignment.Alignment(0, 0),
                     border=ft.Border(
-                        top=ft.BorderSide(1, cor_sel[0] if sel else BD),
-                        bottom=ft.BorderSide(1, cor_sel[0] if sel else BD),
-                        left=ft.BorderSide(1, cor_sel[0] if sel else BD),
-                        right=ft.BorderSide(1, cor_sel[0] if sel else BD),
+                        top=ft.BorderSide(1, cor if sel else BD),
+                        bottom=ft.BorderSide(1, cor if sel else BD),
+                        left=ft.BorderSide(1, cor if sel else BD),
+                        right=ft.BorderSide(1, cor if sel else BD),
                     ),
                     ink=True,
                 )
-                def _sel_ic(e, i=ic):
-                    icone_sel[0] = i; _rebuild_icones()
+                def _sel(e, kk=k):
+                    tipo_sel[0] = kk; _rebuild_tipos(); _refresh_itens()
                     try: page.update()
                     except Exception: pass
-                c.on_click = _sel_ic
-                row_icones.controls.append(c)
+                c.on_click = _sel
+                row_tipos.controls.append(c)
 
-        def _rebuild_cores():
-            row_cores.controls.clear()
-            for hex_c, _ in _CORES_TEMPLATE:
-                sel = hex_c == cor_sel[0]
-                c = ft.Container(
-                    bgcolor=hex_c, border_radius=20, width=32, height=32,
-                    border=ft.Border(
-                        top=ft.BorderSide(2, TXT if sel else "#00000000"),
-                        bottom=ft.BorderSide(2, TXT if sel else "#00000000"),
-                        left=ft.BorderSide(2, TXT if sel else "#00000000"),
-                        right=ft.BorderSide(2, TXT if sel else "#00000000"),
-                    ),
-                    ink=True,
-                )
-                def _sel_cor(e, h=hex_c):
-                    cor_sel[0] = h; _rebuild_cores(); _rebuild_icones()
-                    try: page.update()
-                    except Exception: pass
-                c.on_click = _sel_cor
-                row_cores.controls.append(c)
-
-        _rebuild_icones()
-        _rebuild_cores()
+        _rebuild_tipos()
 
         txt_err = ft.Text("", color=VERM, size=12)
 
         def _salvar(e):
             if not (f_nome.value or "").strip():
-                txt_err.value = "Nome obrigatorio."; page.update(); return
-            salvar_template({
-                "id": template["id"] if template else None,
-                "nome": f_nome.value.strip(),
-                "icone": icone_sel[0],
-                "cor": cor_sel[0],
-                "padrao": sw_padrao.value,
-                "ativo": 1,
+                txt_err.value = "Nome obrigatorio."
+                try: page.update()
+                except Exception: pass
+                return
+            hora = (f_horario.value or "").strip()
+            if hora and len(hora) == 4 and hora.isdigit():
+                hora = hora[:2] + ":" + hora[2:]
+            tid = salvar_template({
+                "id":      template["id"] if template else None,
+                "nome":    f_nome.value.strip(),
+                "tipo":    tipo_sel[0],
+                "horario": hora or None,
+                "icone":   "today_rounded",
+                "cor":     _cor_de_tipo(tipo_sel[0]),
+                "padrao":  0,
+                "ativo":   1,
             })
+            tipo_mom, tipo_item, _ = _TIPO_ITEM_MAP.get(tipo_sel[0], ("outro","atividade","Itens"))
+            try:
+                moms = listar_momentos(tid)
+                if moms:
+                    mid = moms[0]["id"]
+                    salvar_momento({"id": mid, "template_id": tid,
+                                    "nome": f_nome.value.strip(),
+                                    "tipo": tipo_mom, "horario": hora or None})
+                    for it in listar_itens(mid):
+                        excluir_item(it["id"])
+                else:
+                    mid = salvar_momento({"template_id": tid,
+                                          "nome": f_nome.value.strip(),
+                                          "tipo": tipo_mom, "horario": hora or None})
+                for i, en in enumerate(itens_data):
+                    desc = (en["f"].value or "").strip()
+                    if not desc:
+                        continue
+                    novo_id = salvar_item({"momento_id": mid, "tipo": tipo_item,
+                                           "descricao": desc,
+                                           "quantidade": (en["qty"].value or "").strip() or None,
+                                           "unidade":    en["unidade_dd"].value or "un",
+                                           "frequencia": en["freq"][0],
+                                           "ordem": i})
+                    susp_de  = (en["susp_de"].value  or "").strip()
+                    susp_ate = (en["susp_ate"].value or "").strip()
+                    if susp_de or susp_ate:
+                        salvar_rotina_diario({
+                            "data":      susp_de or date.today().isoformat(),
+                            "item_id":   novo_id,
+                            "item_nome": desc,
+                            "tipo":      "suspensao",
+                            "descricao": f"Suspenso: {desc}",
+                            "data_fim":  susp_ate or None,
+                        })
+            except Exception as ex:
+                print(f"[ROTINAS] salvar itens: {ex}", flush=True)
             _fechar_overlay(ref)
             _mostrar_lista()
+            import threading as _thr
+            def _bkp():
+                try:
+                    from backup.drive_backup import fazer_backup
+                    fazer_backup(forcar=True)
+                except Exception: pass
+            _thr.Thread(target=_bkp, daemon=True).start()
 
         btn_salvar = ft.Container(
             content=ft.Row([
                 ft.Icon("check_rounded", size=14, color=BG),
                 ft.Text("Salvar", size=13, color=BG, weight=ft.FontWeight.W_600),
             ], spacing=4, tight=True),
-            bgcolor=VERD, border_radius=10, padding=ft.padding.symmetric(horizontal=16, vertical=12),
-            ink=True,
+            bgcolor=VERD, border_radius=10,
+            padding=ft.padding.symmetric(horizontal=16, vertical=12), ink=True,
         )
         btn_salvar.on_click = _salvar
 
         col = ft.Column([
             _label_sec("NOVA ROTINA" if not template else "EDITAR ROTINA"),
-            ft.Container(height=8),
+            ft.Container(height=6),
             f_nome,
-            ft.Container(height=8),
-            _label_sec("ICONE"),
-            row_icones,
-            ft.Container(height=8),
-            _label_sec("COR"),
-            row_cores,
-            ft.Container(height=8),
-            ft.Row([sw_padrao]),
+            f_horario,
+            ft.Container(height=4),
+            _label_sec("TIPO"),
+            row_tipos,
+            ft.Container(height=4),
+            lbl_itens,
+            itens_col,
+            btn_add,
             txt_err,
-            ft.Container(height=12),
+            ft.Container(height=8),
             ft.Row([btn_salvar], alignment=ft.MainAxisAlignment.END),
         ], spacing=6)
 
@@ -292,6 +513,13 @@ def criar_tela_rotinas(page: ft.Page, voltar_fn, navegar_fn=None) -> ft.Containe
             })
             _fechar_overlay(ref)
             _mostrar_detalhe(_template_sel[0])
+            import threading as _thr
+            def _bkp():
+                try:
+                    from backup.drive_backup import fazer_backup
+                    fazer_backup(forcar=True)
+                except Exception: pass
+            _thr.Thread(target=_bkp, daemon=True).start()
 
         btn_salvar = ft.Container(
             content=ft.Row([
@@ -438,6 +666,13 @@ def criar_tela_rotinas(page: ft.Page, voltar_fn, navegar_fn=None) -> ft.Containe
             })
             _fechar_overlay(ref)
             _mostrar_detalhe(_template_sel[0])
+            import threading as _thr
+            def _bkp():
+                try:
+                    from backup.drive_backup import fazer_backup
+                    fazer_backup(forcar=True)
+                except Exception: pass
+            _thr.Thread(target=_bkp, daemon=True).start()
 
         btn_salvar = ft.Container(
             content=ft.Row([
@@ -487,6 +722,13 @@ def criar_tela_rotinas(page: ft.Page, voltar_fn, navegar_fn=None) -> ft.Containe
         )
         def _ok(e):
             _fechar_overlay(ref); fn_ok()
+            import threading as _thr
+            def _bkp():
+                try:
+                    from backup.drive_backup import fazer_backup
+                    fazer_backup(forcar=True)
+                except Exception: pass
+            _thr.Thread(target=_bkp, daemon=True).start()
         btn_ok.on_click = _ok
         btn_cancel = ft.Container(
             content=ft.Text("Cancelar", size=13, color=SEC),
@@ -515,12 +757,157 @@ def criar_tela_rotinas(page: ft.Page, voltar_fn, navegar_fn=None) -> ft.Containe
         except Exception: pass
 
     # ══════════════════════════════════════════════════════
+    # NUTRIÇÃO — cálculo via Claudia + exibição no detalhe
+    # ══════════════════════════════════════════════════════
+
+    _calculando = [False]
+
+    def _calcular_nutricao(mom_nome, itens_lista):
+        if _calculando[0]:
+            return
+        _calculando[0] = True
+        page.pubsub.send_all_on_topic("_rot_nutricao", {"status": "calculando"})
+
+        def _run():
+            try:
+                from utils.api_checker import exigir_creditos, SemCreditosError
+                from utils.claudia_engine import get_client, _MODELO
+                exigir_creditos(get_client)
+                linhas = []
+                for it in itens_lista:
+                    qty  = (it.get("quantidade") or "").strip()
+                    unid = (it.get("unidade") or "").strip()
+                    pref = f"{qty} {unid} " if qty else ""
+                    linhas.append(f"- {pref}{it['descricao']}")
+                prompt = (
+                    f"Calcule os valores nutricionais aproximados dos itens de '{mom_nome}':\n"
+                    + "\n".join(linhas)
+                    + "\n\nRetorne SOMENTE JSON valido:\n"
+                    + '{"itens":[{"descricao":"nome","calorias":0.0,"proteinas":0.0,"vitaminas":"A,C"}]}'
+                )
+                client = get_client()
+                resp = client.messages.create(
+                    model=_MODELO, max_tokens=1024,
+                    system="Voce e um nutricionista. Retorne SOMENTE JSON valido, sem texto adicional.",
+                    messages=[{"role": "user", "content": prompt}],
+                )
+                raw = "".join(b.text for b in resp.content if hasattr(b, "text")).strip()
+                if raw.startswith("```"):
+                    raw = raw.split("```")[1]
+                    if raw.startswith("json"): raw = raw[4:]
+                dados = json.loads(raw)
+                page.pubsub.send_all_on_topic("_rot_nutricao", {
+                    "status": "ok", "itens_db": itens_lista, "dados": dados,
+                })
+            except SemCreditosError as ex:
+                page.pubsub.send_all_on_topic("_rot_nutricao", {
+                    "status": "erro",
+                    "msg": (
+                        "Sem creditos na API Claude.\n"
+                        "Acesse console.anthropic.com/settings/billing\n"
+                        "para adicionar fundos e tentar novamente."
+                    ),
+                })
+            except Exception as ex:
+                page.pubsub.send_all_on_topic("_rot_nutricao", {
+                    "status": "erro", "msg": str(ex),
+                })
+
+        threading.Thread(target=_run, daemon=True, name="RotNutricao").start()
+
+    def _on_rot_nutricao(topic, msg):
+        if not isinstance(msg, dict): return
+        _calculando[0] = False
+        if msg["status"] == "ok":
+            for i, it_db in enumerate(msg["itens_db"]):
+                itens_resp = msg["dados"].get("itens", [])
+                if i < len(itens_resp):
+                    n = itens_resp[i]
+                    salvar_nutricao_item(
+                        it_db["id"],
+                        n.get("calorias"), n.get("proteinas"),
+                        n.get("vitaminas", ""),
+                    )
+        if _template_sel[0]:
+            _mostrar_detalhe(_template_sel[0])
+        else:
+            _mostrar_lista()
+
+    page.pubsub.subscribe_topic("_rot_nutricao", _on_rot_nutricao)
+
+    def _card_nutricao_detalhe(mom_nome, itens):
+        total_cal  = sum(it.get("calorias")  or 0 for it in itens)
+        total_prot = sum(it.get("proteinas") or 0 for it in itens)
+        vits = sorted(set(
+            v.strip()
+            for it in itens
+            for v in (it.get("vitaminas") or "").split(",")
+            if v.strip()
+        ))
+        tem = total_cal > 0 or total_prot > 0
+
+        filhos = []
+        if tem:
+            chips = [
+                ft.Container(
+                    content=ft.Row([
+                        ft.Icon("local_fire_department_rounded", size=11, color=LAR),
+                        ft.Text(f"{total_cal:.0f} kcal", size=11, color=LAR,
+                                weight=ft.FontWeight.W_600),
+                    ], spacing=3, tight=True),
+                    padding=ft.padding.symmetric(horizontal=8, vertical=3),
+                    border_radius=8, bgcolor=f"{LAR}18"),
+                ft.Container(
+                    content=ft.Row([
+                        ft.Icon("fitness_center_rounded", size=11, color=VERD),
+                        ft.Text(f"{total_prot:.1f}g prot", size=11, color=VERD,
+                                weight=ft.FontWeight.W_600),
+                    ], spacing=3, tight=True),
+                    padding=ft.padding.symmetric(horizontal=8, vertical=3),
+                    border_radius=8, bgcolor=f"{VERD}18"),
+            ]
+            filhos.append(ft.Row(chips, spacing=6, wrap=True))
+            if vits:
+                filhos.append(ft.Row([
+                    ft.Icon("medication_liquid_rounded", size=11, color=AZUL),
+                    ft.Text("Vit: " + ", ".join(vits), size=11, color=AZUL),
+                ], spacing=4))
+
+        lbl = "Recalcular com Claudia" if tem else "Calcular com Claudia"
+        btn = ft.Container(
+            content=ft.Row([
+                ft.Container(
+                    content=ft.Text("C", size=10, color=BG, weight=ft.FontWeight.W_700),
+                    width=18, height=18, border_radius=9, bgcolor=ROXO,
+                    alignment=ft.alignment.Alignment(0, 0)),
+                ft.Text("Calculando…" if _calculando[0] else lbl, size=11, color=ROXO),
+            ], spacing=6, tight=True),
+            padding=ft.padding.symmetric(horizontal=10, vertical=6),
+            border_radius=8, ink=True,
+            border=ft.Border(
+                top=ft.BorderSide(1, f"{ROXO}44"), bottom=ft.BorderSide(1, f"{ROXO}44"),
+                left=ft.BorderSide(1, f"{ROXO}44"), right=ft.BorderSide(1, f"{ROXO}44")),
+        )
+        def _click(e, mn=mom_nome, il=itens):
+            _calcular_nutricao(mn, il)
+        btn.on_click = _click
+        filhos.append(btn)
+
+        return ft.Container(
+            content=ft.Column(filhos, spacing=6, tight=True),
+            padding=ft.padding.only(left=4, top=8, bottom=4),
+            border=ft.Border(top=ft.BorderSide(1, BD)),
+            margin=ft.margin.only(top=4),
+        )
+
+    # ══════════════════════════════════════════════════════
     # VISTA: LISTA DE TEMPLATES
     # ══════════════════════════════════════════════════════
 
     def _mostrar_lista():
         _vista[0] = "lista"
         templates = listar_templates()
+        nutricao  = listar_nutricao_por_template()
         area.controls.clear()
 
         if not templates:
@@ -541,8 +928,59 @@ def criar_tela_rotinas(page: ft.Page, voltar_fn, navegar_fn=None) -> ft.Containe
                 )
             )
         else:
+            total_cal  = 0.0
+            total_prot = 0.0
+            total_vits: set = set()
+
             for t in templates:
                 icone, cor = t.get("icone","today_rounded"), t.get("cor","#58A6FF")
+                nut = nutricao.get(t["id"], {})
+                cal  = nut.get("calorias",  0) or 0
+                prot = nut.get("proteinas", 0) or 0
+                vits = nut.get("vitaminas", []) or []
+                tem_nut = cal > 0 or prot > 0
+
+                total_cal  += cal
+                total_prot += prot
+                total_vits.update(vits)
+
+                # chips nutricionais do card
+                chips_nut = []
+                if tem_nut:
+                    chips_nut = [
+                        ft.Container(
+                            content=ft.Row([
+                                ft.Icon("local_fire_department_rounded", size=10, color=LAR),
+                                ft.Text(f"{cal:.0f} kcal", size=10, color=LAR,
+                                        weight=ft.FontWeight.W_600),
+                            ], spacing=2, tight=True),
+                            padding=ft.padding.symmetric(horizontal=6, vertical=2),
+                            border_radius=6, bgcolor=f"{LAR}18"),
+                        ft.Container(
+                            content=ft.Row([
+                                ft.Icon("fitness_center_rounded", size=10, color=VERD),
+                                ft.Text(f"{prot:.1f}g prot", size=10, color=VERD,
+                                        weight=ft.FontWeight.W_600),
+                            ], spacing=2, tight=True),
+                            padding=ft.padding.symmetric(horizontal=6, vertical=2),
+                            border_radius=6, bgcolor=f"{VERD}18"),
+                    ]
+
+                info_col_filhos = [
+                    ft.Text(t["nome"], size=14, color=TXT, weight=ft.FontWeight.W_600),
+                    ft.Text(
+                        (t.get("horario") + " · " if t.get("horario") else "") +
+                        f"{t.get('total_momentos',0)} momento(s)",
+                        size=11, color=SEC),
+                ]
+                if chips_nut:
+                    info_col_filhos.append(ft.Row(chips_nut, spacing=6))
+                if vits:
+                    info_col_filhos.append(ft.Row([
+                        ft.Icon("medication_liquid_rounded", size=10, color=AZUL),
+                        ft.Text("Vit: " + ", ".join(vits), size=10, color=AZUL),
+                    ], spacing=3))
+
                 card = ft.Container(
                     content=ft.Row([
                         ft.Container(
@@ -550,17 +988,7 @@ def criar_tela_rotinas(page: ft.Page, voltar_fn, navegar_fn=None) -> ft.Containe
                             bgcolor=f"{cor}22", border_radius=10, width=44, height=44,
                             alignment=ft.alignment.Alignment(0, 0),
                         ),
-                        ft.Column([
-                            ft.Row([
-                                ft.Text(t["nome"], size=14, color=TXT, weight=ft.FontWeight.W_600),
-                                ft.Container(
-                                    content=ft.Text("padrao", size=8, color=cor, weight=ft.FontWeight.W_700),
-                                    bgcolor=f"{cor}22", border_radius=4,
-                                    padding=ft.padding.symmetric(horizontal=4, vertical=1),
-                                ) if t.get("padrao") else ft.Container(),
-                            ], spacing=6, tight=True),
-                            ft.Text(f"{t.get('total_momentos',0)} momento(s)", size=11, color=SEC),
-                        ], spacing=2, expand=True),
+                        ft.Column(info_col_filhos, spacing=2, expand=True),
                         ft.Row([
                             _btn_icon("edit_rounded", SEC, lambda e, tt=t: _form_template(tt)),
                             _btn_icon("delete_outline_rounded", VERM, lambda e, tt=t: _confirmar_exclusao(
@@ -569,7 +997,7 @@ def criar_tela_rotinas(page: ft.Page, voltar_fn, navegar_fn=None) -> ft.Containe
                                 lambda tid=tt["id"]: [excluir_template(tid), _mostrar_lista()],
                             )),
                         ], spacing=4),
-                    ], spacing=12, vertical_alignment=ft.CrossAxisAlignment.CENTER),
+                    ], spacing=12, vertical_alignment=ft.CrossAxisAlignment.START),
                     bgcolor=CARD, border_radius=10, padding=ft.padding.all(12),
                     border=ft.Border(
                         top=ft.BorderSide(1, BD), bottom=ft.BorderSide(1, BD),
@@ -579,6 +1007,45 @@ def criar_tela_rotinas(page: ft.Page, voltar_fn, navegar_fn=None) -> ft.Containe
                 )
                 card.on_click = lambda e, tt=t: _mostrar_detalhe(tt)
                 area.controls.append(card)
+
+            # ── Resumo acumulativo ─────────────────────────────────
+            if total_cal > 0 or total_prot > 0:
+                vits_sorted = sorted(total_vits)
+                resumo_filhos = [
+                    ft.Text("Resumo diario", size=11, color=SEC, weight=ft.FontWeight.W_600),
+                    ft.Row([
+                        ft.Container(
+                            content=ft.Row([
+                                ft.Icon("local_fire_department_rounded", size=12, color=LAR),
+                                ft.Text(f"{total_cal:.0f} kcal total", size=12, color=LAR,
+                                        weight=ft.FontWeight.W_700),
+                            ], spacing=3, tight=True),
+                            padding=ft.padding.symmetric(horizontal=8, vertical=4),
+                            border_radius=8, bgcolor=f"{LAR}18"),
+                        ft.Container(
+                            content=ft.Row([
+                                ft.Icon("fitness_center_rounded", size=12, color=VERD),
+                                ft.Text(f"{total_prot:.1f}g prot", size=12, color=VERD,
+                                        weight=ft.FontWeight.W_700),
+                            ], spacing=3, tight=True),
+                            padding=ft.padding.symmetric(horizontal=8, vertical=4),
+                            border_radius=8, bgcolor=f"{VERD}18"),
+                    ], spacing=8, wrap=True),
+                ]
+                if vits_sorted:
+                    resumo_filhos.append(ft.Row([
+                        ft.Icon("medication_liquid_rounded", size=11, color=AZUL),
+                        ft.Text("Vit: " + ", ".join(vits_sorted), size=11, color=AZUL),
+                    ], spacing=4))
+                area.controls.append(ft.Container(
+                    content=ft.Column(resumo_filhos, spacing=6, tight=True),
+                    bgcolor=CARD, border_radius=10,
+                    padding=ft.padding.all(14),
+                    margin=ft.margin.only(top=8),
+                    border=ft.Border(
+                        top=ft.BorderSide(2, f"{LAR}66"), bottom=ft.BorderSide(1, BD),
+                        left=ft.BorderSide(1, BD),      right=ft.BorderSide(1, BD)),
+                ))
 
 
         _atualizar_header()
@@ -603,15 +1070,24 @@ def criar_tela_rotinas(page: ft.Page, voltar_fn, navegar_fn=None) -> ft.Containe
             itens = listar_itens(m["id"])
 
             # Linha de itens (preview)
+            _FREQ_LABEL = {
+                "diario": "Diario", "2x_semana": "2x/sem",
+                "3x_semana": "3x/sem", "semanal": "Semanal", "eventual": "Eventual",
+            }
+            _UNID_MAP = dict(_FREQUENCIAS)  # reutiliza para lookup
             itens_col = ft.Column(spacing=3)
             for it in itens[:6]:
                 ic_it = "restaurant_rounded" if it["tipo"]=="alimento" else (
                     "medication_rounded" if it["tipo"]=="remedio" else "directions_run_rounded")
                 cor_it = VERD if it["tipo"]=="alimento" else (AZUL if it["tipo"]=="remedio" else LAR)
+                freq_label = _FREQ_LABEL.get(it.get("frequencia","diario"), it.get("frequencia",""))
+                qty   = (it.get("quantidade") or "").strip()
+                unid  = (it.get("unidade") or "").strip()
+                qty_str = f"{qty} {unid} · " if qty else ""
                 linha = ft.Row([
                     ft.Icon(ic_it, size=12, color=cor_it),
-                    ft.Text(it["descricao"], size=11, color=SEC, expand=True),
-                    ft.Text(it.get("horario","") or "", size=10, color=MUT),
+                    ft.Text(qty_str + it["descricao"], size=11, color=SEC, expand=True),
+                    ft.Text(freq_label, size=10, color=MUT),
                 ], spacing=6, vertical_alignment=ft.CrossAxisAlignment.START)
                 itens_col.controls.append(linha)
             if len(itens) > 6:
@@ -652,7 +1128,11 @@ def criar_tela_rotinas(page: ft.Page, voltar_fn, navegar_fn=None) -> ft.Containe
                         ], spacing=2),
                     ], spacing=8, vertical_alignment=ft.CrossAxisAlignment.CENTER),
                     ft.Container(
-                        content=ft.Column([itens_col, btn_add_item], spacing=4),
+                        content=ft.Column([
+                            itens_col,
+                            btn_add_item,
+                            _card_nutricao_detalhe(m["nome"], itens),
+                        ], spacing=4),
                         bgcolor=BG, border_radius=8, padding=ft.padding.all(10),
                         margin=ft.margin.only(left=40, top=4),
                     ) if itens or True else ft.Container(),
@@ -664,23 +1144,6 @@ def criar_tela_rotinas(page: ft.Page, voltar_fn, navegar_fn=None) -> ft.Containe
                 ),
             )
             area.controls.append(card_momento)
-
-        # Botao adicionar momento
-        btn_add_momento = ft.Container(
-            content=ft.Row([
-                ft.Icon("add_rounded", size=16, color=cor_t),
-                ft.Text("Adicionar Momento", size=13, color=cor_t),
-            ], spacing=4, tight=True, alignment=ft.MainAxisAlignment.CENTER),
-            bgcolor=f"{cor_t}11", border_radius=10,
-            padding=ft.padding.symmetric(vertical=14),
-            border=ft.Border(
-                top=ft.BorderSide(1, f"{cor_t}44"), bottom=ft.BorderSide(1, f"{cor_t}44"),
-                left=ft.BorderSide(1, f"{cor_t}44"), right=ft.BorderSide(1, f"{cor_t}44"),
-            ),
-            ink=True,
-        )
-        btn_add_momento.on_click = lambda e: _form_momento(template["id"])
-        area.controls.append(btn_add_momento)
 
         _atualizar_header()
         if _montado[0]:

@@ -90,7 +90,7 @@ def _rotulo(quem: str, cor: str) -> ft.Container:
     )
 
 
-def criar_tela_claudia(page: ft.Page, voltar_fn) -> ft.Container:
+def criar_tela_claudia(page: ft.Page, voltar_fn, prompt_inicial=None) -> ft.Container:
     from shared.layout import Layout
     lay = Layout(page)
 
@@ -155,7 +155,7 @@ def criar_tela_claudia(page: ft.Page, voltar_fn) -> ft.Container:
                     model="claude-sonnet-4-6",
                     max_tokens=1500,
                     system=_system_prompt[0],
-                    messages=_historico,
+                    messages=_historico[-20:],
                 )
                 resposta = resp.content[0].text.strip()
                 _historico.append({"role": "assistant", "content": resposta})
@@ -251,4 +251,10 @@ def criar_tela_claudia(page: ft.Page, voltar_fn) -> ft.Container:
     ], spacing=0, expand=True)
 
     _montado[0] = True
+    if prompt_inicial:
+        campo.value = prompt_inicial
+        import threading
+        threading.Thread(target=lambda: (
+            __import__("time").sleep(0.3), _enviar()
+        ), daemon=True).start()
     return ft.Container(bgcolor=BG, expand=True, content=corpo)

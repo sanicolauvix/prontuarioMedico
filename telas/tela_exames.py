@@ -59,6 +59,12 @@ LABELS_NIVEL = {
 CORES_EXAME = ["#58A6FF", "#3FB950", "#F0883E", "#BC8CFF"]
 
 
+def _norm(s: str) -> str:
+    """Normaliza string para busca: maiusculas sem acentos."""
+    import unicodedata
+    return unicodedata.normalize("NFD", s or "").encode("ascii", "ignore").decode().upper()
+
+
 # ══════════════════════════════════════════════════════════════
 # DADOS
 # ══════════════════════════════════════════════════════════════
@@ -70,7 +76,7 @@ def buscar_todos_exames_padrao() -> list:
         SELECT ep.id, ep.nome_oficial, ep.categoria, ep.unidade,
                COUNT(r.id) as qtd_realizados
         FROM exames_padrao ep
-        LEFT JOIN resultados_estruturados r ON r.exame_padrao_id = ep.id
+        LEFT JOIN exame_resultados r ON r.exame_padrao_id = ep.id
         GROUP BY ep.id
         ORDER BY ep.categoria, ep.nome_oficial
     """)
@@ -80,7 +86,7 @@ def buscar_todos_exames_padrao() -> list:
         if row[4] > 0:
             cur.execute("""
                 SELECT e.tipo FROM exames e
-                JOIN resultados_estruturados r ON r.exame_id = e.id
+                JOIN exame_resultados r ON r.exame_id = e.id
                 WHERE r.exame_padrao_id = ? LIMIT 1
             """, (row[0],))
             t = cur.fetchone()
@@ -106,7 +112,7 @@ def buscar_historico_exame(exame_padrao_id) -> list:
     cur.execute("""
         SELECT r.valor, r.unidade, r.referencia, r.nivel_interpretacao,
                e.data_exame, e.laboratorio, e.arquivo_origem, e.drive_file_id
-        FROM resultados_estruturados r
+        FROM exame_resultados r
         JOIN exames e ON r.exame_id = e.id
         WHERE r.exame_padrao_id = ?
           AND r.valor IS NOT NULL AND r.valor != ''
@@ -139,7 +145,7 @@ def buscar_laudos(filtro: str = "") -> list:
                l.conclusao, l.resumo, l.texto_completo
         FROM exames e
         JOIN laudos l ON l.exame_id = e.id
-        WHERE e.tipo IN ('laudo', 'imagem')
+        WHERE e.tipo IN ('laudo', 'imagem', 'mapa')
         ORDER BY e.data_exame DESC
     """)
     rows = cur.fetchall()
@@ -178,7 +184,7 @@ def buscar_medicos_com_exames() -> list:
         SELECT m.id, m.nome, m.especialidade, COUNT(DISTINCT ex.id) as total
         FROM medicos m
         JOIN exames ex ON ex.medico_id = m.id
-        WHERE ex.status = 'ativo'
+        WHERE ex.status IN ('ativo','revisao')
         GROUP BY m.id ORDER BY m.nome
     """)
     por_fk = {r[0]: {"id": r[0], "nome": r[1],
@@ -194,7 +200,7 @@ def buscar_medicos_com_exames() -> list:
         cur.execute("""
             SELECT COUNT(*) FROM exames
             WHERE UPPER(medico_solicit) LIKE UPPER(?)
-              AND (status = 'ativo' OR status IS NULL)
+              AND (status IN ('ativo','revisao') OR status IS NULL)
         """, (f"%{nome}%",))
         qtd = cur.fetchone()[0]
         if qtd > 0:
@@ -206,7 +212,7 @@ def buscar_medicos_com_exames() -> list:
         SELECT COUNT(*) FROM exames
         WHERE medico_id IS NULL
           AND (medico_solicit IS NULL OR medico_solicit = '')
-          AND (status = 'ativo' OR status IS NULL)
+          AND (status IN ('ativo','revisao') OR status IS NULL)
     """)
     sem = cur.fetchone()[0]
     conn.close()
@@ -229,7 +235,7 @@ def buscar_exames_do_medico(medico_id, nome_medico="") -> list:
             FROM exames e
             WHERE e.medico_id IS NULL
               AND (e.medico_solicit IS NULL OR e.medico_solicit = '')
-              AND (e.status = 'ativo' OR e.status IS NULL)
+              AND (e.status IN ('ativo','revisao') OR e.status IS NULL)
             ORDER BY e.data_exame DESC
         """)
     elif isinstance(medico_id, str) and str(medico_id).startswith("_sol_"):
@@ -248,7 +254,7 @@ def buscar_exames_do_medico(medico_id, nome_medico="") -> list:
             FROM exames e
             WHERE (e.medico_id = ?
                    OR (? != '' AND UPPER(e.medico_solicit) LIKE UPPER(?)))
-              AND (e.status = 'ativo' OR e.status IS NULL)
+              AND (e.status IN ('ativo','revisao') OR e.status IS NULL)
             ORDER BY e.data_exame DESC
         """, (medico_id, nome_medico, f"%{nome_medico}%"))
     rows = cur.fetchall()
@@ -258,7 +264,7 @@ def buscar_exames_do_medico(medico_id, nome_medico="") -> list:
         if tipo == "numerico":
             cur.execute("""
                 SELECT DISTINCT ep.id, ep.nome_oficial, ep.categoria, ep.unidade
-                FROM resultados_estruturados r
+                FROM exame_resultados r
                 JOIN exames_padrao ep ON ep.id = r.exame_padrao_id
                 WHERE r.exame_id = ?
             """, (exame_id,))
@@ -332,7 +338,7 @@ def excluir_exame_fisico(exame_id: int) -> str:
     cur.execute("SELECT arquivo_origem FROM exames WHERE id = ?", (exame_id,))
     row = cur.fetchone()
     arquivo = row[0] if row else None
-    cur.execute("DELETE FROM resultados_estruturados WHERE exame_id = ?", (exame_id,))
+    cur.execute("DELETE FROM exame_resultados WHERE exame_id = ?", (exame_id,))
     cur.execute("DELETE FROM laudos WHERE exame_id = ?", (exame_id,))
     cur.execute("DELETE FROM exames WHERE id = ?", (exame_id,))
     conn.commit()
@@ -350,7 +356,7 @@ def buscar_especialidades_com_exames() -> list:
         FROM exames ex
         JOIN medicos m ON m.id = ex.medico_id
         LEFT JOIN especialidades esp ON esp.id = m.especialidade_id
-        WHERE (ex.status = 'ativo' OR ex.status IS NULL)
+        WHERE (ex.status IN ('ativo','revisao') OR ex.status IS NULL)
           AND COALESCE(esp.nome, m.especialidade) IS NOT NULL
           AND COALESCE(esp.nome, m.especialidade) != ''
         GROUP BY COALESCE(esp.nome, m.especialidade)
@@ -372,7 +378,7 @@ def buscar_exames_da_especialidade(nome_especialidade: str) -> list:
         JOIN medicos m ON m.id = e.medico_id
         LEFT JOIN especialidades esp ON esp.id = m.especialidade_id
         WHERE UPPER(COALESCE(esp.nome, m.especialidade)) = UPPER(?)
-          AND (e.status = 'ativo' OR e.status IS NULL)
+          AND (e.status IN ('ativo','revisao') OR e.status IS NULL)
         ORDER BY e.data_exame DESC
     """, (nome_especialidade,))
     rows = cur.fetchall()
@@ -383,7 +389,7 @@ def buscar_exames_da_especialidade(nome_especialidade: str) -> list:
         if tipo == "numerico":
             cur.execute("""
                 SELECT DISTINCT ep.id, ep.nome_oficial, ep.categoria, ep.unidade
-                FROM resultados_estruturados r
+                FROM exame_resultados r
                 JOIN exames_padrao ep ON ep.id = r.exame_padrao_id
                 WHERE r.exame_id = ?
             """, (exame_id,))
@@ -420,7 +426,7 @@ def buscar_categorias_com_exames() -> list:
     cur  = conn.cursor()
     cur.execute("""
         SELECT ep.categoria, COUNT(DISTINCT ep.id) as total
-        FROM resultados_estruturados r
+        FROM exame_resultados r
         JOIN exames_padrao ep ON ep.id = r.exame_padrao_id
         WHERE ep.categoria IS NOT NULL AND ep.categoria != ''
         GROUP BY ep.categoria
@@ -439,7 +445,7 @@ def buscar_exames_da_categoria(categoria: str) -> list:
         SELECT ep.id, ep.nome_oficial, ep.categoria, ep.unidade,
                COUNT(r.id) as qtd
         FROM exames_padrao ep
-        JOIN resultados_estruturados r ON r.exame_padrao_id = ep.id
+        JOIN exame_resultados r ON r.exame_padrao_id = ep.id
         WHERE ep.categoria = ?
         GROUP BY ep.id
         ORDER BY ep.nome_oficial
@@ -465,7 +471,7 @@ def buscar_todas_categorias() -> list:
                COUNT(DISTINCT ep.id) as total_padrao,
                COUNT(DISTINCT r.id)  as realizados
         FROM exames_padrao ep
-        LEFT JOIN resultados_estruturados r ON r.exame_padrao_id = ep.id
+        LEFT JOIN exame_resultados r ON r.exame_padrao_id = ep.id
         WHERE ep.categoria IS NOT NULL AND ep.categoria != ''
         GROUP BY ep.categoria
         ORDER BY ep.categoria
@@ -820,7 +826,14 @@ def renderizar_grafico_combinado(page: ft.Page, exames_selecionados: list) -> ft
             uni    = h.get("unidade") or unidade
             ref    = h.get("referencia") or "—"
             lab    = h.get("laboratorio") or ""
-            data   = (h.get("data") or "")[:10]
+            _data_raw = (h.get("data") or "")[:10]
+            if len(_data_raw) == 10 and _data_raw[4] == "-":
+                try:
+                    from datetime import datetime as _ddt
+                    _data_raw = _ddt.strptime(_data_raw, "%Y-%m-%d").strftime("%d/%m/%Y")
+                except Exception:
+                    pass
+            data   = _data_raw
             valor  = h.get("valor") or ""
             did    = h.get("drive_id") or ""
 
@@ -1388,15 +1401,15 @@ def _conteudo_buscar(page, fn_adicionar, chips_row, txt_info, col_resultado, sel
 
     def _filtrar(e=None):
         lista.controls.clear()
-        q = (txt_busca.value or "").strip().upper()
+        q = _norm(txt_busca.value or "")
         ids_sel = {s["id"] for s in (selecionados or [])}
         encontrados = [
             ex for ex in realizados
             if ex["id"] not in ids_sel
-            and (not q or q in ex["nome_oficial"].upper())
+            and (not q or q in _norm(ex["nome_oficial"]))
         ][:10]
         for ex in encontrados:
-            _eh_laudo = ex.get("tipo") in ("laudo", "imagem")
+            _eh_laudo = ex.get("tipo") in ("laudo", "imagem", "mapa")
             cor = "#BC8CFF" if _eh_laudo else "#58A6FF"
             sub = ex.get("categoria","") + ("  •  " + str(ex["qtd"]) + "x" if ex.get("qtd") else "")
             def _add(e, exame=ex):
@@ -1525,7 +1538,7 @@ def _criar_motor_selecao_exames(page, pubsub_tag: str):
         txt_busca.visible     = False
         lista_exames.visible  = False
         txt_info.visible      = False
-        btn_add_mais.visible  = True
+        btn_add_mais.visible  = not readonly
         _renderizar()
 
     # ── chips ────────────────────────────────────────────────────────────
@@ -1619,12 +1632,12 @@ def _criar_motor_selecao_exames(page, pubsub_tag: str):
 
     def _filtrar(e=None):
         lista_exames.controls.clear()
-        q = (txt_busca.value or "").strip().upper()
+        q = _norm(txt_busca.value or "")
         ids_sel = {s["id"] for s in selecionados}
         encontrados = [
             ex for ex in itens
             if ex.get("id") not in ids_sel
-            and (not q or q in ex["nome_oficial"].upper())
+            and (not q or q in _norm(ex["nome_oficial"]))
         ][:10]
         for ex in encontrados:
             eh_laudo = ex.get("tipo") in ("laudo", "imagem", "mapa")
@@ -2157,22 +2170,66 @@ def _conteudo_exames(page):
     import webbrowser
     exames = buscar_todos_exames_fisicos()
 
+    labs_disponiveis = sorted({ex.get("laboratorio") or "" for ex in exames} - {""})
+
     txt_busca = ft.TextField(
-        hint_text="Buscar exame...",
-        bgcolor="#161B22", border_color="#30363D",
-        focused_border_color="#F0883E",
-        hint_style=ft.TextStyle(color="#484F58"),
-        text_style=ft.TextStyle(color="#E6EDF3"),
+        hint_text="Buscar por nome...",
+        bgcolor=CARD, border_color=BD2,
+        focused_border_color=LAR,
+        hint_style=ft.TextStyle(color=MUT),
+        text_style=ft.TextStyle(color=TXT),
         border_radius=8, height=44,
         prefix_icon="search_rounded",
     )
+
+    txt_data = ft.TextField(
+        hint_text="Data  (ex: 2024  ou  2024-03)",
+        bgcolor=CARD, border_color=BD2,
+        focused_border_color=LAR,
+        hint_style=ft.TextStyle(color=MUT),
+        text_style=ft.TextStyle(color=TXT),
+        border_radius=8, height=40,
+        prefix_icon="calendar_today_rounded",
+        expand=True,
+    )
+
+    _lab_sel = [None]
+    chips_lab = ft.Row(spacing=6, scroll=ft.ScrollMode.AUTO)
     lista = ft.Column(spacing=4)
 
+    def _rebuild_chips_lab():
+        chips_lab.controls.clear()
+        for lab in [None] + labs_disponiveis:
+            ativo = _lab_sel[0] == lab
+            rotulo = "Todos" if lab is None else lab
+            cor_chip = AZUL if lab is None else LAR
+            chip = ft.Container(
+                content=ft.Text(rotulo, size=11,
+                                color=cor_chip if ativo else SEC,
+                                weight=ft.FontWeight.W_600 if ativo else ft.FontWeight.NORMAL),
+                padding=ft.padding.symmetric(horizontal=10, vertical=5),
+                border_radius=12,
+                border=ft.border.all(1, cor_chip if ativo else BD2),
+                bgcolor=f"{cor_chip}22" if ativo else "transparent",
+                ink=True,
+            )
+            def _sel(e, l=lab):
+                _lab_sel[0] = l
+                _rebuild_chips_lab()
+                _filtrar()
+            chip.on_click = _sel
+            chips_lab.controls.append(chip)
+        try: page.update()
+        except Exception: pass
+
     def _construir_card(ex):
-        _eh_laudo = ex.get("tipo") in ("laudo", "imagem")
-        cor   = "#BC8CFF" if _eh_laudo else "#58A6FF"
+        _eh_laudo = ex.get("tipo") in ("laudo", "imagem", "mapa")
+        _revisao  = ex.get("status") == "revisao"
+        cor   = AMAR if _revisao else (ROXO if _eh_laudo else AZUL)
         label = ex.get("tipo_exame") or ex.get("tipo", "")
-        data  = ex["data"][:10] if ex.get("data") else "?"
+        data  = ex["data"][:10] if ex.get("data") else "—"
+        lab   = ex.get("laboratorio") or ""
+        medico = ex.get("medico") or ""
 
         def _ver(e, exame=ex):
             if exame.get("drive_id"):
@@ -2202,87 +2259,118 @@ def _conteudo_exames(page):
                 _fechar()
 
             _btn_cancelar_exc = ft.Container(
-                content=ft.Text("Cancelar", size=13, color="#8B949E"),
+                content=ft.Text("Cancelar", size=13, color=SEC),
                 padding=ft.padding.symmetric(horizontal=14, vertical=9),
-                border_radius=8, bgcolor="#8B949E22", ink=True,
+                border_radius=8, bgcolor=f"{SEC}22", ink=True,
             )
             _btn_cancelar_exc.on_click = _cancelar
 
             _btn_excluir_ok = ft.Container(
-                content=ft.Text("Excluir", size=13, color="#F85149",
+                content=ft.Text("Excluir", size=13, color=VERM,
                                 weight=ft.FontWeight.W_600),
                 padding=ft.padding.symmetric(horizontal=14, vertical=9),
-                border_radius=8, bgcolor="#F8514922", ink=True,
+                border_radius=8, bgcolor=f"{VERM}22", ink=True,
             )
             _btn_excluir_ok.on_click = _confirmar
 
             overlay_ref[0] = ft.Container(
                 content=ft.Container(
                     content=ft.Column([
-                        ft.Text("Confirmar exclusao", size=16, color="#E6EDF3",
+                        ft.Text("Confirmar exclusao", size=16, color=TXT,
                                 weight=ft.FontWeight.W_600),
                         ft.Container(height=8),
                         ft.Text("Excluir '" + lbl + "' de " + dt + "?\nEsta acao nao pode ser desfeita.",
-                                color="#8B949E", size=13),
+                                color=SEC, size=13),
                         ft.Container(height=16),
                         ft.Row([
                             _btn_cancelar_exc,
                             _btn_excluir_ok,
                         ], alignment=ft.MainAxisAlignment.END, spacing=8),
                     ], tight=True),
-                    bgcolor="#161B22", border_radius=12, padding=ft.padding.all(24), width=320,
+                    bgcolor=CARD, border_radius=12, padding=ft.padding.all(24), width=320,
                     border=ft.Border(
-                        top=ft.BorderSide(1,"#30363D"), bottom=ft.BorderSide(1,"#30363D"),
-                        left=ft.BorderSide(1,"#30363D"), right=ft.BorderSide(1,"#30363D"),
+                        top=ft.BorderSide(1, BD2), bottom=ft.BorderSide(1, BD2),
+                        left=ft.BorderSide(1, BD2), right=ft.BorderSide(1, BD2),
                     ),
                 ),
                 bgcolor="#00000088", expand=True,
-                alignment=ft.alignment.Alignment(0,0),
+                alignment=ft.alignment.Alignment(0, 0),
             )
             page.overlay.append(overlay_ref[0])
             try: page.update()
             except Exception: pass
 
+        linha_meta = ft.Row([
+            ft.Icon("calendar_today_rounded", size=11, color=MUT),
+            ft.Text(data, size=12, color=SEC),
+        ], spacing=4, tight=True)
+
+        linha_lab = ft.Row([
+            ft.Icon("science_rounded", size=11, color=LAR),
+            ft.Text(lab or "Lab nao informado", size=12,
+                    color=LAR if lab else MUT,
+                    italic=not lab),
+        ], spacing=4, tight=True) if True else None
+
+        col_info_items = [
+            ft.Text(label, size=13, color=TXT, weight=ft.FontWeight.W_600),
+            ft.Row([linha_meta, ft.Container(width=10), linha_lab], spacing=0, wrap=False),
+        ]
+        if _revisao:
+            col_info_items.append(
+                ft.Row([
+                    ft.Icon("warning_amber_rounded", size=11, color=AMAR),
+                    ft.Text("Data ausente — revisar", size=11, color=AMAR, italic=True),
+                ], spacing=4, tight=True)
+            )
+        if medico:
+            col_info_items.append(
+                ft.Text(medico, size=11, color=MUT)
+            )
+
         return ft.Container(
             content=ft.Row([
                 ft.Icon("description_rounded" if _eh_laudo
-                        else "show_chart_rounded", size=13, color=cor),
-                ft.Column([
-                    ft.Text(label, size=12, color="#E6EDF3"),
-                    ft.Row([
-                        ft.Text(data, size=10, color="#484F58"),
-                        ft.Text("·", size=10, color="#21262D"),
-                        ft.Text(ex.get("medico",""), size=10, color="#8B949E"),
-                        ft.Text("·", size=10, color="#21262D"),
-                        ft.Text(ex.get("laboratorio",""), size=10, color="#58A6FF"),
-                    ], spacing=4),
-                ], spacing=1, expand=True),
+                        else "show_chart_rounded", size=16, color=cor),
+                ft.Column(col_info_items, spacing=3, expand=True),
                 ft.IconButton("visibility_rounded",
-                              icon_color="#58A6FF", icon_size=16, on_click=_ver),
+                              icon_color=AZUL, icon_size=16, on_click=_ver),
                 ft.IconButton("delete_rounded",
-                              icon_color="#F85149", icon_size=16, on_click=_del),
-            ], spacing=8),
-            padding=ft.padding.symmetric(horizontal=10, vertical=8),
-            border_radius=6, bgcolor="#161B22",
+                              icon_color=VERM, icon_size=16, on_click=_del),
+            ], spacing=8, vertical_alignment=ft.CrossAxisAlignment.CENTER),
+            padding=ft.padding.symmetric(horizontal=10, vertical=10),
+            border_radius=6, bgcolor=CARD,
             border=ft.Border(
-                top=ft.BorderSide(1,"#21262D"), bottom=ft.BorderSide(1,"#21262D"),
-                left=ft.BorderSide(2, cor),     right=ft.BorderSide(1,"#21262D"),
+                top=ft.BorderSide(1, BD), bottom=ft.BorderSide(1, BD),
+                left=ft.BorderSide(2, cor), right=ft.BorderSide(1, BD),
             ),
         )
 
     def _filtrar(e=None):
         lista.controls.clear()
-        q = (txt_busca.value or "").strip().upper()
-        encontrados = [
-            ex for ex in exames
-            if not q
-            or q in (ex.get("tipo_exame") or ex.get("tipo", "")).upper()
-            or q in (ex.get("medico") or "").upper()
-            or q in (ex.get("laboratorio") or "").upper()
-        ]
+        q     = (txt_busca.value or "").strip().upper()
+        data_q = (txt_data.value or "").strip()
+        lab_q  = _lab_sel[0]
+
+        encontrados = []
+        for ex in exames:
+            if q:
+                nome = (ex.get("tipo_exame") or ex.get("tipo", "")).upper()
+                med  = (ex.get("medico") or "").upper()
+                lab  = (ex.get("laboratorio") or "").upper()
+                if not (q in nome or q in med or q in lab):
+                    continue
+            if lab_q is not None:
+                if (ex.get("laboratorio") or "") != lab_q:
+                    continue
+            if data_q:
+                if not (ex.get("data") or "").startswith(data_q):
+                    continue
+            encontrados.append(ex)
+
         if not encontrados:
             lista.controls.append(
-                ft.Text("Nenhum exame encontrado.", size=12, color="#484F58"))
+                ft.Text("Nenhum exame encontrado.", size=12, color=MUT))
         else:
             for ex in encontrados:
                 lista.controls.append(_construir_card(ex))
@@ -2290,16 +2378,23 @@ def _conteudo_exames(page):
         except Exception: pass
 
     txt_busca.on_change = _filtrar
+    txt_data.on_change  = _filtrar
+    _rebuild_chips_lab()
     _filtrar()
 
-    return [txt_busca, lista]
+    filtros_row = ft.Row([
+        ft.Icon("calendar_today_rounded", size=14, color=MUT),
+        txt_data,
+    ], spacing=6)
+
+    return [txt_busca, filtros_row, chips_lab, lista]
 
 
 # ══════════════════════════════════════════════════════════════
 # TELA PRINCIPAL
 # ══════════════════════════════════════════════════════════════
 
-def criar_tela_consulta(page: ft.Page, voltar_fn):
+def criar_tela_consulta(page: ft.Page, voltar_fn, readonly=False):
     from shared.layout import Layout
     lay = Layout(page)
 
@@ -2382,3 +2477,246 @@ def criar_tela_consulta(page: ft.Page, voltar_fn):
     ], expand=True, spacing=0)
 
     return lay.wrap(ft.Container(bgcolor=BG, expand=True, content=corpo))
+
+
+def abrir_overlay_exame_mapa(page: ft.Page, exame_id: int) -> None:
+    """Abre overlay de detalhe para exame tipo mapa — mesmo layout do card cardiaco.
+    Sem grafico (MAPA tem 40+ parametros de sessao unica).
+    Mostra: laudo estruturado (resumo/conclusao) + laudo texto + imagens.
+    """
+    import os as _os
+    import sqlite3 as _sq
+
+    BG2   = "#0D1117"; CARD2 = "#161B22"; BD2   = "#21262D"
+    TXT2  = "#E6EDF3"; SEC2  = "#8B949E"; MUT2  = "#484F58"
+    AZUL2 = "#58A6FF"; VERD2 = "#3FB950"; ROXO2 = "#BC8CFF"
+
+    try:
+        from dados.model_prontuario import DB_PATH
+    except Exception:
+        return
+
+    try:
+        conn = _sq.connect(DB_PATH, timeout=20)
+        exame = conn.execute(
+            "SELECT tipo_exame, data_exame, laboratorio FROM exames WHERE id=?",
+            (exame_id,)
+        ).fetchone()
+        if not exame:
+            conn.close()
+            return
+        nome_exame, data_exame, laboratorio = exame
+
+        laudo_struct = conn.execute(
+            "SELECT resumo, conclusao FROM laudos WHERE exame_id=?", (exame_id,)
+        ).fetchone()
+
+        laudo_texto = conn.execute(
+            "SELECT resultado_texto FROM exames WHERE id=? AND resultado_texto IS NOT NULL AND resultado_texto != ''",
+            (exame_id,)
+        ).fetchone()
+
+        img_rows = conn.execute("""
+            SELECT pp.jpeg_local, a.ordem
+            FROM exame_anexos a
+            JOIN prontuario_paginas pp
+              ON pp.id = CAST(REPLACE(a.nome_arquivo,'.jpg','') AS INTEGER)
+            WHERE a.exame_id = ?
+            ORDER BY a.ordem
+        """, (exame_id,)).fetchall()
+        conn.close()
+    except Exception:
+        return
+
+    imgs_validas = []
+    for jpeg_local, _ in img_rows:
+        if jpeg_local:
+            p = _os.path.normpath(jpeg_local)
+            if _os.path.exists(p):
+                imgs_validas.append(p)
+
+    ref_det = [None]
+
+    def _fechar(e=None):
+        if ref_det[0] in page.overlay:
+            page.overlay.remove(ref_det[0])
+        try: page.update()
+        except Exception: pass
+
+    corpo = ft.Column(spacing=10, scroll=ft.ScrollMode.AUTO, expand=True)
+
+    # laudo estruturado
+    if laudo_struct:
+        resumo, conclusao = laudo_struct
+        for titulo_l, texto_l in [("RESUMO", resumo), ("CONCLUSAO", conclusao)]:
+            if not texto_l:
+                continue
+            corpo.controls.append(ft.Container(
+                content=ft.Column([
+                    ft.Row([
+                        ft.Text(titulo_l, size=10, color=ROXO2,
+                                weight=ft.FontWeight.W_700, expand=True),
+                        ft.Text(
+                            f"{data_exame[:10] if data_exame else ''}  {laboratorio or ''}",
+                            size=9, color=MUT2,
+                        ),
+                    ]),
+                    ft.Text(texto_l, size=11, color=SEC2, selectable=True),
+                ], spacing=6, tight=True),
+                bgcolor=CARD2,
+                border=ft.border.all(1, ft.Colors.with_opacity(0.20, ROXO2)),
+                border_radius=10,
+                padding=ft.padding.symmetric(horizontal=12, vertical=10),
+            ))
+
+    # laudo texto livre
+    if laudo_texto and laudo_texto[0]:
+        corpo.controls.append(ft.Container(
+            content=ft.Column([
+                ft.Row([
+                    ft.Text("LAUDO", size=10, color=ROXO2, weight=ft.FontWeight.W_700,
+                            expand=True),
+                    ft.Text(
+                        f"{data_exame[:10] if data_exame else ''}  {laboratorio or ''}",
+                        size=9, color=MUT2,
+                    ),
+                ]),
+                ft.Text(laudo_texto[0], size=11, color=SEC2, selectable=True),
+            ], spacing=6, tight=True),
+            bgcolor=CARD2,
+            border=ft.border.all(1, ft.Colors.with_opacity(0.20, ROXO2)),
+            border_radius=10,
+            padding=ft.padding.symmetric(horizontal=12, vertical=10),
+        ))
+
+    # imagens
+    if imgs_validas:
+        img_idx = [0]
+        img_view = ft.Image(src=imgs_validas[0], fit=ft.ImageFit.CONTAIN,
+                            expand=True, height=300)
+        contador_img = ft.Text(f"1 / {len(imgs_validas)}", size=10, color=MUT2)
+
+        def _nav_img(delta):
+            img_idx[0] = (img_idx[0] + delta) % len(imgs_validas)
+            img_view.src = imgs_validas[img_idx[0]]
+            contador_img.value = f"{img_idx[0]+1} / {len(imgs_validas)}"
+            try: page.update()
+            except Exception: pass
+
+        def _abrir_zoom(e):
+            zoom_img = ft.Image(src=imgs_validas[img_idx[0]],
+                                fit=ft.ImageFit.CONTAIN, expand=True)
+            zoom_ct = ft.Text(f"{img_idx[0]+1} / {len(imgs_validas)}", size=11, color=TXT2)
+            ref_zoom = [None]
+
+            def _fechar_zoom(e2=None):
+                if ref_zoom[0] in page.overlay:
+                    page.overlay.remove(ref_zoom[0])
+                try: page.update()
+                except Exception: pass
+
+            def _nav_zoom(delta):
+                img_idx[0] = (img_idx[0] + delta) % len(imgs_validas)
+                zoom_img.src = imgs_validas[img_idx[0]]
+                img_view.src  = imgs_validas[img_idx[0]]
+                contador_img.value = f"{img_idx[0]+1} / {len(imgs_validas)}"
+                zoom_ct.value = f"{img_idx[0]+1} / {len(imgs_validas)}"
+                try: page.update()
+                except Exception: pass
+
+            ref_zoom[0] = ft.Container(
+                content=ft.Column([
+                    ft.Row([
+                        ft.Container(
+                            content=ft.Row([
+                                ft.Icon("arrow_back_rounded", size=16, color=AZUL2),
+                                ft.Text("Voltar", size=13, color=AZUL2,
+                                        weight=ft.FontWeight.W_600),
+                            ], spacing=4, tight=True),
+                            ink=True, on_click=_fechar_zoom,
+                            padding=ft.padding.symmetric(horizontal=12, vertical=8),
+                        ),
+                        ft.Container(expand=True),
+                        zoom_ct,
+                        ft.IconButton("chevron_left_rounded", icon_color=TXT2, icon_size=22,
+                                      on_click=lambda e: _nav_zoom(-1),
+                                      visible=len(imgs_validas) > 1),
+                        ft.IconButton("chevron_right_rounded", icon_color=TXT2, icon_size=22,
+                                      on_click=lambda e: _nav_zoom(1),
+                                      visible=len(imgs_validas) > 1),
+                    ], spacing=0),
+                    zoom_img,
+                ], spacing=0, expand=True),
+                bgcolor="#000000", expand=True,
+                alignment=ft.alignment.Alignment(0, 0),
+            )
+            page.overlay.append(ref_zoom[0])
+            try: page.update()
+            except Exception: pass
+
+        corpo.controls.append(ft.Container(
+            content=ft.Column([
+                ft.Row([
+                    ft.Text("IMAGENS", size=10, color=VERD2,
+                            weight=ft.FontWeight.W_700, expand=True),
+                    contador_img,
+                    ft.IconButton("zoom_in_rounded", icon_color=VERD2, icon_size=20,
+                                  on_click=_abrir_zoom),
+                ]),
+                ft.GestureDetector(content=img_view, on_tap=_abrir_zoom),
+                ft.Row([
+                    ft.IconButton("chevron_left_rounded", icon_color=TXT2, icon_size=20,
+                                  on_click=lambda e: _nav_img(-1),
+                                  visible=len(imgs_validas) > 1),
+                    ft.Container(expand=True),
+                    ft.IconButton("chevron_right_rounded", icon_color=TXT2, icon_size=20,
+                                  on_click=lambda e: _nav_img(1),
+                                  visible=len(imgs_validas) > 1),
+                ], vertical_alignment=ft.CrossAxisAlignment.CENTER),
+            ], spacing=6, tight=True),
+            bgcolor=CARD2,
+            border=ft.border.all(1, ft.Colors.with_opacity(0.20, VERD2)),
+            border_radius=10,
+            padding=ft.padding.symmetric(horizontal=8, vertical=8),
+        ))
+
+    if not corpo.controls:
+        corpo.controls.append(ft.Container(
+            content=ft.Text("Nenhum dado disponivel", size=12, color=MUT2),
+            padding=ft.padding.symmetric(vertical=20),
+            alignment=ft.alignment.Alignment(0, 0),
+        ))
+
+    btn_voltar = ft.Container(
+        content=ft.Row([
+            ft.Icon("arrow_back_rounded", size=14, color=AZUL2),
+            ft.Text("Voltar", size=12, color=AZUL2, weight=ft.FontWeight.W_600),
+        ], spacing=4, tight=True),
+        ink=True, on_click=_fechar,
+        padding=ft.padding.symmetric(horizontal=12, vertical=8),
+    )
+
+    ref_det[0] = ft.Container(
+        content=ft.Container(
+            content=ft.Column([
+                ft.Row([
+                    btn_voltar,
+                    ft.Text(nome_exame or "MAPA", size=14, color=TXT2,
+                            weight=ft.FontWeight.W_700, expand=True),
+                ], spacing=4),
+                ft.Divider(color=BD2, height=1),
+                corpo,
+            ], spacing=0, expand=True),
+            bgcolor=BG2,
+            border_radius=16,
+            padding=ft.padding.symmetric(horizontal=16, vertical=16),
+            width=min(page.width * 0.92, 480) if page.width else 400,
+            height=min(page.height * 0.88, 680) if page.height else 580,
+        ),
+        bgcolor=ft.Colors.with_opacity(0.55, "#000000"),
+        alignment=ft.alignment.Alignment(0, 0),
+        expand=True,
+    )
+    page.overlay.append(ref_det[0])
+    try: page.update()
+    except Exception: pass

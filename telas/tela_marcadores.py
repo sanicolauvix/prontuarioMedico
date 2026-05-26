@@ -5,6 +5,7 @@ import logging
 import sqlite3
 
 from shared.layout import Layout
+from shared.date_field import campo_data
 
 BG   = "#0D1117"; CARD = "#161B22"; BD  = "#21262D"; BD2 = "#30363D"
 TXT  = "#E6EDF3"; SEC  = "#8B949E"; MUT = "#484F58"
@@ -110,9 +111,13 @@ def _avaliar_cor(valor_str: str, referencia_str: str) -> str:
 
 
 def _fmt_data(d: str) -> str:
-    if d and len(d) >= 10:
-        return f"{d[8:10]}/{d[5:7]}/{d[2:4]}"
-    return ""
+    """Formata data para exibicao DD/MM/AAAA. Aceita YYYY-MM-DD e DD/MM/AAAA."""
+    if not d or len(d) < 10:
+        return ""
+    d = d[:10]
+    if d[4] == "-":  # YYYY-MM-DD
+        return f"{d[8:10]}/{d[5:7]}/{d[:4]}"
+    return d  # ja esta em DD/MM/AAAA
 
 
 def _e_fora_range(val: float, ref: str) -> bool:
@@ -133,12 +138,69 @@ def _e_fora_range(val: float, ref: str) -> bool:
 
 
 def criar_tela_marcadores(page: ft.Page, voltar_fn) -> ft.Container:
+    import threading as _thr
     from dados.model_prontuario import DB_PATH
 
-    lay      = Layout(page)
-    area     = ft.Column(spacing=10, scroll=ft.ScrollMode.AUTO, expand=True)
-    _montado = [False]
-    _dados: dict = {}
+    lay           = Layout(page)
+    area          = ft.Column(spacing=10, scroll=ft.ScrollMode.AUTO, expand=True)
+    _montado      = [False]
+    _status_banco = ["normal"]
+    _handler_ant  = [None]
+    _dados: dict  = {}
+
+    def _sync(apos_sync_fn=None):
+        ov = ft.Container(
+            content=ft.Container(
+                content=ft.Column([
+                    ft.ProgressRing(color=AZUL, width=36, height=36, stroke_width=3),
+                    ft.Container(height=10),
+                    ft.Text("Sincronizando com Drive...", size=13, color=TXT,
+                            weight=ft.FontWeight.W_600, text_align="center"),
+                    ft.Text("Aguarde", size=11, color=SEC, text_align="center"),
+                ], tight=True, spacing=2,
+                   horizontal_alignment=ft.CrossAxisAlignment.CENTER),
+                bgcolor=CARD, border_radius=14,
+                padding=ft.padding.all(24), width=240,
+            ),
+            bgcolor="#DD000000", expand=True, alignment=ft.Alignment(0, 0),
+        )
+        page.overlay.append(ov)
+        try: page.update()
+        except Exception: pass
+
+        def _run():
+            try:
+                from backup.drive_backup import fazer_backup
+                fazer_backup(forcar=True)
+            except Exception as ex:
+                log.warning("[MARC] sync: %s", ex)
+            finally:
+                _status_banco[0] = "normal"
+                if ov in page.overlay:
+                    page.overlay.remove(ov)
+                try: page.update()
+                except Exception: pass
+                if apos_sync_fn:
+                    apos_sync_fn()
+
+        _thr.Thread(target=_run, daemon=True).start()
+
+    def _sair(destino_fn):
+        _desregistrar_voltar_hw()
+        if _status_banco[0] == "em_edicao":
+            _sync(destino_fn)
+        else:
+            destino_fn()
+
+    def _registrar_voltar_hw():
+        _handler_ant[0] = page.on_keyboard_event
+        def _on_hw(e):
+            if e.key == "Escape":
+                _sair(voltar_fn)
+        page.on_keyboard_event = _on_hw
+
+    def _desregistrar_voltar_hw():
+        page.on_keyboard_event = _handler_ant[0]
 
     # ── Carregar dados ──────────────────────────────────────────
     def _carregar():
@@ -152,7 +214,7 @@ def criar_tela_marcadores(page: ft.Page, voltar_fn) -> ft.Container:
                         for termo in termos:
                             row = conn.execute("""
                                 SELECT r.valor, r.unidade, e.data_exame, 'exame'
-                                FROM resultados_estruturados r
+                                FROM exame_resultados r
                                 JOIN exames e ON r.exame_id = e.id
                                 WHERE LOWER(r.parametro) LIKE ?
                                   AND r.valor IS NOT NULL AND r.valor != ''
@@ -165,10 +227,10 @@ def criar_tela_marcadores(page: ft.Page, voltar_fn) -> ft.Container:
                             for termo in termos:
                                 mrow = conn.execute("""
                                     SELECT CAST(valor AS TEXT), unidade,
-                                           data_medicao, fonte
+                                           data_medicao || COALESCE(' ' || hora_medicao, ''), fonte
                                     FROM marcadores_leituras
                                     WHERE LOWER(parametro) LIKE ?
-                                    ORDER BY data_medicao DESC LIMIT 1
+                                    ORDER BY data_medicao DESC, hora_medicao DESC LIMIT 1
                                 """, (f"%{termo}%",)).fetchone()
                                 if mrow:
                                     if not row or (mrow[2] or "") > (row[2] or ""):
@@ -200,7 +262,7 @@ def criar_tela_marcadores(page: ft.Page, voltar_fn) -> ft.Container:
                 for termo in termos:
                     rows = conn.execute("""
                         SELECT r.valor, r.unidade, e.data_exame
-                        FROM resultados_estruturados r
+                        FROM exame_resultados r
                         JOIN exames e ON r.exame_id = e.id
                         WHERE LOWER(r.parametro) LIKE ?
                           AND r.valor IS NOT NULL AND r.valor != ''
@@ -212,13 +274,16 @@ def criar_tela_marcadores(page: ft.Page, voltar_fn) -> ft.Container:
                 try:
                     for termo in termos:
                         mrows = conn.execute("""
-                            SELECT CAST(valor AS TEXT), unidade, data_medicao
+                            SELECT CAST(valor AS TEXT), unidade,
+                                   data_medicao, hora_medicao
                             FROM marcadores_leituras
                             WHERE LOWER(parametro) LIKE ?
-                            ORDER BY data_medicao DESC LIMIT 10
+                            ORDER BY data_medicao DESC, hora_medicao DESC LIMIT 10
                         """, (f"%{termo}%",)).fetchall()
                         if mrows:
-                            linhas.extend([("manual", v, u, d) for v, u, d in mrows])
+                            linhas.extend([("manual", v, u,
+                                           f"{d} {h}" if h else d)
+                                          for v, u, d, h in mrows])
                             break
                 except Exception:
                     pass
@@ -241,11 +306,16 @@ def criar_tela_marcadores(page: ft.Page, voltar_fn) -> ft.Container:
 
         items = []
         for fonte, val, unit, data in linhas[:12]:
+            data_disp = _fmt_data(data)
+            hora_disp = data[11:16] if len(data) > 10 else ""
             items.append(ft.Container(
                 content=ft.Row([
                     ft.Icon("circle", size=8,
                             color=AZUL if fonte == "exame" else VERD),
-                    ft.Text(_fmt_data(data), size=11, color=SEC, width=70),
+                    ft.Column([
+                        ft.Text(data_disp, size=11, color=SEC),
+                        ft.Text(hora_disp, size=9, color=MUT) if hora_disp else ft.Container(height=0),
+                    ], spacing=0, tight=True, width=70),
                     ft.Text(str(val), size=13,
                             weight=ft.FontWeight.W_700, color=TXT),
                     ft.Text(str(unit or ""), size=10, color=MUT),
@@ -393,8 +463,10 @@ def criar_tela_marcadores(page: ft.Page, voltar_fn) -> ft.Container:
         except Exception:
             pass
 
+
     # ── Overlay: adicionar leitura manual ───────────────────────
     def _abrir_form():
+        import datetime as _dt
         ref_ov = [None]
 
         todas_cats = [cat for cat, _, _, _ in _CATEGORIAS]
@@ -402,6 +474,8 @@ def criar_tela_marcadores(page: ft.Page, voltar_fn) -> ft.Container:
             cat: [(p, u, r) for p, u, r, _ in marc]
             for cat, _, _, marc in _CATEGORIAS
         }
+
+        _HORAS = [f"{h:02d}:00" for h in range(24)]
 
         dd_cat = ft.Dropdown(
             label="Categoria",
@@ -427,13 +501,20 @@ def criar_tela_marcadores(page: ft.Page, voltar_fn) -> ft.Container:
             border_radius=8,
             keyboard_type=ft.KeyboardType.NUMBER,
         )
-        tf_data = ft.TextField(
-            label="Data (YYYY-MM-DD)",
+        hora_atual = f"{_dt.datetime.now().hour:02d}:00"
+        dd_hora = ft.Dropdown(
+            label="Hora",
             bgcolor=CARD, border_color=BD2, focused_border_color=AZUL,
-            label_style=ft.TextStyle(color=SEC, size=11),
+            label_style=ft.TextStyle(color=SEC),
             text_style=ft.TextStyle(color=TXT),
             border_radius=8,
-            value=__import__("datetime").date.today().isoformat(),
+            value=hora_atual,
+            options=[ft.dropdown.Option(h) for h in _HORAS],
+        )
+        row_data, tf_data = campo_data(
+            page, "Data",
+            value=_dt.date.today().strftime("%d/%m/%Y"),
+            bgcolor=CARD, border_color=BD2,
         )
         txt_unit = ft.Text("", size=11, color=SEC)
 
@@ -476,8 +557,10 @@ def criar_tela_marcadores(page: ft.Page, voltar_fn) -> ft.Container:
         def _salvar(e):
             cat_sel   = dd_cat.value
             param_sel = dd_param.value
+            from dados.model_prontuario import normalizar_data
             val_str   = (tf_valor.value or "").strip()
-            data_str  = (tf_data.value or "").strip()
+            data_str  = normalizar_data((tf_data.value or "").strip())
+            hora_str  = dd_hora.value or hora_atual
             if not cat_sel or not param_sel or not val_str or not data_str:
                 return
             unidade = ref_txt = ""
@@ -494,18 +577,24 @@ def criar_tela_marcadores(page: ft.Page, voltar_fn) -> ft.Container:
                     cur = conn.execute("""
                         INSERT INTO marcadores_leituras
                             (parametro, categoria, valor, unidade, referencia,
-                             data_medicao, fonte)
-                        VALUES (?, ?, ?, ?, ?, ?, 'manual')
-                    """, (param_sel, cat_sel, val_num, unidade, ref_txt, data_str))
+                             data_medicao, hora_medicao, fonte)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, 'manual')
+                    """, (param_sel, cat_sel, val_num, unidade, ref_txt,
+                          data_str, hora_str))
                     leitura_id = cur.lastrowid
                     conn.commit()
                 finally:
                     conn.close()
+                _status_banco[0] = "em_edicao"
                 _fechar()
                 _carregar()
-                if _e_fora_range(val_num, ref_txt):
-                    _claudia_perguntar_contexto(
-                        param_sel, val_num, unidade, ref_txt, leitura_id)
+
+                def _apos_sync(p=param_sel, v=val_num, u=unidade,
+                               r=ref_txt, lid=leitura_id):
+                    if _e_fora_range(v, r):
+                        _claudia_perguntar_contexto(p, v, u, r, lid)
+
+                _sync(_apos_sync)
             except Exception as ex:
                 log.exception("[MARC] salvar: %s", ex)
 
@@ -540,7 +629,10 @@ def criar_tela_marcadores(page: ft.Page, voltar_fn) -> ft.Container:
                             width=50,
                         ),
                     ], spacing=8),
-                    tf_data,
+                    ft.Row([
+                        ft.Container(content=row_data, expand=True),
+                        ft.Container(content=dd_hora, width=110),
+                    ], spacing=8),
                     ft.Container(height=8),
                     ft.Row([btn_cancel, btn_ok], spacing=8,
                            alignment=ft.MainAxisAlignment.CENTER),
@@ -680,11 +772,12 @@ def criar_tela_marcadores(page: ft.Page, voltar_fn) -> ft.Container:
     btn_add.on_click = lambda e: _abrir_form()
 
     cabecalho = lay.criar_cabecalho(
-        "Marcadores de Saude", voltar_fn,
+        "Marcadores de Saude", lambda e=None: _sair(voltar_fn),
         icone_titulo="biotech_rounded",
         cor_titulo=AZUL,
         acoes=[btn_add],
     )
     corpo = lay.criar_corpo(cabecalho, area)
     _montado[0] = True
+    _registrar_voltar_hw()
     return ft.Container(bgcolor=BG, expand=True, content=corpo)

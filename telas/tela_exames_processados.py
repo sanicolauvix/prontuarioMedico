@@ -56,7 +56,7 @@ def _listar_exames(filtro_tipo=None, filtro_lab=None, filtro_texto=None):
             SELECT e.id, e.tipo, e.tipo_exame, e.data_exame, e.laboratorio,
                    e.medico_solicit, e.arquivo_origem, e.drive_file_id,
                    e.importado_em, p.nome as paciente,
-                   (SELECT COUNT(*) FROM resultados_estruturados r WHERE r.exame_id = e.id) as qtd_params,
+                   (SELECT COUNT(*) FROM exame_resultados r WHERE r.exame_id = e.id) as qtd_params,
                    (SELECT COUNT(*) FROM laudos l WHERE l.exame_id = e.id) as tem_laudo
             FROM exames e
             LEFT JOIN pacientes p ON p.id = e.paciente_id
@@ -96,7 +96,7 @@ def _exames_do_medico(medico_id):
         rows = conn.execute("""
             SELECT e.id, e.tipo, e.tipo_exame, e.data_exame, e.laboratorio,
                    e.arquivo_origem, e.drive_file_id,
-                   (SELECT COUNT(*) FROM resultados_estruturados r WHERE r.exame_id = e.id) as qtd_params
+                   (SELECT COUNT(*) FROM exame_resultados r WHERE r.exame_id = e.id) as qtd_params
             FROM exames e
             WHERE UPPER(e.medico_solicit) LIKE UPPER((SELECT '%'||nome||'%' FROM medicos WHERE id=?))
                OR e.medico_solicit LIKE (SELECT '%'||nome||'%' FROM medicos WHERE id=?)
@@ -127,7 +127,7 @@ def _resultados_por_categoria(categoria, filtro_texto=None):
             SELECT r.parametro, r.valor, r.unidade, r.referencia,
                    e.data_exame, e.laboratorio, e.id as exame_id,
                    ep.categoria, ep.nome_oficial
-            FROM resultados_estruturados r
+            FROM exame_resultados r
             JOIN exames e ON e.id = r.exame_id
             LEFT JOIN exames_padrao ep ON ep.id = r.exame_padrao_id
             WHERE (ep.categoria = ? OR (ep.categoria IS NULL AND ? = 'Outros'))
@@ -161,7 +161,7 @@ def _resultados_exame(exame_id):
     try:
         res = conn.execute("""
             SELECT parametro, valor, unidade, referencia
-            FROM resultados_estruturados WHERE exame_id = ? ORDER BY id
+            FROM exame_resultados WHERE exame_id = ? ORDER BY id
         """, (exame_id,)).fetchall()
         lau = conn.execute(
             "SELECT conclusao FROM laudos WHERE exame_id = ?", (exame_id,)

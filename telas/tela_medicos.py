@@ -27,16 +27,99 @@ VERM = "#DA3633";  ROXO = "#BC8CFF"
 
 def _tela_ficha_medico(page: ft.Page, medico, voltar_fn):
     especialidades = listar_especialidades()
-    is_novo = medico is None
-    titulo  = "Novo Médico" if is_novo else "Editar Médico"
+    is_novo        = medico is None
+    _modo_edicao   = [is_novo]   # novo abre direto em edicao; existente abre read-only
+    _status_banco  = ["normal"]
+    _handler_ant   = [None]
+    lay            = Layout(page)
 
-    # ── Foto ─────────────────────────────────────────────────
-    foto_drive_id = [medico.get("foto_drive_id", "") if medico else ""]
+    # ── sync padrao Koios ─────────────────────────────────────
+    def _sync(apos_sync_fn=None):
+        ov = ft.Container(
+            content=ft.Container(
+                content=ft.Column([
+                    ft.ProgressRing(color=ROXO, width=36, height=36, stroke_width=3),
+                    ft.Container(height=10),
+                    ft.Text("Sincronizando com Drive...", size=13, color=TXT,
+                            weight=ft.FontWeight.W_600, text_align="center"),
+                    ft.Text("Aguarde", size=11, color=SEC, text_align="center"),
+                ], tight=True, spacing=2,
+                   horizontal_alignment=ft.CrossAxisAlignment.CENTER),
+                bgcolor=CARD, border_radius=14,
+                padding=ft.padding.all(24), width=240,
+            ),
+            bgcolor="#DD000000", expand=True, alignment=ft.Alignment(0, 0),
+        )
+        page.overlay.append(ov)
+        try: page.update()
+        except Exception: pass
 
+        def _run():
+            try:
+                from backup.drive_backup import fazer_backup
+                fazer_backup(forcar=True)
+            except Exception as ex:
+                logger.warning("[medicos] sync erro: %s", ex)
+            finally:
+                _status_banco[0] = "normal"
+                if ov in page.overlay:
+                    page.overlay.remove(ov)
+                try: page.update()
+                except Exception: pass
+                if apos_sync_fn:
+                    apos_sync_fn()
+
+        threading.Thread(target=_run, daemon=True).start()
+
+    def _sair(destino_fn):
+        _desregistrar_voltar_hw()
+        if _modo_edicao[0]:
+            _salvar(None)
+        elif _status_banco[0] == "em_edicao":
+            _sync(destino_fn)
+        else:
+            destino_fn()
+
+    def _registrar_voltar_hw():
+        _handler_ant[0] = page.on_keyboard_event
+        def _on_hw(e):
+            if e.key == "Escape":
+                _sair(voltar_fn)
+        page.on_keyboard_event = _on_hw
+
+    def _desregistrar_voltar_hw():
+        page.on_keyboard_event = _handler_ant[0]
+
+    # ── helpers visuais ───────────────────────────────────────
     def _url_foto(drive_id):
         if not drive_id:
             return ""
         return f"https://drive.google.com/thumbnail?id={drive_id}&sz=w200"
+
+    def _campo(label, valor="", largura=None, multiline=False, min_lines=1, read_only=False):
+        kwargs = dict(
+            label=label, value=valor,
+            bgcolor=CARD, border_color=BD2,
+            focused_border_color=ROXO,
+            label_style=ft.TextStyle(color=SEC),
+            text_style=ft.TextStyle(color=TXT),
+            border_radius=8,
+            multiline=multiline,
+            min_lines=min_lines,
+            read_only=read_only,
+        )
+        if largura:
+            kwargs["width"] = largura
+        else:
+            kwargs["expand"] = True
+        return ft.TextField(**kwargs)
+
+    def _label_sec(texto):
+        return ft.Text(texto, size=10, color=MUT, weight=ft.FontWeight.W_700)
+
+    # ── foto ──────────────────────────────────────────────────
+    foto_drive_id   = [medico.get("foto_drive_id", "") if medico else ""]
+    txt_status_foto = ft.Text("", size=10, color=SEC)
 
     img_preview = ft.Image(
         src=_url_foto(foto_drive_id[0]),
@@ -49,19 +132,19 @@ def _tela_ficha_medico(page: ft.Page, medico, voltar_fn):
             ft.Text("Foto", size=9, color=MUT),
         ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=2),
         width=72, height=72, border_radius=36,
-        bgcolor=f"{ROXO}22",
+        bgcolor=ft.Colors.with_opacity(0.13, ROXO),
         alignment=ft.alignment.Alignment(0, 0),
         visible=not bool(foto_drive_id[0]),
     )
-    txt_status_foto = ft.Text("", size=10, color=SEC)
 
     def _selecionar_foto(e):
+        if not _modo_edicao[0]:
+            return
         def _picker():
             try:
                 import tkinter as tk
                 from tkinter import filedialog
-                root = tk.Tk()
-                root.withdraw()
+                root = tk.Tk(); root.withdraw()
                 root.attributes("-topmost", True)
                 caminho = filedialog.askopenfilename(
                     title="Selecionar foto",
@@ -75,25 +158,18 @@ def _tela_ficha_medico(page: ft.Page, medico, voltar_fn):
                     from shared.drive_connector import upload_foto_medico
                     drive_id = upload_foto_medico(caminho)
                     foto_drive_id[0] = drive_id
-                    page.pubsub.send_all({
-                        "_tipo": "foto_medico",
-                        "drive_id": drive_id,
-                        "status": "✓ Foto salva no Drive",
-                    })
+                    page.pubsub.send_all({"_tipo": "foto_medico", "drive_id": drive_id,
+                                          "status": "Foto salva no Drive"})
                 except Exception as ex:
-                    logger.error("upload_foto_medico: %s", str(ex), exc_info=True)
+                    logger.error("upload_foto_medico: %s", ex, exc_info=True)
                     foto_drive_id[0] = caminho
-                    page.pubsub.send_all({
-                        "_tipo": "foto_medico",
-                        "drive_id": caminho,
-                        "status": "Foto local (Drive indisponível)",
-                    })
+                    page.pubsub.send_all({"_tipo": "foto_medico", "drive_id": caminho,
+                                          "status": "Foto local (Drive indisponível)"})
             except Exception as ex:
-                logger.error("_selecionar_foto: %s", str(ex), exc_info=True)
+                logger.error("_selecionar_foto: %s", ex, exc_info=True)
                 page.pubsub.send_all({"_tipo": "foto_medico", "status": f"Erro: {ex}"})
 
         _subscribed = [False]
-
         def _on_msg(msg):
             if not isinstance(msg, dict) or msg.get("_tipo") != "foto_medico":
                 return
@@ -104,30 +180,24 @@ def _tela_ficha_medico(page: ft.Page, medico, voltar_fn):
                 icone_sem_foto.visible = False
             try: page.update()
             except Exception: pass
-
         if not _subscribed[0]:
             page.pubsub.subscribe(_on_msg)
             _subscribed[0] = True
-
         threading.Thread(target=_picker, daemon=True).start()
 
-    avatar_btn = ft.Container(
-        content=ft.Stack([
-            img_preview,
-            icone_sem_foto,
-            ft.Container(
-                content=ft.Icon("edit_rounded", size=14, color="#FFFFFF"),
-                width=22, height=22, border_radius=11,
-                bgcolor="#00000088",
-                alignment=ft.alignment.Alignment(0, 0),
-                right=0, bottom=0,
-            ),
-        ]),
-        width=72, height=72,
-        on_click=_selecionar_foto,
-        border_radius=36,
+    icone_editar_foto = ft.Container(
+        content=ft.Icon("edit_rounded", size=14, color="#FFFFFF"),
+        width=22, height=22, border_radius=11,
+        bgcolor="#00000088",
+        alignment=ft.alignment.Alignment(0, 0),
+        right=0, bottom=0,
+        visible=_modo_edicao[0],
     )
-
+    avatar_btn = ft.Container(
+        content=ft.Stack([img_preview, icone_sem_foto, icone_editar_foto]),
+        width=72, height=72, border_radius=36,
+        on_click=_selecionar_foto,
+    )
     foto_row = ft.Row([
         avatar_btn,
         ft.Column([
@@ -137,51 +207,49 @@ def _tela_ficha_medico(page: ft.Page, medico, voltar_fn):
         ], spacing=3),
     ], spacing=14, vertical_alignment=ft.CrossAxisAlignment.CENTER)
 
-    def _campo(label, valor="", largura=None, multiline=False, min_lines=1):
-        kwargs = dict(
-            label=label, value=valor,
-            bgcolor=CARD, border_color=BD2,
-            focused_border_color=ROXO,
-            label_style=ft.TextStyle(color=SEC),
-            text_style=ft.TextStyle(color=TXT),
-            border_radius=8,
-            multiline=multiline,
-            min_lines=min_lines,
-        )
-        if largura:
-            kwargs["width"] = largura
-        else:
-            kwargs["expand"] = True
-        return ft.TextField(**kwargs)
+    # ── campos ────────────────────────────────────────────────
+    ro = not _modo_edicao[0]   # read_only inicial
+    f_nome  = _campo("Nome completo *", medico["nome"] if medico else "",           read_only=ro)
+    f_crm   = _campo("CRM",  medico.get("crm", "")  if medico else "", largura=120, read_only=ro)
+    f_uf    = _campo("UF",   medico.get("uf", "")   if medico else "", largura=65,  read_only=ro)
+    f_tel   = _campo("Telefone",  medico.get("telefone", "")  if medico else "",    read_only=ro)
+    f_email = _campo("E-mail",    medico.get("email", "")     if medico else "",    read_only=ro)
+    f_end   = _campo("Endereço do consultório",
+                     medico.get("endereco", "") if medico else "",                  read_only=ro)
+    f_obs   = _campo("Observações", medico.get("observacoes", "") if medico else "",
+                     multiline=True, min_lines=3,                                   read_only=ro)
+    sw_ativo = ft.Switch(
+        label="Ativo", value=bool(medico.get("ativo", 1)) if medico else True,
+        active_color=ROXO, disabled=ro,
+    )
 
-    def _label_sec(texto):
-        return ft.Text(texto, size=10, color=MUT, weight=ft.FontWeight.W_700)
-
-    f_nome = _campo("Nome completo *", medico["nome"] if medico else "")
-    f_crm  = _campo("CRM",  medico.get("crm", "")  if medico else "", largura=120)
-    f_uf   = _campo("UF",   medico.get("uf", "")   if medico else "", largura=65)
-
-    # ── Especialidade — campo de busca no padrão Koios ──────
-    esp_id_sel   = [str(medico["especialidade_id"]) if medico and medico.get("especialidade_id") else None]
+    # ── especialidade busca + chip ────────────────────────────
+    esp_id_sel   = [None]
     esp_nome_ini = ""
-    if medico and medico.get("especialidade_id"):
-        match = next((e for e in especialidades
-                      if str(e["id"]) == str(medico["especialidade_id"])), None)
-        if match:
-            esp_nome_ini = match["nome"]
+    if medico:
+        if medico.get("especialidade_id"):
+            esp_id_sel[0] = str(medico["especialidade_id"])
+            match = next((e for e in especialidades
+                          if str(e["id"]) == str(medico["especialidade_id"])), None)
+            if match:
+                esp_nome_ini = match["nome"]
+        if not esp_nome_ini and medico.get("especialidade"):
+            esp_nome_ini = medico["especialidade"]
+            match = next((e for e in especialidades if e["nome"] == esp_nome_ini), None)
+            if match:
+                esp_id_sel[0] = str(match["id"])
 
-    # chip exibido quando uma especialidade já está selecionada
     esp_chip = ft.Container(
         content=ft.Row([
             ft.Icon("local_hospital_rounded", size=13, color=ROXO),
-            ft.Text("", size=12, color=ROXO, weight=ft.FontWeight.W_600),
-            ft.Icon("close_rounded", size=13, color=ROXO),
+            ft.Text(esp_nome_ini, size=12, color=ROXO, weight=ft.FontWeight.W_600),
+            ft.Icon("close_rounded", size=13, color=ROXO,
+                    visible=_modo_edicao[0]),   # X visivel so em edicao
         ], spacing=6, tight=True),
-        bgcolor=f"{ROXO}18", border_radius=16,
+        bgcolor=ft.Colors.with_opacity(0.12, ROXO), border_radius=16,
         padding=ft.padding.symmetric(horizontal=10, vertical=5),
-        visible=False,
+        ink=_modo_edicao[0], visible=bool(esp_nome_ini),
     )
-
     f_esp_txt = ft.TextField(
         hint_text="Buscar especialidade...",
         prefix_icon="search_rounded",
@@ -189,62 +257,61 @@ def _tela_ficha_medico(page: ft.Page, medico, voltar_fn):
         hint_style=ft.TextStyle(color=MUT),
         text_style=ft.TextStyle(color=TXT),
         border_radius=8, expand=True, height=42,
-        visible=not bool(esp_nome_ini),
+        visible=_modo_edicao[0] and not bool(esp_nome_ini),
     )
-    sugestoes_col = ft.Column(spacing=4, visible=False)
+    sugestoes_esp = ft.Column(spacing=4, visible=False)
 
-    def _mostrar_chip(nome):
+    def _mostrar_chip_esp(nome):
         esp_chip.content.controls[1].value = nome
         esp_chip.visible = True
         f_esp_txt.visible = False
-        sugestoes_col.controls.clear()
-        sugestoes_col.visible = False
+        sugestoes_esp.controls.clear()
+        sugestoes_esp.visible = False
         try: page.update()
         except Exception: pass
 
     def _limpar_esp(e=None):
+        if not _modo_edicao[0]:
+            return
         esp_id_sel[0] = None
         esp_chip.visible = False
         f_esp_txt.value = ""
         f_esp_txt.visible = True
-        sugestoes_col.controls.clear()
-        sugestoes_col.visible = False
+        sugestoes_esp.controls.clear()
+        sugestoes_esp.visible = False
         try: page.update()
         except Exception: pass
 
     esp_chip.on_click = _limpar_esp
 
-    # inicializa chip se já havia seleção
-    if esp_nome_ini:
-        _mostrar_chip(esp_nome_ini)
-
     def _filtrar_esp(e):
+        if not _modo_edicao[0]:
+            return
         termo = (f_esp_txt.value or "").strip().upper()
-        sugestoes_col.controls.clear()
+        sugestoes_esp.controls.clear()
         if not termo:
-            sugestoes_col.visible = False
+            sugestoes_esp.visible = False
             try: page.update()
             except Exception: pass
             return
-        matches = [esp for esp in especialidades if termo in esp["nome"].upper()]
+        matches = [esp for esp in especialidades if termo in esp["nome"].upper()][:8]
         if not matches:
-            sugestoes_col.controls.append(ft.Container(
-                content=ft.Text("Nenhuma especialidade encontrada.",
-                                size=12, color=MUT),
+            sugestoes_esp.controls.append(ft.Container(
+                content=ft.Text("Nenhuma especialidade encontrada.", size=12, color=MUT),
                 padding=ft.padding.symmetric(horizontal=12, vertical=8),
             ))
-            sugestoes_col.visible = True
+            sugestoes_esp.visible = True
             try: page.update()
             except Exception: pass
             return
-        for esp in matches[:8]:
+        for esp in matches:
             desc = esp.get("descricao") or ""
-            def make_sel(e_item):
-                def sel(e):
-                    esp_id_sel[0] = str(e_item["id"])
-                    _mostrar_chip(e_item["nome"])
+            def make_sel(item=esp):
+                def sel(ev):
+                    esp_id_sel[0] = str(item["id"])
+                    _mostrar_chip_esp(item["nome"])
                 return sel
-            sugestoes_col.controls.append(ft.Container(
+            sugestoes_esp.controls.append(ft.Container(
                 content=ft.Row([
                     ft.Icon("local_hospital_rounded", size=13, color=ROXO),
                     ft.Column([
@@ -260,27 +327,15 @@ def _tela_ficha_medico(page: ft.Page, medico, voltar_fn):
                     top=ft.BorderSide(1, BD), bottom=ft.BorderSide(1, BD),
                     right=ft.BorderSide(1, BD),
                 ),
-                on_click=make_sel(esp), ink=True,
+                on_click=make_sel(), ink=True,
             ))
-        sugestoes_col.visible = True
+        sugestoes_esp.visible = True
         try: page.update()
         except Exception: pass
 
     f_esp_txt.on_change = _filtrar_esp
 
-    f_tel  = _campo("Telefone",  medico.get("telefone", "")  if medico else "")
-    f_email= _campo("E-mail",    medico.get("email", "")     if medico else "")
-    f_end  = _campo("Endereço do consultório",
-                    medico.get("endereco", "") if medico else "")
-    f_obs  = _campo("Observações", medico.get("observacoes", "") if medico else "",
-                    multiline=True, min_lines=3)
-    sw_ativo = ft.Switch(
-        label="Ativo", value=bool(medico.get("ativo", 1)) if medico else True,
-        active_color=ROXO,
-    )
-    txt_erro = ft.Text("", color=VERM, size=12)
-
-    # Exames vinculados
+    # ── exames vinculados (read-only) ─────────────────────────
     exames_section = ft.Container()
     if medico:
         exames = exames_do_medico(medico["id"])
@@ -308,7 +363,21 @@ def _tela_ficha_medico(page: ft.Page, medico, voltar_fn):
                 ),
             )
 
-    def salvar(e):
+    # ── botao salvar (visivel so em edicao) ───────────────────
+    txt_erro = ft.Text("", color=VERM, size=12)
+
+    btn_salvar_med = ft.Container(
+        content=ft.Row([
+            ft.Icon("save_rounded", size=16, color=BG),
+            ft.Text("Salvar Médico", size=14, color=BG, weight=ft.FontWeight.W_600),
+        ], spacing=6, tight=True, alignment=ft.MainAxisAlignment.CENTER),
+        bgcolor=ROXO, border_radius=10, ink=True,
+        padding=ft.padding.symmetric(vertical=14),
+        alignment=ft.alignment.Alignment(0, 0),
+        visible=_modo_edicao[0],
+    )
+
+    def _salvar(e):
         if not (f_nome.value or "").strip():
             txt_erro.value = "Nome é obrigatório."
             try: page.update()
@@ -329,25 +398,49 @@ def _tela_ficha_medico(page: ft.Page, medico, voltar_fn):
             "observacoes":      (f_obs.value or "").strip() or None,
             "ativo":            1 if sw_ativo.value else 0,
         })
-        voltar_fn()
+        _status_banco[0] = "em_edicao"
+        _sync(voltar_fn)
 
-    lay = Layout(page)
+    btn_salvar_med.on_click = _salvar
 
-    btn_salvar_med = ft.Container(
+    # ── ativar modo edicao ────────────────────────────────────
+    def _ativar_edicao(e=None):
+        _modo_edicao[0] = True
+        for f in [f_nome, f_crm, f_uf, f_tel, f_email, f_end, f_obs]:
+            f.read_only = False
+        sw_ativo.disabled = False
+        icone_editar_foto.visible = True
+        # chip: mostrar X e habilitar ink
+        esp_chip.content.controls[2].visible = True
+        esp_chip.ink = True
+        # campo busca: mostrar se nao ha especialidade selecionada
+        if not esp_id_sel[0]:
+            f_esp_txt.visible = True
+        btn_salvar_med.visible = True
+        btn_editar.visible     = False
+        try: page.update()
+        except Exception: pass
+
+    btn_editar = ft.Container(
         content=ft.Row([
-            ft.Icon("save_rounded", size=16, color=BG),
-            ft.Text("Salvar Medico", size=14, color=BG, weight=ft.FontWeight.W_600),
-        ], spacing=6, tight=True, alignment=ft.MainAxisAlignment.CENTER),
-        bgcolor=ROXO, border_radius=10, ink=True,
-        padding=ft.padding.symmetric(vertical=14),
-        alignment=ft.alignment.Alignment(0, 0),
+            ft.Icon("edit_rounded", size=15, color=ROXO),
+            ft.Text("Editar", size=13, color=ROXO),
+        ], spacing=5, tight=True),
+        padding=ft.padding.symmetric(horizontal=10, vertical=8),
+        border_radius=8,
+        bgcolor=ft.Colors.with_opacity(0.12, ROXO),
+        ink=True,
+        visible=not is_novo,   # novo ja abre em edicao, sem botao editar
     )
-    btn_salvar_med.on_click = salvar
+    btn_editar.on_click = _ativar_edicao
 
+    # ── cabecalho ─────────────────────────────────────────────
+    titulo = "Novo Médico" if is_novo else "Médico"
     cabecalho = lay.criar_cabecalho(
-        titulo, voltar_fn,
+        titulo, lambda e=None: _sair(voltar_fn),
         icone_titulo="person_rounded",
         cor_titulo=ROXO,
+        acoes=[btn_editar],
     )
 
     campos_col = ft.Column([
@@ -360,7 +453,7 @@ def _tela_ficha_medico(page: ft.Page, medico, voltar_fn):
                     weight=ft.FontWeight.W_700),
             esp_chip,
             f_esp_txt,
-            sugestoes_col,
+            sugestoes_esp,
         ], spacing=4),
         ft.Container(height=6),
         _label_sec("CONTATO"),
@@ -382,6 +475,7 @@ def _tela_ficha_medico(page: ft.Page, medico, voltar_fn):
 
     corpo = lay.criar_corpo(cabecalho, campos_col,
                             padding_area=ft.padding.symmetric(horizontal=16, vertical=12))
+    _registrar_voltar_hw()
     return lay.wrap(ft.Container(bgcolor=BG, expand=True, content=corpo))
 
 
@@ -465,7 +559,7 @@ def criar_tela_medicos(page: ft.Page, voltar_fn):
                 src=foto, width=50, height=50, fit="cover", border_radius=12,
             ) if foto else ft.Container(
                 content=ft.Icon("person_rounded", size=26, color=ROXO),
-                bgcolor=f"{ROXO}22", border_radius=12,
+                bgcolor=ft.Colors.with_opacity(0.13, ROXO), border_radius=12,
                 width=50, height=50,
                 alignment=ft.alignment.Alignment(0, 0),
             )
@@ -533,7 +627,7 @@ def criar_tela_medicos(page: ft.Page, voltar_fn):
                 ft.Text("", size=12, color=AZUL, weight=ft.FontWeight.W_600),
                 ft.Icon("close_rounded", size=13, color=AZUL),
             ], spacing=6, tight=True),
-            bgcolor=f"{AZUL}18", border_radius=16,
+            bgcolor=ft.Colors.with_opacity(0.12, AZUL), border_radius=16,
             padding=ft.padding.symmetric(horizontal=10, vertical=5),
             visible=False,
         )
@@ -568,7 +662,7 @@ def criar_tela_medicos(page: ft.Page, voltar_fn):
                         fit="cover", border_radius=8,
                     ) if foto else ft.Container(
                         content=ft.Icon("person_rounded", size=20, color=ROXO),
-                        bgcolor=f"{ROXO}22", border_radius=8,
+                        bgcolor=ft.Colors.with_opacity(0.13, ROXO), border_radius=8,
                         width=40, height=40,
                         alignment=ft.alignment.Alignment(0, 0),
                     )

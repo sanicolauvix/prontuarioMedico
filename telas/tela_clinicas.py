@@ -2,6 +2,7 @@
 # Prontuario | telas/tela_clinicas.py -- Cadastro de clinicas e locais de atendimento
 import json as _json
 import logging
+import threading
 import flet as ft
 from shared.layout import Layout
 from dados.model_prontuario import listar_clinicas, salvar_clinica, excluir_clinica
@@ -65,9 +66,62 @@ def _label_sec(texto, cor=MUT):
 # ══════════════════════════════════════════════════════════════
 
 def _tela_form_clinica(page, clinica, voltar_fn):
-    lay    = Layout(page)
-    is_new = clinica is None
-    titulo = "Nova Clinica" if is_new else "Editar Clinica"
+    lay           = Layout(page)
+    is_new        = clinica is None
+    _modo_edicao  = [is_new]
+    _status_banco = ["normal"]
+    _handler_ant  = [None]
+    titulo        = "Nova Clinica" if is_new else "Clinica"
+
+    def _sync(apos_sync_fn=None):
+        ov = ft.Container(
+            content=ft.Container(
+                content=ft.Column([
+                    ft.ProgressRing(color=AZUL, width=36, height=36, stroke_width=3),
+                    ft.Container(height=10),
+                    ft.Text("Sincronizando com Drive...", size=13, color=TXT,
+                            weight=ft.FontWeight.W_600, text_align="center"),
+                    ft.Text("Aguarde", size=11, color=SEC, text_align="center"),
+                ], tight=True, spacing=2,
+                   horizontal_alignment=ft.CrossAxisAlignment.CENTER),
+                bgcolor=CARD, border_radius=14, padding=ft.padding.all(24), width=240,
+            ),
+            bgcolor="#DD000000", expand=True, alignment=ft.Alignment(0, 0),
+        )
+        page.overlay.append(ov)
+        try: page.update()
+        except Exception: pass
+        def _run():
+            try:
+                from backup.drive_backup import fazer_backup
+                fazer_backup(forcar=True)
+            except Exception as ex:
+                log.warning("[clinicas] sync erro: %s", ex)
+            finally:
+                _status_banco[0] = "normal"
+                if ov in page.overlay: page.overlay.remove(ov)
+                try: page.update()
+                except Exception: pass
+                if apos_sync_fn: apos_sync_fn()
+        threading.Thread(target=_run, daemon=True).start()
+
+    def _sair(destino_fn):
+        _desregistrar_voltar_hw()
+        if _modo_edicao[0]:
+            _salvar(None)
+        elif _status_banco[0] == "em_edicao":
+            _sync(destino_fn)
+        else:
+            destino_fn()
+
+    def _registrar_voltar_hw():
+        _handler_ant[0] = page.on_keyboard_event
+        def _on_hw(e):
+            if e.key == "Escape": _sair(voltar_fn)
+        page.on_keyboard_event = _on_hw
+
+    def _desregistrar_voltar_hw():
+        page.on_keyboard_event = _handler_ant[0]
 
     end_atual = [{}]
     if clinica and clinica.get("endereco_json"):
@@ -78,6 +132,7 @@ def _tela_form_clinica(page, clinica, voltar_fn):
 
     tipo_sel = [clinica.get("tipo", "clinica") if clinica else "clinica"]
 
+    ro = not _modo_edicao[0]
     f_nome    = _campo("Nome *", clinica["nome"] if clinica else "")
     f_tel     = _campo("Telefone", clinica.get("telefone","") if clinica else "",
                        largura=160, keyboard=ft.KeyboardType.PHONE)
@@ -86,6 +141,8 @@ def _tela_form_clinica(page, clinica, voltar_fn):
     f_website = _campo("Website", clinica.get("website","") if clinica else "")
     f_obs     = _campo("Observacoes", clinica.get("observacoes","") if clinica else "",
                        multiline=True, min_lines=2)
+    for _f in [f_nome, f_tel, f_email, f_website, f_obs]:
+        _f.read_only = ro
     txt_erro  = ft.Text("", color=VERM, size=12)
 
     # Endereco resumido
@@ -186,21 +243,48 @@ def _tela_form_clinica(page, clinica, voltar_fn):
             "endereco_json": end_json,
             "observacoes":  f_obs.value.strip() or None,
         })
-        voltar_fn()
+        _status_banco[0] = "em_edicao"
+        _sync(voltar_fn)
+
+    def _ativar_edicao(e=None):
+        _modo_edicao[0] = True
+        for _f in [f_nome, f_tel, f_email, f_website, f_obs]:
+            _f.read_only = False
+        btn_end.visible    = True
+        btn_salvar_hdr.visible = True
+        btn_editar.visible = False
+        try: page.update()
+        except Exception: pass
+
+    btn_salvar_hdr = ft.Container(
+        content=ft.Row([
+            ft.Icon("save_rounded", size=15, color=BG),
+            ft.Text("Salvar", size=13, color=BG, weight=ft.FontWeight.W_600),
+        ], spacing=6, tight=True),
+        bgcolor=AZUL, border_radius=8, ink=True,
+        padding=ft.padding.symmetric(horizontal=14, vertical=10),
+        visible=is_new,
+    )
+    btn_salvar_hdr.on_click = _salvar
+
+    btn_editar = ft.Container(
+        content=ft.Row([
+            ft.Icon("edit_rounded", size=15, color=AZUL),
+            ft.Text("Editar", size=13, color=AZUL),
+        ], spacing=5, tight=True),
+        padding=ft.padding.symmetric(horizontal=10, vertical=8),
+        border_radius=8, bgcolor=ft.Colors.with_opacity(0.12, AZUL), ink=True,
+        visible=not is_new,
+    )
+    btn_editar.on_click = _ativar_edicao
+
+    btn_end.visible = _modo_edicao[0]
 
     cabecalho = lay.criar_cabecalho(
-        titulo, lambda: voltar_fn(),
+        titulo, lambda e=None: _sair(voltar_fn),
         icone_titulo="local_hospital_rounded",
         cor_titulo=AZUL,
-        acoes=[ft.Container(
-            content=ft.Row([
-                ft.Icon("save_rounded", size=15, color=BG),
-                ft.Text("Salvar", size=13, color=BG, weight=ft.FontWeight.W_600),
-            ], spacing=6, tight=True),
-            bgcolor=AZUL, border_radius=8, ink=True,
-            padding=ft.padding.symmetric(horizontal=14, vertical=10),
-            on_click=_salvar,
-        )],
+        acoes=[btn_editar, btn_salvar_hdr],
     )
 
     area = ft.Column([
@@ -239,6 +323,7 @@ def _tela_form_clinica(page, clinica, voltar_fn):
     _form = ft.Container(bgcolor=BG, expand=True, content=area)
     wrapper = ft.Column(expand=True)
     wrapper.controls.append(_form)
+    _registrar_voltar_hw()
     return wrapper
 
 

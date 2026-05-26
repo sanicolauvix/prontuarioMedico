@@ -19,12 +19,27 @@ from dados.model_prontuario import (
     criar_orcamento, salvar_resposta_orcamento,
     gerar_mensagem_orcamento, link_whatsapp,
     analisar_resposta_orcamento_ia,
+    normalizar_data as _norm_data,
 )
 from utils.foto_picker import (
     criar_btn_seletor_foto, processar_foto, _is_android,
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _para_display(s: str | None) -> str:
+    """Converte YYYY-MM-DD para DD/MM/YYYY para exibicao. DD/MM/YYYY passa sem alteracao."""
+    if not s or s == "continuo":
+        return s or ""
+    s = str(s).strip()
+    if len(s) >= 10 and s[4] == "-":
+        try:
+            return datetime.strptime(s[:10], "%Y-%m-%d").strftime("%d/%m/%Y")
+        except ValueError:
+            pass
+    return s
+
 
 # ── Paleta ────────────────────────────────────────────────────
 BG   = "#0D1117";  CARD = "#161B22";  BD  = "#21262D";  BD2 = "#30363D"
@@ -43,11 +58,12 @@ def _cor_estoque(atual, minimo):
     return VERD
 
 def _campo(label, valor="", largura=None, multiline=False, min_lines=1,
-           hint=None, keyboard=ft.KeyboardType.TEXT):
+           hint=None, keyboard=ft.KeyboardType.TEXT, read_only=False):
     kw = dict(label=label, value=valor or "", bgcolor=CARD, border_color=BD2,
               focused_border_color=AZUL, label_style=ft.TextStyle(color=SEC),
               text_style=ft.TextStyle(color=TXT), border_radius=8,
-              multiline=multiline, min_lines=min_lines, keyboard_type=keyboard)
+              multiline=multiline, min_lines=min_lines, keyboard_type=keyboard,
+              read_only=read_only)
     if hint:
         kw["hint_text"] = hint; kw["hint_style"] = ft.TextStyle(color=MUT, size=11)
     if largura: kw["width"] = largura
@@ -307,6 +323,66 @@ _DOS_SUGESTOES = [
 def _build_ficha_remedio(page, remedio, voltar_fn):
     """Ficha de cadastro/edição com estoque, horários, compras, adesão."""
     is_novo = remedio is None
+    _modo_edicao  = [is_novo]
+    _status_banco = ["normal"]
+    _handler_ant  = [None]
+    ro = not _modo_edicao[0]
+
+    def _sync(apos_sync_fn=None):
+        ov = ft.Container(
+            content=ft.Container(
+                content=ft.Column([
+                    ft.ProgressRing(color=AZUL, width=36, height=36, stroke_width=3),
+                    ft.Container(height=10),
+                    ft.Text("Sincronizando com Drive...", size=13, color=TXT,
+                            weight=ft.FontWeight.W_600, text_align="center"),
+                    ft.Text("Aguarde", size=11, color=SEC, text_align="center"),
+                ], tight=True, spacing=2,
+                   horizontal_alignment=ft.CrossAxisAlignment.CENTER),
+                bgcolor=CARD, border_radius=14,
+                padding=ft.padding.all(24), width=240,
+            ),
+            bgcolor="#DD000000", expand=True, alignment=ft.Alignment(0, 0),
+        )
+        page.overlay.append(ov)
+        try: page.update()
+        except Exception: pass
+
+        def _run():
+            try:
+                from backup.drive_backup import fazer_backup
+                fazer_backup(forcar=True)
+            except Exception as ex:
+                logger.warning("[REMEDIOS] sync erro: %s", ex)
+            finally:
+                _status_banco[0] = "normal"
+                if ov in page.overlay:
+                    page.overlay.remove(ov)
+                try: page.update()
+                except Exception: pass
+                if apos_sync_fn:
+                    apos_sync_fn()
+
+        threading.Thread(target=_run, daemon=True).start()
+
+    def _desregistrar_voltar_hw():
+        page.on_keyboard_event = _handler_ant[0]
+
+    def _sair(destino_fn):
+        _desregistrar_voltar_hw()
+        if _modo_edicao[0]:
+            _salvar(None)
+        elif _status_banco[0] == "em_edicao":
+            _sync(destino_fn)
+        else:
+            destino_fn()
+
+    def _registrar_voltar_hw():
+        _handler_ant[0] = page.on_keyboard_event
+        def _on_hw(e):
+            if e.key == "Escape":
+                _sair(voltar_fn)
+        page.on_keyboard_event = _on_hw
 
     # ── Médico (autocomplete + cadastro rapido) ───────────
     medicos    = listar_medicos(so_ativos=True)
@@ -322,7 +398,7 @@ def _build_ficha_remedio(page, remedio, voltar_fn):
 
     f_medico = _campo("Medico prescritor",
                       nome_med_ini,
-                      hint="Digite para buscar ou cadastrar…")
+                      hint="Digite para buscar ou cadastrar…", read_only=ro)
     sug_med  = ft.Column(spacing=2, visible=False)
 
     def _cadastrar_medico_rapido(nome_inicial=""):
@@ -441,10 +517,11 @@ def _build_ficha_remedio(page, remedio, voltar_fn):
     f_medico.on_change = _filtrar_med
 
     # ── Nome + Principio Ativo ────────────────────────────
-    f_nome = _campo("Nome do remedio/suplemento *", remedio["nome"] if remedio else "")
+    f_nome = _campo("Nome do remedio/suplemento *", remedio["nome"] if remedio else "",
+                    read_only=ro)
     f_pa   = _campo("Principio ativo (generico)",
                     remedio.get("principio_ativo","") if remedio else "",
-                    hint="ex: losartana, omeprazol, whey protein…")
+                    hint="ex: losartana, omeprazol, whey protein…", read_only=ro)
 
     # ── Tipo (remedio / suplemento) + Prescrito ───────────
     _tipo_ini      = remedio.get("tipo","remedio") == "suplemento" if remedio else False
@@ -453,10 +530,12 @@ def _build_ficha_remedio(page, remedio, voltar_fn):
     sw_tipo = ft.Switch(
         label="Suplemento (nao prescrito por medico por default)",
         value=_tipo_ini, active_color=ROXO, label_style=ft.TextStyle(color=SEC, size=12),
+        disabled=ro,
     )
     sw_prescrito = ft.Switch(
         label="Prescrito pelo medico",
         value=_prescrito_ini, active_color=AZUL, label_style=ft.TextStyle(color=SEC, size=12),
+        disabled=ro,
     )
     bloco_medico = ft.Container(
         content=ft.Column([
@@ -487,7 +566,7 @@ def _build_ficha_remedio(page, remedio, voltar_fn):
 
     # ── Dosagem (campo + dropdown de sugestões) ───────────
     f_dos = _campo("Dosagem", remedio.get("dosagem","") if remedio else "",
-                   hint="ex: 500mg, 1 comprimido, 5ml…")
+                   hint="ex: 500mg, 1 comprimido, 5ml…", read_only=ro)
     sug_dos = ft.Column(spacing=2, visible=False)
 
     def _item_sug(label, cor, campo, lista_sug, on_select=None):
@@ -518,14 +597,14 @@ def _build_ficha_remedio(page, remedio, voltar_fn):
 
     # ── Frequência (campo + dropdown) ────────────────────
     f_freq = _campo("Frequência", remedio.get("frequencia","") if remedio else "",
-                    hint="ex: 1× ao dia, a cada 8h…")
+                    hint="ex: 1× ao dia, a cada 8h…", read_only=ro)
     sug_freq = ft.Column(spacing=2, visible=False)
 
     # ── Bloco de horários (visível/oculto conforme frequência) ──
     horas_existentes = listar_horarios_remedio(remedio["id"]) if remedio and remedio.get("id") else []
 
     # Campo "1ª dose às" — hora de início para calcular os demais
-    f_hora_inicio = _campo("1ª dose às", "08:00", hint="HH:MM", largura=110)
+    f_hora_inicio = _campo("1ª dose às", "08:00", hint="HH:MM", largura=110, read_only=ro)
 
     # Texto calculado exibindo os horários resultantes
     txt_horarios_calc = ft.Text("", size=13, color=VERD, weight=ft.FontWeight.W_600)
@@ -533,7 +612,7 @@ def _build_ficha_remedio(page, remedio, voltar_fn):
     # Campo livre para edição manual (preenchido automaticamente, editável)
     f_horarios = _campo("Horários",
                         ", ".join(h["hora"] for h in horas_existentes),
-                        hint="08:00, 16:00, 22:00…")
+                        hint="08:00, 16:00, 22:00…", read_only=ro)
 
     # Container que agrupa tudo relacionado a horários
     bloco_horarios = ft.Column(spacing=6, visible=False)
@@ -673,23 +752,29 @@ def _build_ficha_remedio(page, remedio, voltar_fn):
     _data_fim_raw = remedio.get("data_fim","") if remedio else ""
     _continuo_ini = (_data_fim_raw == "continuo")
 
-    f_ini = _campo("Inicio", remedio.get("data_inicio","") if remedio else "",
-                   hint="DD/MM/AAAA", largura=140)
-    f_fim = _campo("Fim previsto", "" if _continuo_ini else _data_fim_raw,
-                   hint="DD/MM/AAAA", largura=140)
-    _mask_data(f_ini)
-    _mask_data(f_fim)
+    from shared.date_field import campo_data as _campo_data
+    row_ini, f_ini = _campo_data(
+        page, "Inicio",
+        value=remedio.get("data_inicio","") if remedio else "",
+        cor_acento=AMAR, largura=140)
+    f_ini.read_only = ro
+    row_data_fim, f_fim = _campo_data(
+        page, "Fim previsto",
+        value="" if _continuo_ini else _data_fim_raw,
+        cor_acento=AMAR, largura=140)
+    f_fim.read_only = ro
 
     sw_continuo = ft.Switch(
         label="Uso continuo",
         value=_continuo_ini,
         active_color=VERD,
         label_style=ft.TextStyle(color=SEC, size=12),
+        disabled=ro,
     )
-    row_fim = ft.Row([f_fim], visible=not _continuo_ini)
+    row_data_fim.visible = not _continuo_ini
 
     def _on_continuo(e):
-        row_fim.visible = not sw_continuo.value
+        row_data_fim.visible = not sw_continuo.value
         if sw_continuo.value:
             f_fim.value = ""
         try: page.update()
@@ -698,13 +783,13 @@ def _build_ficha_remedio(page, remedio, voltar_fn):
 
     # ── Observações ───────────────────────────────────────
     f_obs  = _campo("Observações", remedio.get("observacoes","") if remedio else "",
-                    multiline=True, min_lines=2)
+                    multiline=True, min_lines=2, read_only=ro)
 
     # ── Estoque ───────────────────────────────────────────
     f_est = _campo("Estoque", str(remedio.get("estoque_atual",0)) if remedio else "0",
-                   largura=100, keyboard=ft.KeyboardType.NUMBER)
+                   largura=100, keyboard=ft.KeyboardType.NUMBER, read_only=ro)
     f_min = _campo("Alerta mín.", str(remedio.get("estoque_minimo",5)) if remedio else "5",
-                   largura=100, keyboard=ft.KeyboardType.NUMBER)
+                   largura=100, keyboard=ft.KeyboardType.NUMBER, read_only=ro)
 
     def _ajustar(d):
         try:
@@ -712,14 +797,16 @@ def _build_ficha_remedio(page, remedio, voltar_fn):
             page.update()
         except Exception: pass
 
+    _btn_est_menos = ft.IconButton("remove_rounded", icon_color=VERM, icon_size=18,
+        on_click=lambda e: _ajustar(-1),
+        style=ft.ButtonStyle(bgcolor="#1C1014", shape=ft.RoundedRectangleBorder(radius=8)),
+        disabled=ro)
+    _btn_est_mais = ft.IconButton("add_rounded", icon_color=VERD, icon_size=18,
+        on_click=lambda e: _ajustar(+1),
+        style=ft.ButtonStyle(bgcolor="#0D1C12", shape=ft.RoundedRectangleBorder(radius=8)),
+        disabled=ro)
     ctrl_est = ft.Row([
-        ft.IconButton("remove_rounded", icon_color=VERM, icon_size=18,
-            on_click=lambda e: _ajustar(-1),
-            style=ft.ButtonStyle(bgcolor="#1C1014", shape=ft.RoundedRectangleBorder(radius=8))),
-        f_est,
-        ft.IconButton("add_rounded", icon_color=VERD, icon_size=18,
-            on_click=lambda e: _ajustar(+1),
-            style=ft.ButtonStyle(bgcolor="#0D1C12", shape=ft.RoundedRectangleBorder(radius=8))),
+        _btn_est_menos, f_est, _btn_est_mais,
         ft.Container(width=8), f_min,
     ], spacing=4, vertical_alignment=ft.CrossAxisAlignment.CENTER)
 
@@ -832,6 +919,7 @@ def _build_ficha_remedio(page, remedio, voltar_fn):
         titulo_menu="Foto do remedio / caixa",
         label_btn="Adicionar foto",
     )
+    btn_add_foto.visible = not ro
 
     btn_add_receita = criar_btn_seletor_foto(
         page=page,
@@ -839,13 +927,15 @@ def _build_ficha_remedio(page, remedio, voltar_fn):
         titulo_menu="Foto da receita",
         label_btn="Adicionar receita",
     )
+    btn_add_receita.visible = not ro
 
     _rebuild_galerias()
 
     # ── Switch ativo ──────────────────────────────────────
     sw_ativo = ft.Switch(label="Ativo",
         value=bool(remedio.get("ativo",1)) if remedio else True,
-        active_color=VERD, label_style=ft.TextStyle(color=SEC, size=13))
+        active_color=VERD, label_style=ft.TextStyle(color=SEC, size=13),
+        disabled=ro)
 
     # ── Adesão (se editando) ──────────────────────────────
     widget_adesao = ft.Container()
@@ -973,7 +1063,7 @@ def _build_ficha_remedio(page, remedio, voltar_fn):
             except Exception: pass
             return
 
-        data_fim_val = "continuo" if sw_continuo.value else (f_fim.value.strip() or None)
+        data_fim_val = "continuo" if sw_continuo.value else (_norm_data(f_fim.value.strip()) or None)
 
         # Auto-cadastra medico digitado mas nao selecionado da lista
         if sw_prescrito.value and not med_id_sel[0] and (f_medico.value or "").strip():
@@ -985,7 +1075,7 @@ def _build_ficha_remedio(page, remedio, voltar_fn):
             "nome": f_nome.value.strip(),
             "dosagem": f_dos.value.strip() or None,
             "frequencia": f_freq.value.strip() or None,
-            "data_inicio": f_ini.value.strip() or None,
+            "data_inicio": _norm_data(f_ini.value.strip()) or None,
             "data_fim": data_fim_val,
             "medico_id": int(med_id_sel[0]) if med_id_sel[0] and sw_prescrito.value else None,
             "estoque_atual": est, "estoque_minimo": mn,
@@ -1003,16 +1093,29 @@ def _build_ficha_remedio(page, remedio, voltar_fn):
         for path_rel, legenda, tipo_foto, data_val in _fotos_novas:
             adicionar_foto_remedio(rid, path_rel, legenda, tipo_foto, data_val)
 
-        voltar_fn()
+        _modo_edicao[0] = False
+        _status_banco[0] = "em_edicao"
+        _sync(voltar_fn)
 
     # ── Layout da ficha ───────────────────────────────────
-    titulo = "Nova Medicacao" if is_novo else "Editar Medicacao"
+    titulo = "Nova Medicacao" if is_novo else "Medicacao"
     lay    = Layout(page)
 
+    btn_editar = ft.Container(
+        content=ft.Row([
+            ft.Icon("edit_rounded", size=13, color=AMAR),
+            ft.Text("Editar", size=12, color=AMAR),
+        ], spacing=4, tight=True),
+        padding=ft.padding.symmetric(horizontal=10, vertical=6),
+        border_radius=8, bgcolor=ft.Colors.with_opacity(0.12, AMAR), ink=True,
+        visible=not is_novo,
+    )
+
     cabecalho = lay.criar_cabecalho(
-        titulo, voltar_fn,
+        titulo, lambda e=None: _sair(voltar_fn),
         icone_titulo="medication_rounded",
         cor_titulo=AMAR,
+        acoes=[btn_editar],
     )
 
     btn_salvar_fundo = ft.Container(
@@ -1023,8 +1126,27 @@ def _build_ficha_remedio(page, remedio, voltar_fn):
         bgcolor=VERD, border_radius=10, ink=True,
         padding=ft.padding.symmetric(vertical=14),
         alignment=ft.alignment.Alignment(0, 0),
+        visible=_modo_edicao[0],
     )
     btn_salvar_fundo.on_click = _salvar
+
+    def _ativar_edicao(e=None):
+        _modo_edicao[0] = True
+        for campo in (f_nome, f_pa, f_dos, f_freq, f_hora_inicio,
+                      f_horarios, f_ini, f_fim, f_obs, f_est, f_min, f_medico):
+            campo.read_only = False
+        for sw in (sw_tipo, sw_prescrito, sw_continuo, sw_ativo):
+            sw.disabled = False
+        _btn_est_menos.disabled = False
+        _btn_est_mais.disabled = False
+        btn_add_foto.visible = True
+        btn_add_receita.visible = True
+        btn_editar.visible = False
+        btn_salvar_fundo.visible = True
+        try: page.update()
+        except Exception: pass
+
+    btn_editar.on_click = _ativar_edicao
 
     campos_col = ft.Column([
         # ── NOME + PRINCIPIO ATIVO ────────────────────────
@@ -1052,8 +1174,8 @@ def _build_ficha_remedio(page, remedio, voltar_fn):
         ft.Container(height=4),
         _label_sec("PERIODO DE USO"),
         ft.Row([sw_continuo], spacing=8),
-        ft.Row([f_ini], spacing=8),
-        row_fim,
+        row_ini,
+        row_data_fim,
 
         # ── ESTOQUE ───────────────────────────────────────
         ft.Container(height=4),
@@ -1091,6 +1213,7 @@ def _build_ficha_remedio(page, remedio, voltar_fn):
         cabecalho, campos_col,
         padding_area=ft.padding.all(16),
     )
+    _registrar_voltar_hw()
     return lay.wrap(ft.Container(bgcolor=BG, expand=True, content=corpo_ficha))
 
 
@@ -1098,7 +1221,7 @@ def _build_ficha_remedio(page, remedio, voltar_fn):
 # ABA 2 — LISTA DE REMÉDIOS
 # ══════════════════════════════════════════════════════════════
 
-def _lista_remedios(page, abrir_ficha_fn):
+def _lista_remedios(page, abrir_ficha_fn, readonly=False):
     """Retorna lista de controles para a aba Remedios."""
     lista     = ft.Column(spacing=8)
     so_ativos = [True]
@@ -1377,6 +1500,7 @@ def _lista_remedios(page, abrir_ficha_fn):
         ], spacing=6, tight=True),
         bgcolor=VERD, border_radius=8, ink=True,
         padding=ft.padding.symmetric(horizontal=14, vertical=10),
+        visible=not readonly,
     )
     _btn_novo_rem.on_click = lambda e: abrir_ficha_fn(None)
 
@@ -1654,7 +1778,7 @@ def _conteudo_farmacias(page):
 # TELA PRINCIPAL
 # ══════════════════════════════════════════════════════════════
 
-def criar_tela_remedios(page: ft.Page, voltar_fn):
+def criar_tela_remedios(page: ft.Page, voltar_fn, readonly=False):
     """
     Navegação interna via page.controls (igual _navegar do app.py).
     criar_tela_remedios retorna a tela principal.
@@ -1725,7 +1849,7 @@ def criar_tela_remedios(page: ft.Page, voltar_fn):
             if aba_ativa[0] == 0:
                 controles = _build_aba_hoje(page)
             elif aba_ativa[0] == 1:
-                controles = _lista_remedios(page, _ir_ficha)
+                controles = _lista_remedios(page, _ir_ficha, readonly=readonly)
             else:
                 controles = _conteudo_farmacias(page)
             area.controls.extend(controles)
@@ -1739,8 +1863,9 @@ def criar_tela_remedios(page: ft.Page, voltar_fn):
     _rebuild_conteudo()
 
     lay = Layout(page)
+    titulo_tela = "Medicação" if readonly else "Remedio / Suplemento"
     cabecalho = lay.criar_cabecalho(
-        "Remedio / Suplemento", voltar_fn,
+        titulo_tela, voltar_fn,
         icone_titulo="medication_rounded",
         cor_titulo=AMAR,
     )
