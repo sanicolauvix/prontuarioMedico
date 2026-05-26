@@ -65,8 +65,12 @@ def _marcar_encerramento_normal() -> None:
         pass
 
 
+from utils.drive_sync import _LOGS_CRASH_ID as _LOGS_CRASH_PASTA_ID
+_LOGS_CRASH_MAX      = 10
+
+
 def _exportar_log_crash_drive() -> None:
-    """Envia o log de crash para a pasta Koios_Prontuario/logs_crash no Drive."""
+    """Envia log de crash para Koios/Prontuario/logs_crash e mantem maximo de 10."""
     def _run():
         try:
             if not os.path.exists(_LOG_FILE):
@@ -75,13 +79,12 @@ def _exportar_log_crash_drive() -> None:
                 conteudo = f.read()
             if "CRITICAL" not in conteudo and "ERROR" not in conteudo:
                 return
-            from backup.db_backup import _obter_token, _garantir_pasta, _drive_upload_arquivo
+            from backup.db_backup import _obter_token, _drive_upload_arquivo, _rotacionar
             import datetime
-            token     = _obter_token()
-            pasta_raiz = _garantir_pasta(token, "Koios_Prontuario")
-            pasta_log  = _garantir_pasta(token, "logs_crash", pasta_raiz)
-            nome = f"crash_prontuario_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
-            _drive_upload_arquivo(token, _LOG_FILE, nome, pasta_log)
+            token = _obter_token()
+            nome  = f"crash_prontuario_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
+            _drive_upload_arquivo(token, _LOG_FILE, nome, _LOGS_CRASH_PASTA_ID)
+            _rotacionar(token, _LOGS_CRASH_PASTA_ID, _LOGS_CRASH_MAX)
             logging.getLogger("CRASH").info("Log de crash exportado: %s", nome)
         except Exception as ex:
             logging.getLogger("CRASH").warning("Nao foi possivel exportar log: %s", ex)
@@ -188,6 +191,76 @@ def main(page: ft.Page):
         except Exception:
             pass
 
+    TIMEOUT_DRIVE = 7    # segundos para verificar conexao Drive
+    TIMEOUT_RESTORE = 60  # segundos para download do banco
+
+    def _verificar_drive() -> bool:
+        """Verifica conexao com Drive (timeout TIMEOUT_DRIVE s). Retorna True se ok."""
+        import urllib.request as _ureq
+        resultado = [False]
+        ev = threading.Event()
+        def _check():
+            try:
+                from shared.auth import _CREDS_PATH
+                import json as _j
+                with open(_CREDS_PATH, "r", encoding="utf-8") as f:
+                    data = _j.load(f)
+                token = data.get("token") or data.get("access_token", "")
+                req = _ureq.Request(
+                    "https://www.googleapis.com/drive/v3/about?fields=user",
+                    headers={"Authorization": f"Bearer {token}"},
+                )
+                with _ureq.urlopen(req, timeout=5) as r:
+                    resultado[0] = r.status == 200
+            except Exception:
+                resultado[0] = False
+            finally:
+                ev.set()
+        threading.Thread(target=_check, daemon=True).start()
+        ev.wait(timeout=TIMEOUT_DRIVE)
+        return resultado[0]
+
+    def _restaurar_e_abrir():
+        """Padrao Koios: apaga local, restaura Drive, init_db, watcher, abre hub."""
+        import os as _os
+        from dados.model_prontuario import DB_PATH
+
+        _set_splash("Preparando banco...")
+
+        # 1. Apaga banco local — Drive e sempre autoritativo
+        try:
+            if _os.path.exists(DB_PATH):
+                _os.remove(DB_PATH)
+        except Exception as ex:
+            logging.getLogger(__name__).warning("remover banco local: %s", ex)
+
+        # 2. Restaura do Drive
+        _set_splash("Restaurando do Drive...")
+        try:
+            resultado = [False]
+            def _do_restore():
+                try:
+                    from backup.drive_backup import restaurar_backup_completo
+                    ok, _ = restaurar_backup_completo()
+                    resultado[0] = ok
+                except Exception:
+                    resultado[0] = False
+            t = threading.Thread(target=_do_restore, daemon=True)
+            t.start()
+            t.join(timeout=TIMEOUT_RESTORE)
+        except Exception as ex:
+            logging.getLogger(__name__).warning("restore startup: %s", ex)
+
+        # 3. Aplica migracoes no banco restaurado (ou cria vazio se restore falhou)
+        try:
+            from dados.model_prontuario import criar_tabelas
+            criar_tabelas()
+        except Exception as ex:
+            logging.getLogger(__name__).warning("criar_tabelas pos-restore: %s", ex)
+
+        _set_splash("Pronto!")
+        _abrir_prontuario()
+
     def _iniciar():
         # Detecta crash da sessao anterior e exporta log para Drive
         if _verificar_crash_anterior():
@@ -195,37 +268,59 @@ def main(page: ft.Page):
                 "Sessao anterior encerrou abruptamente -- exportando log"
             )
             _exportar_log_crash_drive()
-        # Recria sentinela para esta sessao
         _marcar_inicio()
 
+        # Verifica sessao
+        sessao_ativa = False
         try:
             from shared.auth import verificar_sessao_ativa
-            if verificar_sessao_ativa():
-                try:
-                    from backup.drive_backup import sincronizar_ao_iniciar
-                    sincronizar_ao_iniciar(callback_progresso=_set_splash)
-                except Exception:
-                    pass
-                _abrir_prontuario()
-                return
+            sessao_ativa = verificar_sessao_ativa()
         except Exception:
             pass
 
-        try:
-            from telas_shared.tela_login import criar_tela_login
+        if not sessao_ativa:
+            try:
+                from telas_shared.tela_login import criar_tela_login
+                def _on_login():
+                    threading.Thread(target=_restaurar_e_abrir, daemon=True).start()
+                _nav(criar_tela_login(page, on_login_sucesso=_on_login))
+            except Exception as ex:
+                import traceback
+                _tela_erro(f"Erro ao abrir login:\n{traceback.format_exc()[-600:]}")
+            return
 
-            def _on_login():
+        # Sessao ativa — verifica Drive
+        _set_splash("Verificando conexao...")
+        drive_ok = _verificar_drive()
+
+        if not drive_ok:
+            # Offline: usa banco local se existir
+            from dados.model_prontuario import DB_PATH as _DB_PATH
+            import os as _os
+            if _os.path.exists(_DB_PATH):
+                _set_splash("Offline. Usando dados locais...")
+                import time as _t; _t.sleep(1.0)
                 try:
-                    from backup.drive_backup import sincronizar_ao_iniciar
-                    sincronizar_ao_iniciar()
+                    from dados.model_prontuario import criar_tabelas
+                    criar_tabelas()
                 except Exception:
                     pass
                 _abrir_prontuario()
+            else:
+                _set_splash("Sem conexao e sem dados locais...")
+                import time as _t; _t.sleep(1.5)
+                try:
+                    from telas_shared.tela_login import criar_tela_login
+                    def _on_login():
+                        threading.Thread(target=_restaurar_e_abrir, daemon=True).start()
+                    _nav(criar_tela_login(page, on_login_sucesso=_on_login))
+                except Exception as ex:
+                    import traceback
+                    _tela_erro(f"Erro ao abrir login:\n{traceback.format_exc()[-600:]}")
+            return
 
-            _nav(criar_tela_login(page, on_login_sucesso=_on_login))
-        except Exception as ex:
-            import traceback
-            _tela_erro(f"Erro ao abrir login:\n{traceback.format_exc()[-600:]}")
+        # Drive disponivel — apaga local e restaura
+        _restaurar_e_abrir()
 
     threading.Thread(target=_iniciar, daemon=True).start()
 

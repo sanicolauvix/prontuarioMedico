@@ -29,8 +29,8 @@ $ErrorActionPreference = "Stop"
 # ==============================================================================
 # CONFIGURACOES
 # ==============================================================================
-$projeto    = "C:\pessoal\python\prontuario"
-$tempDir    = "C:\pessoal\python\_temp_build_exclusions_prontuario"
+$projeto    = "C:\San\python\Koios\prontuario"
+$tempDir    = "C:\San\python\_temp_build_exclusions_prontuario"
 
 # Deteccao do Flutter 3.29.2 -- CRITICO: versao hardcoded no Flet 0.28.2
 # NUNCA usar o flutter do PATH sem verificar a versao -- pode ser outra versao
@@ -76,8 +76,9 @@ if (-not $flutter) {
 }
 
 Write-Host "  Flutter: $flutter" -ForegroundColor DarkGray
-$adb    = "$env:LOCALAPPDATA\Android\Sdk\platform-tools\adb.exe"
-$pubPkg = "$env:LOCALAPPDATA\Pub\Cache\hosted\pub.dev\webview_flutter_android-4.10.13"
+$adb    = "$env:LOCALAPPDATA\Android\platform-tools\adb.exe"
+if (-not (Test-Path $adb)) { $adb = "$env:LOCALAPPDATA\Android\Sdk\platform-tools\adb.exe" }
+$pubPkg = "$env:LOCALAPPDATA\Pub\Cache\hosted\pub.dev\webview_flutter_android-4.3.0"
 
 $gradlePadrao = "$projeto\build\flutter\android\app\build.gradle"
 $appzipPadrao = "$projeto\build\flutter\app\app.zip"
@@ -170,13 +171,23 @@ function Fase-VerificarBuildAnterior {
 
 function Fase-CorrigirPubspec {
     Log "--- Corrigindo cache webview_flutter_android ---"
+    # Fixar versao no pubspec.yaml do build (evita pub resolver para versoes Dart 3.9+)
+    $pubspecBuild = "$projeto\build\flutter\pubspec.yaml"
+    if (Test-Path $pubspecBuild) {
+        (Get-Content $pubspecBuild) `
+            -replace 'webview_flutter_android: \^4\.\d+\.\d+','webview_flutter_android: 4.3.0' `
+            -replace 'webview_flutter_android: 4\.\d+\.\d+(?!3\.0)','webview_flutter_android: 4.3.0' |
+            Set-Content $pubspecBuild
+        LogOk "webview_flutter_android fixado em 4.3.0 no pubspec.yaml do build"
+    }
+    # Corrigir cache do pacote se presente
     if (Test-Path "$pubPkg\pubspec.yaml") {
         (Get-Content "$pubPkg\pubspec.yaml") `
-            -replace 'sdk: \^3\.9\.0','sdk: ^3.7.0' |
+            -replace 'sdk: \^3\.\d+\.\d+','sdk: ^3.7.0' |
             Set-Content "$pubPkg\pubspec.yaml"
         LogOk "sdk: ^3.7.0"
     } else {
-        LogAviso "webview_flutter_android nao encontrado no cache -- ignorando"
+        LogAviso "webview_flutter_android 4.3.0 nao encontrado no cache -- pub get vai baixar"
     }
 }
 
@@ -609,14 +620,27 @@ function Fase-FlutterBuild {
     $ErrorActionPreference = $prev
     LogOk "flutter pub get concluido"
 
+    # Gerar imagens de splash nativas (substitui tela branca no startup)
+    Log "--- Gerando splash nativo (flutter_native_splash) ---"
+    $ErrorActionPreference = "Continue"
+    Set-Location "$projeto\build\flutter"
+    & $flutter dart run flutter_native_splash:create 2>&1 | ForEach-Object { Write-Host $_ }
+    Set-Location $androidDir
+    $ErrorActionPreference = "Stop"
+    LogOk "splash nativo gerado"
+
     LogSec "SERIOUS_PYTHON_SITE_PACKAGES: $env:SERIOUS_PYTHON_SITE_PACKAGES"
 
+    $flutterBuildLog = "$logDir\flutter_build.log"
+    Log "--- flutter build apk (log: $flutterBuildLog) ---"
     $prev = $ErrorActionPreference
     $ErrorActionPreference = "Continue"
     & $flutter build apk --target-platform android-arm64 --no-version-check `
         --android-skip-build-dependency-validation 2>&1 | ForEach-Object {
-            if ($_ -notmatch "SDK XML versions|NativeCommandError") {
-                Write-Host $_
+            $linha = "$_"
+            if ($linha -notmatch "SDK XML versions|NativeCommandError") {
+                Write-Host $linha
+                Add-Content -Path $flutterBuildLog -Value $linha -Encoding UTF8 -ErrorAction SilentlyContinue
             }
         }
     $exitCode = $LASTEXITCODE
@@ -624,7 +648,12 @@ function Fase-FlutterBuild {
 
     $apkGerado = Buscar-ApkOrigem
     if (-not $apkGerado) {
-        throw "flutter build falhou (exit $exitCode). Ver $logDir\flutter_build.log"
+        # gravar as ultimas 60 linhas do flutter_build.log no log principal
+        if (Test-Path $flutterBuildLog) {
+            $tail = Get-Content $flutterBuildLog -Tail 60
+            foreach ($l in $tail) { Log "  [flutter] $l" "Red" }
+        }
+        throw "flutter build falhou (exit $exitCode). Ver $flutterBuildLog"
     }
     $dur = [int]((Get-Date) - $ini).TotalSeconds
     LogOk "flutter build OK em ${dur}s | APK: $apkGerado"
