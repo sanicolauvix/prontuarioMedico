@@ -248,7 +248,8 @@ def montar_layout_desktop(page: ft.Page, pw: int, wrapper, nav_fn,
     layout = ft.Column([
         partes["spacer_topo"],
         header,
-        ft.Container(content=area_central, expand=True, bgcolor=BG),
+        ft.Container(content=area_central, expand=True, bgcolor=BG,
+                     padding=ft.padding.only(left=20, right=20, top=12, bottom=12)),
         rodape,
     ], spacing=0, expand=True)
 
