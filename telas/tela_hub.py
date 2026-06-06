@@ -98,7 +98,7 @@ def criar_tela_hub(page: ft.Page, voltar_fn=None, modo_medico: bool = False,
 
     def _ir(tela_fn):
         if navegar_sub_fn:
-            navegar_sub_fn(tela_fn, _voltar_hub)
+            navegar_sub_fn(tela_fn, _voltar_hub, fullscreen=True)
         else:
             _navegar(tela_fn, _voltar_hub)
 
