@@ -54,18 +54,19 @@ def main(page: ft.Page):
 
     def _montar_layout_desktop(pw: int):
         """Monta layout lado a lado: hub (esq) + silhueta (dir)."""
-        print(f"[MEDICO] montando layout desktop pw={pw}", flush=True)
         if _hub_widget[0] is None:
             return
 
         from telas.silhueta_orgaos import criar_silhueta, ORGAOS
 
-        # largura da silhueta = pw - largura do hub (480) - padding
-        larg_sil = max(pw - 500, 300)
-        print(f"[MEDICO] larg_silhueta={larg_sil}", flush=True)
+        # proporcao 644:551 — altura maxima util ~680px -> largura ideal ~795px
+        altura_util = 680
+        larg_prop   = int(altura_util * 644 / 551)  # ~795px
+        larg_max    = pw - 500  # espaco disponivel apos hub
+        larg_sil    = min(larg_prop, max(larg_max, 300))
 
         def _on_orgao(oid):
-            print(f"[MEDICO] orgao clicado: {oid}", flush=True)
+            pass  # TODO: navegar para tela do orgao
 
         silhueta = criar_silhueta(page, on_orgao_click=_on_orgao,
                                   largura=larg_sil, mostrar_borda=False)
@@ -108,7 +109,6 @@ def main(page: ft.Page):
 
     def _on_resized(e=None):
         pw = int(page.width or 0)
-        print(f"[MEDICO] on_resized pw={pw} layout_feito={_layout_feito[0]}", flush=True)
         if pw < 600:
             return
         if _layout_feito[0]:
