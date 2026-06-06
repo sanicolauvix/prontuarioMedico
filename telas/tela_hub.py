@@ -4209,12 +4209,10 @@ def criar_tela_hub(page: ft.Page, voltar_fn=None, modo_medico: bool = False) -> 
             from telas.silhueta_orgaos import criar_silhueta
             _pw = page.width or 0
             _pw = _pw if _pw > 100 else 360
-            # desktop: calcular largura pela altura da tela preservando proporcao 644:551
+            # desktop: altura fixa 650px util -> largura proporcional 644:551
             if modo_medico and _pw >= 600:
-                _ph = page.height or 700
-                _altura_util = int(_ph - 120)  # descontar cabecalho e rodape
-                larg = int(_altura_util * 644 / 551)
-                larg = max(larg, 400)
+                _altura_util = 650
+                larg = int(_altura_util * 644 / 551)  # ~760px
             else:
                 larg = min(int(_pw - 32), 400)
 
