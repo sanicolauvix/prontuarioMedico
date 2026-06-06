@@ -4270,7 +4270,7 @@ def criar_tela_hub(page: ft.Page, voltar_fn=None, modo_medico: bool = False) -> 
             log.warning("[HUB] silhueta erro: %s", ex)
             return ft.Container(height=0)
 
-    _widget_silhueta = _criar_widget_silhueta()
+    _widget_silhueta = [None]  # criado lazy em _conteudo_inicio()
 
     # ── ABA 0: Inicio ────────────────────────────────────────
     _claudia_aberta = [False]
@@ -4352,6 +4352,11 @@ def criar_tela_hub(page: ft.Page, voltar_fn=None, modo_medico: bool = False) -> 
         # layout desktop: coluna esquerda (conteudo) + silhueta direita
         # apenas no modo_medico (web) -- no app normal fica sempre empilhado
         if modo_medico and _pw >= 600:
+            # criar silhueta agora que page.width ja tem valor real
+            if _widget_silhueta[0] is None:
+                _widget_silhueta[0] = _criar_widget_silhueta()
+            silhueta = _widget_silhueta[0]
+
             col_esq = ft.Column([
                 *topo,
                 _header_monitor,
@@ -4362,26 +4367,22 @@ def criar_tela_hub(page: ft.Page, voltar_fn=None, modo_medico: bool = False) -> 
                 row_sistemas,
             ], spacing=8, width=300, scroll=ft.ScrollMode.AUTO)
 
-            col_esq.border = ft.border.all(2, "#58A6FF")  # azul = coluna esquerda
             return [
-                ft.Container(
-                    border=ft.border.all(2, "#3FB950"),  # verde = row principal
-                    content=ft.Row([
-                        col_esq,
-                        ft.Container(
-                            content=_widget_silhueta,
-                            expand=True,
-                            alignment=ft.alignment.center,
-                            border=ft.border.all(2, "#FF4444"),  # vermelho = container silhueta
-                        ),
-                    ], spacing=16,
-                       vertical_alignment=ft.CrossAxisAlignment.START,
-                       expand=True),
-                    expand=True,
-                ),
+                ft.Row([
+                    col_esq,
+                    ft.Container(
+                        content=silhueta,
+                        expand=True,
+                        alignment=ft.alignment.center,
+                    ),
+                ], spacing=16,
+                   vertical_alignment=ft.CrossAxisAlignment.START,
+                   expand=True),
             ]
 
         # layout mobile: empilhado
+        if _widget_silhueta[0] is None:
+            _widget_silhueta[0] = _criar_widget_silhueta()
         return [
             *topo,
             _header_monitor,
@@ -4389,7 +4390,7 @@ def criar_tela_hub(page: ft.Page, voltar_fn=None, modo_medico: bool = False) -> 
             _header_resumo,
             _resumo_corpo,
             _secao_titulo("SISTEMAS", "category_rounded", AZUL),
-            _widget_silhueta,
+            _widget_silhueta[0],
             row_sistemas,
         ]
 
