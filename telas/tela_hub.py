@@ -5299,11 +5299,19 @@ def criar_tela_hub(page: ft.Page, voltar_fn=None, modo_medico: bool = False) -> 
     except Exception:
         larg = 0
 
-    # modo_medico web: tela cheia sem limitacao de largura
     if larg > 500 and not modo_medico:
+        # app normal: centralizado em 480px
         conteudo_final = ft.Row([
             ft.Container(expand=True),
             ft.Container(content=corpo, width=480),
+            ft.Container(expand=True),
+        ], expand=True)
+    elif larg > 500 and modo_medico:
+        # modo medico web: 80% da tela centralizado
+        largura_80 = int(larg * 0.80)
+        conteudo_final = ft.Row([
+            ft.Container(expand=True),
+            ft.Container(content=corpo, width=largura_80),
             ft.Container(expand=True),
         ], expand=True)
     else:
