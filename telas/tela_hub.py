@@ -5322,12 +5322,15 @@ def criar_tela_hub(page: ft.Page, voltar_fn=None, modo_medico: bool = False) -> 
 
     # expor partes para modo_medico desktop
     _hub_partes = {
-        "spacer_topo": spacer_topo,
-        "header":      header,
-        "area":        area_conteudo,
-        "row_sync":    row_sync,
-        "versao":      versao_txt,
-        "nav_bar":     nav_bar,
+        "spacer_topo":    spacer_topo,
+        "header":         header,
+        "area":           area_conteudo,
+        "row_sync":       row_sync,
+        "versao":         versao_txt,
+        "nav_bar":        nav_bar,
+        "monitor_widget": card_monitor_uti,
+        "resumo_widget":  row_resumo,
+        "sistemas_widget": row_sistemas,
     }
 
     wrapper = ft.Column(expand=True)

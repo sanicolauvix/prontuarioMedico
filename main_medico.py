@@ -189,11 +189,63 @@ def main(page: ft.Page):
             except Exception:
                 pass
 
-        col_esq_content = ft.Column([
-            card_paciente,
-            ft.Container(content=area_hub, expand=True),
-        ], spacing=0, expand=True,
-           scroll=ft.ScrollMode.HIDDEN)
+        # altura de cada quadrante = metade da area util
+        h_quad = int(altura_util / 2)
+        w_quad = int(pw / 4)  # cada quadrante = metade da metade da tela
+
+        monitor  = partes.get("monitor_widget")
+        resumo   = partes.get("resumo_widget")
+        sistemas = partes.get("sistemas_widget")
+
+        def _quadrante(titulo, cor_titulo, conteudo, icone=""):
+            return ft.Container(
+                content=ft.Column([
+                    ft.Row([
+                        ft.Icon(icone, size=12, color=cor_titulo) if icone else ft.Container(),
+                        ft.Text(titulo, size=10, weight=ft.FontWeight.W_700, color=cor_titulo),
+                    ], spacing=6),
+                    ft.Container(height=6),
+                    ft.Container(content=conteudo, expand=True),
+                ], spacing=0, expand=True),
+                bgcolor=CARD,
+                border_radius=10,
+                padding=ft.padding.all(12),
+                border=ft.border.all(1, BD),
+                expand=True,
+                height=h_quad,
+                clip_behavior=ft.ClipBehavior.HARD_EDGE,
+            )
+
+        grade_2x2 = ft.Column([
+            ft.Row([
+                _quadrante("PACIENTE", AZUL, ft.Column([
+                    ft.Row([avatar, ft.Column([
+                        ft.Text(nome_pac, size=13, color=TXT, weight=ft.FontWeight.W_700),
+                        ft.Text(idade_str, size=10, color=SEC) if idade_str else ft.Container(),
+                    ], spacing=2, tight=True, expand=True)], spacing=10),
+                    ft.Container(height=6),
+                    _linha_pac("Nascimento", nasc_fmt),
+                    _linha_pac("Sexo",       sexo_label),
+                    _linha_pac("Sangue",     tipo_sang),
+                    _linha_pac("Peso",       f"{peso} kg" if peso else ""),
+                    _linha_pac("Altura",     f"{altura_p} cm" if altura_p else ""),
+                ], spacing=4, tight=True, scroll=ft.ScrollMode.AUTO),
+                icone="person_rounded"),
+                _quadrante("MONITOR VITAL", "#FF7675",
+                           ft.Container(content=monitor, expand=True),
+                           icone="monitor_heart_rounded"),
+            ], spacing=8, expand=True),
+            ft.Row([
+                _quadrante("RESUMO DO DIA", ACENTO,
+                           ft.Container(content=resumo, expand=True),
+                           icone="insights_rounded"),
+                _quadrante("SISTEMAS", AZUL,
+                           ft.Container(content=sistemas, expand=True),
+                           icone="category_rounded"),
+            ], spacing=8, expand=True),
+        ], spacing=8, expand=True)
+
+        col_esq_content = grade_2x2
 
         # area central: esquerda=hub | direita=silhueta
         area_central = ft.Row([
