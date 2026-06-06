@@ -4345,16 +4345,15 @@ def criar_tela_hub(page: ft.Page, voltar_fn=None, modo_medico: bool = False) -> 
     )
     _header_resumo.on_click = _toggle_resumo
 
-    def _conteudo_inicio():
+    def _conteudo_inicio(pw_override: int = 0):
         topo = [card_claudia] if modo_medico else [_header_claudia, _claudia_corpo]
-        _pw = page.width or 0
+        _pw = pw_override or page.width or 0
 
         # layout desktop: coluna esquerda (conteudo) + silhueta direita
         # apenas no modo_medico (web) -- no app normal fica sempre empilhado
         if modo_medico and _pw >= 600:
-            # criar silhueta agora que page.width ja tem valor real
-            if _widget_silhueta[0] is None:
-                _widget_silhueta[0] = _criar_widget_silhueta()
+            # recriar silhueta sempre com pw correto
+            _widget_silhueta[0] = _criar_widget_silhueta()
             silhueta = _widget_silhueta[0]
 
             col_esq = ft.Column([
@@ -4370,18 +4369,18 @@ def criar_tela_hub(page: ft.Page, voltar_fn=None, modo_medico: bool = False) -> 
             return [
                 ft.Container(
                     expand=True,
-                    border=ft.border.all(2, "#3FB950"),  # verde = container principal
+                    border=ft.border.all(2, "#3FB950"),
                     content=ft.Row([
                         ft.Container(
                             content=col_esq,
                             width=300,
-                            border=ft.border.all(2, "#58A6FF"),  # azul = col esquerda
+                            border=ft.border.all(2, "#58A6FF"),
                         ),
                         ft.Container(
                             content=silhueta,
                             expand=True,
                             alignment=ft.alignment.center,
-                            border=ft.border.all(2, "#FF4444"),  # vermelho = silhueta
+                            border=ft.border.all(2, "#FF4444"),
                         ),
                     ], spacing=16,
                        vertical_alignment=ft.CrossAxisAlignment.STRETCH,
@@ -4605,7 +4604,7 @@ def criar_tela_hub(page: ft.Page, voltar_fn=None, modo_medico: bool = False) -> 
             _ico_claudia.name  = "expand_more_rounded"
             _ico_monitor.name  = "expand_more_rounded"
             _ico_resumo.name   = "expand_more_rounded"
-            area_conteudo.controls.extend(_conteudo_inicio())
+            area_conteudo.controls.extend(_conteudo_inicio(pw_override=page.width or 0))
         elif idx == 2:
             area_conteudo.controls.extend(_conteudo_clinico())
         elif idx == 3:
@@ -5336,7 +5335,7 @@ def criar_tela_hub(page: ft.Page, voltar_fn=None, modo_medico: bool = False) -> 
             _widget_silhueta[0] = None  # força recriar com width real
             if aba_ativa[0] == 0:
                 area_conteudo.controls.clear()
-                area_conteudo.controls.extend(_conteudo_inicio())
+                area_conteudo.controls.extend(_conteudo_inicio(pw_override=page.width or 0))
                 try: page.update()
                 except Exception: pass
 
