@@ -121,7 +121,7 @@ def criar_silhueta(
         src=_img_src,
         width=largura,
         height=altura,
-        fit=ft.ImageFit.FILL,
+        fit=ft.ImageFit.CONTAIN,
     )
 
     # Linhas divisoras das secoes (visivel apenas no modo debug)
