@@ -28,8 +28,9 @@ def main(page: ft.Page):
     page.padding    = 0
     page.window_maximized = True
 
-    _hub_wrapper   = [None]
-    _layout_feito  = [False]
+    _hub_wrapper    = [None]
+    _layout_desktop = [None]   # layout ja montado -- reutilizado ao voltar
+    _layout_feito   = [False]
 
     def _nav(tela):
         page.controls.clear()
@@ -339,15 +340,20 @@ def main(page: ft.Page):
             rodape,
         ], spacing=0, expand=True)
 
-        _nav(ft.Container(content=layout, expand=True, bgcolor=BG))
+        container = ft.Container(content=layout, expand=True, bgcolor=BG)
+        _layout_desktop[0] = container
+        _nav(container)
 
     def _voltar_para_hub():
-        """Chamado pelo hub ao voltar de uma sub-tela — remonta layout desktop."""
-        pw = int(page.width or 0)
-        if pw >= 600 and _hub_wrapper[0] is not None:
-            _montar_layout_desktop(pw)
+        """Restaura o layout desktop ja montado — sem remontar nada."""
+        if _layout_desktop[0] is not None:
+            _nav(_layout_desktop[0])
         elif _hub_wrapper[0] is not None:
-            _nav(_hub_wrapper[0])
+            pw = int(page.width or 0)
+            if pw >= 600:
+                _montar_layout_desktop(pw)
+            else:
+                _nav(_hub_wrapper[0])
 
     def _abrir_hub():
         from telas.tela_hub import criar_tela_hub

@@ -49,6 +49,21 @@ def criar_tela_hub(page: ft.Page, voltar_fn=None, modo_medico: bool = False) -> 
         log.info("[HUB] navegar -> %s", nome)
         try:
             nova_tela = tela_fn(page, *args, **kwargs)
+            pw = int(page.width or 0)
+            if pw >= 600:
+                # desktop: centraliza a sub-tela ocupando 80% da tela
+                w = int(pw * 0.80)
+                nova_tela = ft.Container(
+                    content=ft.Row([
+                        ft.Container(expand=True, bgcolor="#0D1117"),
+                        ft.Container(content=nova_tela, width=w, bgcolor=BG,
+                                     border=ft.border.all(1, "#21262D"),
+                                     border_radius=0, expand=False),
+                        ft.Container(expand=True, bgcolor="#0D1117"),
+                    ], spacing=0, expand=True,
+                       vertical_alignment=ft.CrossAxisAlignment.STRETCH),
+                    expand=True, bgcolor="#0D1117",
+                )
             page.controls.clear()
             page.controls.append(nova_tela)
             try: page.update()
@@ -82,8 +97,11 @@ def criar_tela_hub(page: ft.Page, voltar_fn=None, modo_medico: bool = False) -> 
             except Exception: pass
 
     def _voltar_hub(*_):
-        from telas.tela_hub import criar_tela_hub as _hub
-        _navegar(_hub, voltar_fn)
+        if voltar_fn:
+            voltar_fn()
+        else:
+            from telas.tela_hub import criar_tela_hub as _hub
+            _navegar(_hub, voltar_fn)
 
     def _ir(tela_fn):
         _navegar(tela_fn, _voltar_hub)
