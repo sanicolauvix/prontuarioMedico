@@ -101,7 +101,7 @@ def main(page: ft.Page):
         tipo_sang = pac.get("tipo_sanguineo") or ""
         peso      = pac.get("peso")
         altura_p  = pac.get("altura")
-        foto      = pac.get("foto_url") or ""
+        foto      = pac.get("foto_url") or pac.get("foto_path") or ""
 
         try:
             from datetime import date
@@ -172,9 +172,26 @@ def main(page: ft.Page):
             margin=ft.margin.only(bottom=8),
         )
 
+        # remover card do paciente duplicado do hub (primeiro item do area_conteudo)
+        area_hub = partes["area"]
+        if area_hub.controls and len(area_hub.controls) > 0:
+            # o primeiro controle do area e o container com o layout desktop
+            # que por sua vez tem a row com col_esq contendo card_claudia
+            # simplesmente ocultamos o card do paciente do hub
+            try:
+                primeiro = area_hub.controls[0]
+                # navegar ate col_esq e remover o card do paciente
+                row = primeiro.content
+                if hasattr(row, "controls") and len(row.controls) > 0:
+                    col_esq = row.controls[0].content
+                    if hasattr(col_esq, "controls") and len(col_esq.controls) > 0:
+                        col_esq.controls[0].visible = False
+            except Exception:
+                pass
+
         col_esq_content = ft.Column([
             card_paciente,
-            partes["area"],
+            ft.Container(content=area_hub, expand=True),
         ], spacing=0, expand=True,
            scroll=ft.ScrollMode.HIDDEN)
 
@@ -186,8 +203,7 @@ def main(page: ft.Page):
                 width=480,
                 expand=False,
                 bgcolor=BG,
-                border=ft.border.only(right=ft.BorderSide(1, "#21262D")),
-                padding=ft.padding.only(right=0),
+                border=ft.border.only(right=ft.BorderSide(1, BD)),
             ),
             # direita: silhueta centralizada
             ft.Container(
