@@ -197,20 +197,20 @@ def main(page: ft.Page):
 
         # area central: esquerda=hub | direita=silhueta
         area_central = ft.Row([
-            # esquerda: card paciente + conteudo hub
+            # esquerda: card paciente + conteudo hub (metade da tela)
             ft.Container(
                 content=col_esq_content,
-                width=460,
+                width=int(pw / 2),
                 expand=False,
                 bgcolor=BG,
                 border=ft.border.only(right=ft.BorderSide(1, BD)),
-                padding=ft.padding.only(left=8, right=8),
+                padding=ft.padding.only(left=16, right=16),
             ),
-            # direita: silhueta
+            # direita: silhueta centralizada
             ft.Container(
                 expand=True,
                 bgcolor=BG,
-                padding=ft.padding.only(right=8, top=8),
+                padding=ft.padding.symmetric(horizontal=16, vertical=8),
                 alignment=ft.alignment.top_center,
                 content=ft.Column([
                     ft.Container(
