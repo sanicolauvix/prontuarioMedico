@@ -28,15 +28,10 @@ import os as _os
 #         main.py faz upload do koios.db ao encerrar
 # Ver: database/drive_sync.py
 _HERE_MODEL = _os.path.dirname(_os.path.abspath(__file__))  # prontuario/dados/
-_KOIOS_ROOT = _os.path.dirname(_os.path.dirname(_HERE_MODEL))  # Koios/
-_DB_DIR     = _os.path.join(_KOIOS_ROOT, "database")
-_os.makedirs(_DB_DIR, exist_ok=True)
-
-# Banco CORE (compartilhado entre módulos): perfil, auth, sessões
-CORE_DB = _os.path.join(_DB_DIR, "koios.db")              # Koios/database/koios.db
 
 # Banco do MÓDULO Prontuário: fica junto ao módulo em prontuario/dados/
 DB_PATH = _os.path.join(_HERE_MODEL, "prontuario.db")     # prontuario/dados/prontuario.db
+_os.makedirs(_HERE_MODEL, exist_ok=True)
 
 
 # ── Backup auto-notify ───────────────────────────────────────────────────────

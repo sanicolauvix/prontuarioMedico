@@ -320,7 +320,7 @@ def _exec_buscar_consultas(especialidade: str = "", limite: int = 10) -> dict:
 
 def _exec_perfil_paciente() -> dict:
     try:
-        from dados.model_prontuario import carregar_perfil, get_config, CORE_DB
+        from dados.model_prontuario import carregar_perfil, get_config
         perfil = carregar_perfil() or {}
         # calcula idade
         from datetime import date
