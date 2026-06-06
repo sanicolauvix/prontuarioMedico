@@ -3533,14 +3533,10 @@ def criar_tela_hub(page: ft.Page, voltar_fn=None, modo_medico: bool = False) -> 
         return _card_sistema(*s)
 
     # card Resumo do Dia
-    import os as _os_hub
-    _img_res_hub = _os_hub.path.join(
-        _os_hub.path.dirname(_os_hub.path.abspath(__file__)),
-        "..", "assets", "resumo.png")
-    if _os_hub.path.isfile(_img_res_hub):
-        _res_hub_content = ft.Image(
-            src=_img_res_hub, fit=ft.ImageFit.COVER,
+    _res_hub_content = ft.Image(
+            src="assets/resumo.png", fit=ft.ImageFit.COVER,
             width=float("inf"), expand=True)
+    if False:
     else:
         _res_hub_content = ft.Column([
             ft.Icon("balance_rounded", size=18, color=AZUL),
@@ -4032,13 +4028,9 @@ def criar_tela_hub(page: ft.Page, voltar_fn=None, modo_medico: bool = False) -> 
     card_resumo_hub.on_click = _click_resumo_hub
 
     # card Checkup com imagem
-    import os as _os_ck
-    _img_ck = _os_ck.path.join(
-        _os_ck.path.dirname(_os_ck.path.abspath(__file__)),
-        "..", "assets", "checkup.jpg")
     card_checkup_hub = ft.Container(
         content=ft.Image(
-            src=_img_ck, fit=ft.ImageFit.COVER,
+            src="assets/checkup.jpg", fit=ft.ImageFit.COVER,
             width=float("inf"), height=float("inf"),
         ),
         bgcolor=CARD,

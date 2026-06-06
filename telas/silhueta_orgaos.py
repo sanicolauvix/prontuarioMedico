@@ -107,19 +107,8 @@ def criar_silhueta(
     escala = largura / IMG_W
     altura = int(IMG_H * escala)
 
-    _dir     = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    img_path = os.path.join(_dir, "assets", "silueta_anatomia.png")
-
-    if not os.path.isfile(img_path):
-        log.warning("[SILHUETA] silueta_anatomia.png nao encontrado em %s", _dir)
-        return ft.Container(
-            width=largura, height=altura, bgcolor=CARD,
-            content=ft.Text("silueta_anatomia.png nao encontrado", color=SEC, size=11),
-            alignment=ft.alignment.center,
-        )
-
     fundo = ft.Image(
-        src=img_path,
+        src="assets/silueta_anatomia.png",
         width=largura,
         height=altura,
         fit=ft.ImageFit.FILL,

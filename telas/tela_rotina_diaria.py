@@ -1073,10 +1073,8 @@ def criar_tela_rotina_diaria(page: ft.Page, voltar_fn, navegar_fn=None) -> ft.Co
     # ── Botao Receitas ─────────────────────────────────────────────
 
     def _mk_btn_receitas() -> ft.Row:
-        import os as _os
-        _root      = _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__)))
-        _img_rec   = _os.path.join(_root, "assets", "receitas.png")
-        _img_nutr  = _os.path.join(_root, "assets", "nutricional.png")
+        _img_rec   = "assets/receitas.png"
+        _img_nutr  = "assets/nutricional.png"
 
         def _voltar_rotina():
             page.controls.clear()
@@ -1099,13 +1097,13 @@ def criar_tela_rotina_diaria(page: ft.Page, voltar_fn, navegar_fn=None) -> ft.Co
             try: page.update()
             except Exception: pass
 
-        _img_res   = _os.path.join(_root, "assets", "resumo.png")
+        _img_res   = "assets/resumo.png"
 
         def _ir_resumo_dia(e=None):
             _abrir_resumo_dia()
 
         def _mk_card(img_path, icone, label, cor, on_click_fn, tooltip):
-            if _os.path.isfile(img_path):
+            if img_path:
                 conteudo = ft.Image(
                     src=img_path,
                     fit=ft.ImageFit.COVER,
