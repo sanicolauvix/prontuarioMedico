@@ -242,6 +242,7 @@ def montar_layout_desktop(page: ft.Page, pw: int, wrapper, nav_fn,
     except Exception:
         pass
 
+    partes["row_sync"].visible = not modo_medico
     rodape = ft.Column([partes["row_sync"], partes["nav_bar"]], spacing=0)
 
     layout = ft.Column([
