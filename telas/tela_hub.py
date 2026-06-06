@@ -4369,6 +4369,7 @@ def criar_tela_hub(page: ft.Page, voltar_fn=None, modo_medico: bool = False) -> 
                         content=_widget_silhueta,
                         expand=True,
                         alignment=ft.alignment.center,
+                        border=ft.border.all(2, "#FF4444"),
                     ),
                 ], spacing=16,
                    vertical_alignment=ft.CrossAxisAlignment.START,
