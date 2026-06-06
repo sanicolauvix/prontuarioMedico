@@ -5317,9 +5317,11 @@ def criar_tela_hub(page: ft.Page, voltar_fn=None, modo_medico: bool = False) -> 
             larg = 0
 
         if larg > 500:
+            # web desktop: 80% da tela com padding simetrico
+            largura_80 = int(larg * 0.80)
             conteudo_final = ft.Row([
                 ft.Container(expand=True),
-                ft.Container(content=corpo, width=480),
+                ft.Container(content=corpo, width=largura_80),
                 ft.Container(expand=True),
             ], expand=True)
         else:
