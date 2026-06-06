@@ -4209,9 +4209,10 @@ def criar_tela_hub(page: ft.Page, voltar_fn=None, modo_medico: bool = False) -> 
             from telas.silhueta_orgaos import criar_silhueta
             _pw = page.width or 0
             _pw = _pw if _pw > 100 else 360
-            # desktop: silhueta ocupa ~40% da largura ao lado do conteudo
+            # desktop: silhueta ocupa o espaco restante apos coluna esq (300px) + padding
             if _pw >= 600:
-                larg = min(int(_pw * 0.40), 280)
+                larg = min(int(_pw - 300 - 48), 600)
+                larg = max(larg, 280)
             else:
                 larg = min(int(_pw - 32), 400)
 
@@ -4359,13 +4360,19 @@ def criar_tela_hub(page: ft.Page, voltar_fn=None, modo_medico: bool = False) -> 
                 _resumo_corpo,
                 _secao_titulo("SISTEMAS", "category_rounded", AZUL),
                 row_sistemas,
-            ], spacing=8, expand=True)
+            ], spacing=8, width=300, scroll=ft.ScrollMode.AUTO)
 
             return [
                 ft.Row([
                     col_esq,
-                    _widget_silhueta,
-                ], spacing=16, vertical_alignment=ft.CrossAxisAlignment.START),
+                    ft.Container(
+                        content=_widget_silhueta,
+                        expand=True,
+                        alignment=ft.alignment.center,
+                    ),
+                ], spacing=16,
+                   vertical_alignment=ft.CrossAxisAlignment.START,
+                   expand=True),
             ]
 
         # layout mobile: empilhado
