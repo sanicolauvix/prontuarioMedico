@@ -341,9 +341,17 @@ def main(page: ft.Page):
 
         _nav(ft.Container(content=layout, expand=True, bgcolor=BG))
 
+    def _voltar_para_hub():
+        """Chamado pelo hub ao voltar de uma sub-tela — remonta layout desktop."""
+        pw = int(page.width or 0)
+        if pw >= 600 and _hub_wrapper[0] is not None:
+            _montar_layout_desktop(pw)
+        elif _hub_wrapper[0] is not None:
+            _nav(_hub_wrapper[0])
+
     def _abrir_hub():
         from telas.tela_hub import criar_tela_hub
-        wrapper = criar_tela_hub(page, voltar_fn=None, modo_medico=True)
+        wrapper = criar_tela_hub(page, voltar_fn=_voltar_para_hub, modo_medico=True)
         _hub_wrapper[0] = wrapper
 
         pw = int(page.width or 0)
