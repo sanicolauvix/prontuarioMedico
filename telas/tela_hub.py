@@ -4100,8 +4100,7 @@ def criar_tela_hub(page: ft.Page, voltar_fn=None, modo_medico: bool = False,
     row_resumo = ft.Column([
         ft.Row([
             _card_resumo(txt_n_eventos,  "Historico",   "timeline_rounded",      VERM,
-                         _lazy_fn("tela_historico_clinico", "criar_tela_historico_clinico",
-                                  readonly=modo_medico)),
+                         _lazy_fn("tela_historico_clinico", "criar_tela_historico_clinico")),
             _card_resumo(txt_n_diag,     "Diagnosticos","analytics_rounded",      AMAR,
                          _lazy_fn("tela_diagnosticos", "criar_tela_diagnosticos")),
             _card_resumo(txt_n_remedios, "Medicacao",   "medication_rounded",     VERD,

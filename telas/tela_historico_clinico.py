@@ -444,7 +444,7 @@ def criar_tela_historico_clinico(page: ft.Page, voltar_fn):
                 ft.Container(height=lay.spacer_topo, bgcolor=BG),
                 cab,
                 ft.Container(content=area,
-                             padding=ft.padding.symmetric(horizontal=16, vertical=8),
+                             padding=ft.padding.only(left=20, right=20, top=12, bottom=12),
                              expand=True),
             ], spacing=0, expand=True)))
         if _montado[0]:
