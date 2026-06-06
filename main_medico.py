@@ -20,10 +20,11 @@ def main(page: ft.Page):
     page.theme_mode = ft.ThemeMode.DARK
     page.bgcolor    = BG
     page.padding    = 0
-    # nao limitar janela no web (deixar o browser definir o tamanho)
-    if page.web:
-        page.window.width  = None
-        page.window.height = None
+    page.window_maximized = True
+    try:
+        page.window.maximized = True
+    except Exception:
+        pass
 
     def _nav(tela):
         page.controls.clear()
