@@ -4349,6 +4349,8 @@ def criar_tela_hub(page: ft.Page, voltar_fn=None, modo_medico: bool = False) -> 
     def _conteudo_inicio(pw_override: int = 0):
         topo = [card_claudia] if modo_medico else [_header_claudia, _claudia_corpo]
         _pw = pw_override or page.width or 0
+        log.info("[INICIO] modo_medico=%s pw_override=%s page.width=%s _pw=%s",
+                 modo_medico, pw_override, page.width, _pw)
 
         # layout desktop: coluna esquerda (conteudo) + silhueta direita
         # apenas no modo_medico (web) -- no app normal fica sempre empilhado
