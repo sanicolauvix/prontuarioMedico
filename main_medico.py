@@ -199,7 +199,14 @@ def main(page: ft.Page):
         resumo   = partes.get("resumo_widget")
         sistemas = partes.get("sistemas_widget")
 
-        def _quadrante(titulo, cor_titulo, conteudo, icone=""):
+        # tornar segunda linha do resumo visivel no desktop medico
+        try:
+            if resumo and len(resumo.controls) > 1:
+                resumo.controls[1].visible = True
+        except Exception:
+            pass
+
+        def _quadrante(titulo, cor_titulo, conteudo, icone="", centralizar=False):
             return ft.Container(
                 content=ft.Column([
                     ft.Row([
@@ -207,11 +214,16 @@ def main(page: ft.Page):
                         ft.Text(titulo, size=10, weight=ft.FontWeight.W_700, color=cor_titulo),
                     ], spacing=6),
                     ft.Container(height=6),
-                    ft.Container(content=conteudo, expand=True),
-                ], spacing=0, expand=True),
+                    ft.Container(
+                        content=conteudo,
+                        expand=True,
+                        alignment=ft.alignment.center if centralizar else ft.alignment.top_left,
+                    ),
+                ], spacing=0, expand=True,
+                   horizontal_alignment=ft.CrossAxisAlignment.CENTER if centralizar else ft.CrossAxisAlignment.START),
                 bgcolor=CARD,
                 border_radius=10,
-                padding=ft.padding.all(12),
+                padding=ft.padding.all(8),
                 border=ft.border.all(1, BD),
                 expand=True,
                 height=h_quad,
@@ -244,7 +256,8 @@ def main(page: ft.Page):
         col_monitor = ft.Column([
             _quadrante("MONITOR VITAL", "#FF7675",
                        ft.Container(content=monitor, expand=True),
-                       icone="monitor_heart_rounded"),
+                       icone="monitor_heart_rounded",
+                       centralizar=True),
         ], spacing=0, expand=True)
 
         grade_2x2 = ft.Row([
