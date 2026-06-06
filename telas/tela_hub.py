@@ -4622,6 +4622,15 @@ def criar_tela_hub(page: ft.Page, voltar_fn=None, modo_medico: bool = False,
         if idx == 1:
             _lazy_fn("tela_exames", "criar_tela_consulta", readonly=modo_medico)()
             return
+        # no web (navegar_sub_fn presente), Clinico e Mais navegam para tela propria
+        if navegar_sub_fn and idx == 2:
+            from telas.tela_hub_clinico import criar_tela_hub_clinico
+            navegar_sub_fn(lambda p, v: criar_tela_hub_clinico(p, v, _ir, _lazy_fn), _voltar_hub)
+            return
+        if navegar_sub_fn and idx == 3:
+            from telas.tela_hub_mais import criar_tela_hub_mais
+            navegar_sub_fn(lambda p, v: criar_tela_hub_mais(p, v, _ir, _lazy_fn), _voltar_hub)
+            return
         aba_ativa[0] = idx
         _rebuild_abas()
         area_conteudo.controls.clear()
