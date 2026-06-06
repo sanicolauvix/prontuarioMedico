@@ -4592,6 +4592,9 @@ def criar_tela_hub(page: ft.Page, voltar_fn=None, modo_medico: bool = False) -> 
                 _item("settings_rounded", "Configuracoes",
                       "Backup e Drive", SEC,
                       _lazy_fn("telas_sistema.tela_config", "criar_tela_config")),
+                _item("medical_services_rounded", "Acessos Medicos",
+                      "Gerar e revogar codigos", AZUL,
+                      _lazy_fn("telas.tela_codigos_medico", "criar_tela_codigos_medico")),
             ]),
         ]
 

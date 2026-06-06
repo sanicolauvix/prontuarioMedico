@@ -1475,6 +1475,14 @@ def criar_tabelas():
             ip          TEXT
         );
 
+        CREATE TABLE IF NOT EXISTS codigos_acesso_medico (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            codigo      TEXT UNIQUE NOT NULL,
+            nome_medico TEXT NOT NULL,
+            criado_em   TEXT DEFAULT (datetime('now')),
+            ativo       INTEGER DEFAULT 1
+        );
+
         CREATE TABLE IF NOT EXISTS modulos_instalados (
             id          INTEGER PRIMARY KEY AUTOINCREMENT,
             nome        TEXT UNIQUE NOT NULL,
@@ -7184,6 +7192,80 @@ def excluir_diagnostico(did: int) -> bool:
     except Exception as ex:
         print(f"[MODEL] excluir_diagnostico: {ex}")
         return False
+
+
+# ── Códigos de acesso médico ─────────────────────────────────────────────────
+
+def _gerar_codigo_unico() -> str:
+    import random, string
+    chars = string.ascii_uppercase + string.digits
+    while True:
+        codigo = "".join(random.choices(chars, k=4)) + "-" + "".join(random.choices(chars, k=4))
+        conn = sqlite3.connect(CORE_DB, timeout=10)
+        existe = conn.execute(
+            "SELECT 1 FROM codigos_acesso_medico WHERE codigo=?", (codigo,)
+        ).fetchone()
+        conn.close()
+        if not existe:
+            return codigo
+
+
+def listar_codigos_acesso() -> list:
+    try:
+        with sqlite3.connect(CORE_DB, timeout=10) as conn:
+            rows = conn.execute(
+                "SELECT id, codigo, nome_medico, criado_em, ativo "
+                "FROM codigos_acesso_medico ORDER BY criado_em DESC"
+            ).fetchall()
+        return [{"id": r[0], "codigo": r[1], "nome_medico": r[2],
+                 "criado_em": r[3], "ativo": r[4]} for r in rows]
+    except Exception as ex:
+        print(f"[MODEL] listar_codigos_acesso: {ex}")
+        return []
+
+
+def gerar_codigo_acesso(nome_medico: str) -> str | None:
+    try:
+        codigo = _gerar_codigo_unico()
+        with sqlite3.connect(CORE_DB, timeout=10) as conn:
+            conn.execute(
+                "INSERT INTO codigos_acesso_medico (codigo, nome_medico) VALUES (?, ?)",
+                (codigo, nome_medico)
+            )
+            conn.commit()
+        return codigo
+    except Exception as ex:
+        print(f"[MODEL] gerar_codigo_acesso: {ex}")
+        return None
+
+
+def revogar_codigo_acesso(codigo_id: int) -> bool:
+    try:
+        with sqlite3.connect(CORE_DB, timeout=10) as conn:
+            conn.execute(
+                "UPDATE codigos_acesso_medico SET ativo=0 WHERE id=?", (codigo_id,)
+            )
+            conn.commit()
+        return True
+    except Exception as ex:
+        print(f"[MODEL] revogar_codigo_acesso: {ex}")
+        return False
+
+
+def validar_codigo_acesso(codigo: str) -> dict | None:
+    """Retorna dados do médico se código válido e ativo, None caso contrário."""
+    try:
+        with sqlite3.connect(CORE_DB, timeout=10) as conn:
+            row = conn.execute(
+                "SELECT id, nome_medico FROM codigos_acesso_medico "
+                "WHERE codigo=? AND ativo=1", (codigo,)
+            ).fetchone()
+        if row:
+            return {"id": row[0], "nome_medico": row[1]}
+        return None
+    except Exception as ex:
+        print(f"[MODEL] validar_codigo_acesso: {ex}")
+        return None
 
 
 if __name__ == "__main__":
