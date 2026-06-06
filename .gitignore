@@ -11,6 +11,8 @@ dados/prontuario.db
 dados/prontuario.db-shm
 dados/prontuario.db-wal
 dados/_tmp_*.db
+dados/_tmp_*.db-shm
+dados/_tmp_*.db-wal
 dados/*_bak*.db
 dados/prontuario_local_bak.db
 dados/historico_backup.json
@@ -24,3 +26,6 @@ temp/
 logs/
 exames/
 assets/fotos_receitas/
+assets/notas_fiscais/
+assets/compras/
+assets/cache_fotos/

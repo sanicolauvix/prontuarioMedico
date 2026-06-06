@@ -14,6 +14,9 @@ import os, json, logging, urllib.request, urllib.parse
 _DRIVE_FILES = "https://www.googleapis.com/drive/v3/files"
 _UPLOAD_URL  = "https://www.googleapis.com/upload/drive/v3/files"
 
+# ID da pasta de exames PDF no Drive (resolvido dinamicamente na primeira chamada)
+_EXAMES_PDF_ID = None   # placeholder — _liberar usa garantir_pasta() se None
+
 
 def _get_creds():
     """Le credenciais do mycreds.json e renova se expirado."""

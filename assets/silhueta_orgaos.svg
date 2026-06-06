@@ -1,0 +1,311 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Mapa anatomico orgaos internos v4 -- sem silhueta, mais espacados -->
+<!-- viewBox 0 0 340 820 -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 340 820" width="340" height="820">
+  <defs>
+    <radialGradient id="bg" cx="50%" cy="40%" r="70%">
+      <stop offset="0%"   stop-color="#141C28"/>
+      <stop offset="100%" stop-color="#0D1117"/>
+    </radialGradient>
+    <!-- Gradientes 3D -->
+    <radialGradient id="g_tir" cx="30%" cy="25%" r="70%">
+      <stop offset="0%"  stop-color="#C0B8FF"/><stop offset="50%" stop-color="#5840D0"/><stop offset="100%" stop-color="#180060"/>
+    </radialGradient>
+    <radialGradient id="g_cor" cx="32%" cy="28%" r="68%">
+      <stop offset="0%"  stop-color="#FF8888"/><stop offset="45%" stop-color="#CC1111"/><stop offset="100%" stop-color="#5A0000"/>
+    </radialGradient>
+    <radialGradient id="g_pulm" cx="30%" cy="25%" r="70%">
+      <stop offset="0%"  stop-color="#A8D8FF"/><stop offset="50%" stop-color="#2272CC"/><stop offset="100%" stop-color="#082848"/>
+    </radialGradient>
+    <radialGradient id="g_fig" cx="30%" cy="25%" r="70%">
+      <stop offset="0%"  stop-color="#FFAA66"/><stop offset="50%" stop-color="#C05010"/><stop offset="100%" stop-color="#501800"/>
+    </radialGradient>
+    <radialGradient id="g_est" cx="30%" cy="25%" r="70%">
+      <stop offset="0%"  stop-color="#88FFB0"/><stop offset="50%" stop-color="#0A9040"/><stop offset="100%" stop-color="#003018"/>
+    </radialGradient>
+    <radialGradient id="g_bac" cx="30%" cy="25%" r="70%">
+      <stop offset="0%"  stop-color="#D0AAFF"/><stop offset="50%" stop-color="#7030C8"/><stop offset="100%" stop-color="#280050"/>
+    </radialGradient>
+    <radialGradient id="g_ves" cx="30%" cy="25%" r="70%">
+      <stop offset="0%"  stop-color="#FFE8A8"/><stop offset="50%" stop-color="#C09820"/><stop offset="100%" stop-color="#484000"/>
+    </radialGradient>
+    <radialGradient id="g_pan" cx="30%" cy="25%" r="70%">
+      <stop offset="0%"  stop-color="#FFE888"/><stop offset="50%" stop-color="#C09010"/><stop offset="100%" stop-color="#483000"/>
+    </radialGradient>
+    <radialGradient id="g_rim" cx="30%" cy="25%" r="70%">
+      <stop offset="0%"  stop-color="#88FFE8"/><stop offset="50%" stop-color="#0AADA0"/><stop offset="100%" stop-color="#003830"/>
+    </radialGradient>
+    <radialGradient id="g_bex" cx="30%" cy="25%" r="70%">
+      <stop offset="0%"  stop-color="#A8CCFF"/><stop offset="50%" stop-color="#2050C8"/><stop offset="100%" stop-color="#081040"/>
+    </radialGradient>
+    <radialGradient id="g_pro" cx="30%" cy="25%" r="70%">
+      <stop offset="0%"  stop-color="#C8AAFF"/><stop offset="50%" stop-color="#6030C0"/><stop offset="100%" stop-color="#200048"/>
+    </radialGradient>
+    <!-- Highlight especular -->
+    <radialGradient id="hl" cx="28%" cy="22%" r="42%">
+      <stop offset="0%"  stop-color="#FFFFFF" stop-opacity="0.42"/>
+      <stop offset="100%" stop-color="#FFFFFF" stop-opacity="0.00"/>
+    </radialGradient>
+    <!-- Filtros -->
+    <filter id="glow" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur stdDeviation="4.5" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <filter id="glow2" x="-55%" y="-55%" width="210%" height="210%">
+      <feGaussianBlur stdDeviation="7" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <filter id="drop">
+      <feDropShadow dx="2" dy="3" stdDeviation="5" flood-color="#000" flood-opacity="0.55"/>
+    </filter>
+  </defs>
+
+  <rect width="340" height="820" fill="url(#bg)"/>
+  <!-- linha central guia -->
+  <line x1="170" y1="0" x2="170" y2="820" stroke="#1C2A3C" stroke-width="1" stroke-dasharray="5,8"/>
+
+  <!-- ══════════════════════════════════════════
+       FILEIRA 1 — TIREOIDE  (y ~ 50)
+       ══════════════════════════════════════════ -->
+  <g id="orgao_tireoide" filter="url(#glow)">
+    <ellipse cx="148" cy="52" rx="26" ry="34" fill="url(#g_tir)" filter="url(#drop)"/>
+    <ellipse cx="148" cy="52" rx="26" ry="34" fill="none" stroke="#8070FF" stroke-width="1.3"/>
+    <ellipse cx="140" cy="44" rx="14" ry="17" fill="url(#hl)"/>
+
+    <ellipse cx="192" cy="52" rx="26" ry="34" fill="url(#g_tir)" filter="url(#drop)"/>
+    <ellipse cx="192" cy="52" rx="26" ry="34" fill="none" stroke="#8070FF" stroke-width="1.3"/>
+    <ellipse cx="184" cy="44" rx="14" ry="17" fill="url(#hl)"/>
+
+    <rect x="166" y="44" width="20" height="14" rx="7" fill="#5040C8"/>
+    <rect x="166" y="44" width="20" height="14" rx="7" fill="none" stroke="#8070FF" stroke-width="1"/>
+
+    <text x="170" y="98" text-anchor="middle" fill="#9080FF"
+          font-family="'Segoe UI',sans-serif" font-size="10" font-weight="700" letter-spacing="1">TIREOIDE</text>
+  </g>
+
+  <!-- ══════════════════════════════════════════
+       FILEIRA 2 — PULMOES + CORACAO  (y ~ 150)
+       ══════════════════════════════════════════ -->
+
+  <!-- Pulmao Esq -->
+  <g id="orgao_pulmao_esq" filter="url(#glow)">
+    <path fill="url(#g_pulm)" filter="url(#drop)"
+      d="M52 138 C36 142 18 158 16 188 C14 220 18 256 28 274
+         C36 288 50 294 64 292 C78 290 88 276 88 258
+         C90 230 86 190 76 162 C70 144 58 135 52 138 Z"/>
+    <path fill="url(#hl)"
+      d="M52 142 C40 150 26 166 24 192 C34 166 46 150 52 142 Z"/>
+    <path fill="none" stroke="#4A9AEE" stroke-width="1.5"
+      d="M52 138 C36 142 18 158 16 188 C14 220 18 256 28 274
+         C36 288 50 294 64 292 C78 290 88 276 88 258
+         C90 230 86 190 76 162 C70 144 58 135 52 138 Z"/>
+    <path fill="none" stroke="#2060A0" stroke-width="0.9" stroke-dasharray="4,3"
+      d="M20 208 C38 200 68 204 86 218"/>
+    <path fill="none" stroke="#2060A0" stroke-width="0.9" stroke-dasharray="4,3"
+      d="M18 238 C36 230 70 234 88 248"/>
+    <text x="52" y="308" text-anchor="middle" fill="#58A6FF"
+          font-family="'Segoe UI',sans-serif" font-size="9.5" font-weight="700">PULMÃO E</text>
+  </g>
+
+  <!-- Pulmao Dir -->
+  <g id="orgao_pulmao_dir" filter="url(#glow)">
+    <path fill="url(#g_pulm)" filter="url(#drop)"
+      d="M288 138 C304 142 322 158 324 188 C326 220 322 256 312 274
+         C304 288 290 294 276 292 C262 290 252 276 252 258
+         C250 230 254 190 264 162 C270 144 282 135 288 138 Z"/>
+    <path fill="url(#hl)"
+      d="M288 142 C300 150 314 166 316 192 C306 166 294 150 288 142 Z"/>
+    <path fill="none" stroke="#4A9AEE" stroke-width="1.5"
+      d="M288 138 C304 142 322 158 324 188 C326 220 322 256 312 274
+         C304 288 290 294 276 292 C262 290 252 276 252 258
+         C250 230 254 190 264 162 C270 144 282 135 288 138 Z"/>
+    <path fill="none" stroke="#2060A0" stroke-width="0.9" stroke-dasharray="4,3"
+      d="M320 208 C302 200 272 204 254 218"/>
+    <path fill="none" stroke="#2060A0" stroke-width="0.9" stroke-dasharray="4,3"
+      d="M322 238 C304 230 270 234 252 248"/>
+    <text x="288" y="308" text-anchor="middle" fill="#58A6FF"
+          font-family="'Segoe UI',sans-serif" font-size="9.5" font-weight="700">PULMÃO D</text>
+  </g>
+
+  <!-- Coracao -->
+  <g id="orgao_coracao" filter="url(#glow2)">
+    <path fill="url(#g_cor)" filter="url(#drop)"
+      d="M170 248
+         C170 248 140 224 124 236 C108 248 110 274 128 290
+         C144 304 170 320 170 320
+         C170 320 196 304 212 290 C230 274 232 248 216 236
+         C200 224 170 248 170 248 Z"/>
+    <path fill="url(#hl)"
+      d="M156 234 C142 242 126 254 124 268 C136 248 150 238 156 234 Z"/>
+    <path fill="none" stroke="#FF6666" stroke-width="1.8"
+      d="M170 248 C170 248 140 224 124 236 C108 248 110 274 128 290
+         C144 304 170 320 170 320 C170 320 196 304 212 290
+         C230 274 232 248 216 236 C200 224 170 248 170 248 Z"/>
+    <path fill="none" stroke="#FF5050" stroke-width="3.5" stroke-linecap="round"
+      d="M166 232 C164 220 168 210 178 206 C188 202 192 194 188 184"/>
+    <path fill="none" stroke="#992020" stroke-width="2" stroke-linecap="round"
+      d="M174 232 C176 222 172 212 164 208"/>
+    <text x="170" y="336" text-anchor="middle" fill="#FF5555"
+          font-family="'Segoe UI',sans-serif" font-size="9.5" font-weight="700">CORAÇÃO</text>
+  </g>
+
+  <!-- ══════════════════════════════════════════
+       FILEIRA 3 — FIGADO + ESTOMAGO + BACO  (y ~ 370)
+       ══════════════════════════════════════════ -->
+
+  <!-- Figado -->
+  <g id="orgao_figado" filter="url(#glow)">
+    <path fill="url(#g_fig)" filter="url(#drop)"
+      d="M78 358 C56 354 28 362 20 384 C12 406 20 434 40 446
+         C58 456 86 456 106 444 C126 432 136 408 128 384
+         C120 362 100 362 78 358 Z"/>
+    <path fill="url(#hl)"
+      d="M64 364 C46 372 28 386 24 404 C38 382 54 368 64 364 Z"/>
+    <path fill="none" stroke="#E07830" stroke-width="1.4"
+      d="M78 358 C56 354 28 362 20 384 C12 406 20 434 40 446
+         C58 456 86 456 106 444 C126 432 136 408 128 384
+         C120 362 100 362 78 358 Z"/>
+    <text x="72" y="470" text-anchor="middle" fill="#F0883E"
+          font-family="'Segoe UI',sans-serif" font-size="9.5" font-weight="700">FÍGADO</text>
+  </g>
+
+  <!-- Vesicula (pequena, abaixo figado) -->
+  <g id="orgao_vesicula" filter="url(#glow)">
+    <ellipse cx="56" cy="462" rx="18" ry="22" fill="url(#g_ves)" filter="url(#drop)"/>
+    <ellipse cx="56" cy="462" rx="18" ry="22" fill="none" stroke="#C0A010" stroke-width="1.1"/>
+    <ellipse cx="50" cy="455" rx="10" ry="12" fill="url(#hl)"/>
+    <text x="56" y="494" text-anchor="middle" fill="#FDCB6E"
+          font-family="'Segoe UI',sans-serif" font-size="8.5" font-weight="700">VESÍCULA</text>
+  </g>
+
+  <!-- Estomago -->
+  <g id="orgao_estomago" filter="url(#glow)">
+    <path fill="url(#g_est)" filter="url(#drop)"
+      d="M170 356 C154 354 136 366 134 390 C132 414 140 440 158 450
+         C172 458 188 452 196 436 C206 416 202 380 190 364
+         C184 354 176 358 170 356 Z"/>
+    <path fill="url(#hl)"
+      d="M164 360 C150 368 138 382 136 400 C146 378 158 366 164 360 Z"/>
+    <path fill="none" stroke="#20A040" stroke-width="1.4"
+      d="M170 356 C154 354 136 366 134 390 C132 414 140 440 158 450
+         C172 458 188 452 196 436 C206 416 202 380 190 364
+         C184 354 176 358 170 356 Z"/>
+    <text x="168" y="470" text-anchor="middle" fill="#3FB950"
+          font-family="'Segoe UI',sans-serif" font-size="9.5" font-weight="700">ESTÔMAGO</text>
+  </g>
+
+  <!-- Baco -->
+  <g id="orgao_baco" filter="url(#glow)">
+    <ellipse cx="278" cy="406" rx="32" ry="44" fill="url(#g_bac)" filter="url(#drop)"/>
+    <ellipse cx="278" cy="406" rx="32" ry="44" fill="none" stroke="#9050E0" stroke-width="1.4"/>
+    <ellipse cx="268" cy="394" rx="18" ry="24" fill="url(#hl)"/>
+    <text x="278" y="462" text-anchor="middle" fill="#BC8CFF"
+          font-family="'Segoe UI',sans-serif" font-size="9.5" font-weight="700">BAÇO</text>
+  </g>
+
+  <!-- ══════════════════════════════════════════
+       FILEIRA 4 — PANCREAS  (y ~ 510)
+       ══════════════════════════════════════════ -->
+  <g id="orgao_pancreas" filter="url(#glow)">
+    <path fill="url(#g_pan)" filter="url(#drop)"
+      d="M104 504 C88 500 68 504 60 516 C52 528 58 546 78 554
+         C100 562 138 560 164 550 C182 542 186 528 174 516
+         C160 504 126 508 104 504 Z"/>
+    <path fill="url(#hl)"
+      d="M104 508 C88 504 70 510 62 520 C74 508 90 504 104 508 Z"/>
+    <path fill="none" stroke="#C09010" stroke-width="1.3"
+      d="M104 504 C88 500 68 504 60 516 C52 528 58 546 78 554
+         C100 562 138 560 164 550 C182 542 186 528 174 516
+         C160 504 126 508 104 504 Z"/>
+    <text x="122" y="570" text-anchor="middle" fill="#FDCB6E"
+          font-family="'Segoe UI',sans-serif" font-size="9.5" font-weight="700">PÂNCREAS</text>
+  </g>
+
+  <!-- ══════════════════════════════════════════
+       FILEIRA 5 — RINS + INTESTINOS  (y ~ 610)
+       ══════════════════════════════════════════ -->
+
+  <!-- Rim Esq -->
+  <g id="orgao_rim_esq" filter="url(#glow)">
+    <path fill="url(#g_rim)" filter="url(#drop)"
+      d="M68 594 C48 594 30 610 30 636 C30 662 48 680 68 680
+         C88 680 106 664 106 638 C106 612 88 594 68 594 Z"/>
+    <ellipse cx="74" cy="637" rx="16" ry="22" fill="#004A42" fill-opacity="0.85"/>
+    <ellipse cx="74" cy="637" rx="16" ry="22" fill="none" stroke="#007A70" stroke-width="0.9"/>
+    <path fill="url(#hl)"
+      d="M54 600 C38 612 32 630 34 648 C38 622 48 608 54 600 Z"/>
+    <path fill="none" stroke="#0ACABA" stroke-width="1.5"
+      d="M68 594 C48 594 30 610 30 636 C30 662 48 680 68 680
+         C88 680 106 664 106 638 C106 612 88 594 68 594 Z"/>
+    <text x="68" y="696" text-anchor="middle" fill="#4ECDC4"
+          font-family="'Segoe UI',sans-serif" font-size="9.5" font-weight="700">RIM ESQ</text>
+  </g>
+
+  <!-- Rim Dir -->
+  <g id="orgao_rim_dir" filter="url(#glow)">
+    <path fill="url(#g_rim)" filter="url(#drop)"
+      d="M272 594 C292 594 310 610 310 636 C310 662 292 680 272 680
+         C252 680 234 664 234 638 C234 612 252 594 272 594 Z"/>
+    <ellipse cx="266" cy="637" rx="16" ry="22" fill="#004A42" fill-opacity="0.85"/>
+    <ellipse cx="266" cy="637" rx="16" ry="22" fill="none" stroke="#007A70" stroke-width="0.9"/>
+    <path fill="url(#hl)"
+      d="M286 600 C302 612 308 630 306 648 C302 622 292 608 286 600 Z"/>
+    <path fill="none" stroke="#0ACABA" stroke-width="1.5"
+      d="M272 594 C292 594 310 610 310 636 C310 662 292 680 272 680
+         C252 680 234 664 234 638 C234 612 252 594 272 594 Z"/>
+    <text x="272" y="696" text-anchor="middle" fill="#4ECDC4"
+          font-family="'Segoe UI',sans-serif" font-size="9.5" font-weight="700">RIM DIR</text>
+  </g>
+
+  <!-- Intestinos (centro, esquema limpo) -->
+  <g id="orgao_intestino" filter="url(#glow)">
+    <!-- colon externo -->
+    <rect x="122" y="594" width="96" height="86" rx="22"
+          fill="none" stroke="#8A5800" stroke-width="6" stroke-opacity="0.5"/>
+    <rect x="122" y="594" width="96" height="86" rx="22"
+          fill="none" stroke="#D29922" stroke-width="2.2"/>
+    <!-- alca delgado interior -->
+    <path fill="none" stroke="#145A28" stroke-width="5" stroke-opacity="0.5"
+          stroke-linecap="round" stroke-linejoin="round"
+      d="M144 610 C158 604 176 612 176 626
+         C176 640 162 646 150 641
+         C136 636 134 650 148 656
+         C164 662 178 655 178 668 C178 675 166 678 152 676"/>
+    <path fill="none" stroke="#3FB950" stroke-width="2.2"
+          stroke-linecap="round" stroke-linejoin="round"
+      d="M144 610 C158 604 176 612 176 626
+         C176 640 162 646 150 641
+         C136 636 134 650 148 656
+         C164 662 178 655 178 668 C178 675 166 678 152 676"/>
+    <text x="170" y="696" text-anchor="middle" fill="#D29922"
+          font-family="'Segoe UI',sans-serif" font-size="9.5" font-weight="700">INTESTINOS</text>
+  </g>
+
+  <!-- ══════════════════════════════════════════
+       FILEIRA 6 — BEXIGA + PROSTATA  (y ~ 726)
+       ══════════════════════════════════════════ -->
+
+  <!-- Bexiga -->
+  <g id="orgao_bexiga" filter="url(#glow)">
+    <path fill="url(#g_bex)" filter="url(#drop)"
+      d="M170 718 C150 718 128 728 126 748 C124 768 138 784 168 786
+         C198 788 216 774 216 756 C216 736 196 718 170 718 Z"/>
+    <path fill="url(#hl)"
+      d="M155 722 C139 730 130 746 130 758 C140 736 150 726 155 722 Z"/>
+    <path fill="none" stroke="#3060D0" stroke-width="1.5"
+      d="M170 718 C150 718 128 728 126 748 C124 768 138 784 168 786
+         C198 788 216 774 216 756 C216 736 196 718 170 718 Z"/>
+    <text x="170" y="800" text-anchor="middle" fill="#88AAFF"
+          font-family="'Segoe UI',sans-serif" font-size="9.5" font-weight="700">BEXIGA</text>
+  </g>
+
+  <!-- Prostata -->
+  <g id="orgao_prostata" filter="url(#glow)">
+    <ellipse cx="170" cy="792" rx="22" ry="14" fill="url(#g_pro)" filter="url(#drop)"/>
+    <ellipse cx="170" cy="792" rx="22" ry="14" fill="none" stroke="#9050D0" stroke-width="1.2"/>
+    <ellipse cx="163" cy="787" rx="12" ry="8"  fill="url(#hl)"/>
+    <text x="170" y="816" text-anchor="middle" fill="#BC8CFF"
+          font-family="'Segoe UI',sans-serif" font-size="9.5" font-weight="700">PRÓSTATA</text>
+  </g>
+
+</svg>

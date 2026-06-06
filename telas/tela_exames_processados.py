@@ -187,7 +187,7 @@ def _chip_tipo(tipo):
         ))
 
 
-def _card_exame(ex, on_click_fn, on_pdf_fn):
+def _card_exame(ex, on_click_fn, on_pdf_fn, on_edit_fn=None, on_reprocess_fn=None):
     tipo    = ex.get("tipo", "")
     cor     = {"numerico": AZUL, "laudo": LAR, "mapa": VERD, "imagem": ROXO}.get(tipo, MUT)
     icone   = {"numerico": "analytics_rounded", "laudo": "article_rounded",
@@ -199,6 +199,22 @@ def _card_exame(ex, on_click_fn, on_pdf_fn):
     lab     = ex.get("laboratorio") or ""
     medico  = ex.get("medico_solicit") or ""
     params  = ex.get("qtd_params", 0)
+    tem_pdf = bool(ex.get("arquivo_origem") or ex.get("drive_file_id"))
+
+    btn_reprocess = ft.Container(
+        content=ft.Row([
+            ft.Icon("refresh_rounded", size=11, color=AZUL),
+            ft.Text("Reprocessar", size=10, color=AZUL),
+        ], spacing=3, tight=True),
+        padding=ft.padding.symmetric(horizontal=8, vertical=6),
+        border_radius=6,
+        bgcolor=ft.Colors.with_opacity(0.10, AZUL),
+        border=ft.border.all(1, ft.Colors.with_opacity(0.3, AZUL)),
+        ink=True,
+        visible=tem_pdf and on_reprocess_fn is not None,
+    )
+    if on_reprocess_fn:
+        btn_reprocess.on_click = on_reprocess_fn
 
     return ft.Container(
         content=ft.Column([
@@ -233,6 +249,15 @@ def _card_exame(ex, on_click_fn, on_pdf_fn):
                     ft.Icon("person_outline_rounded", size=10, color=MUT),
                     ft.Text(medico[:40], size=10, color=SEC),
                 ], spacing=3, expand=True) if medico else ft.Container(expand=True),
+                btn_reprocess,
+                ft.Container(
+                    content=ft.Icon("edit_rounded", size=13, color=SEC),
+                    padding=ft.padding.symmetric(horizontal=8, vertical=8),
+                    ink=True,
+                    tooltip="Editar",
+                    on_click=on_edit_fn,
+                    visible=on_edit_fn is not None,
+                ),
                 ft.Container(
                     content=ft.Row([
                         ft.Icon("picture_as_pdf_rounded", size=11, color=VERM),
@@ -402,6 +427,236 @@ def criar_tela_exames_processados(page: ft.Page, voltar_fn):
         try: page.update()
         except Exception: pass
 
+    def _abrir_edicao(ex):
+        from shared.date_field import campo_data
+        from dados.model_prontuario import normalizar_data
+        import threading
+
+        ref_ov = [None]
+
+        def _fechar(e=None):
+            if ref_ov[0] in page.overlay:
+                page.overlay.remove(ref_ov[0])
+            try: page.update()
+            except Exception: pass
+
+        # Labs distintos para sugestao
+        labs = _labs_distintos()
+
+        tf_lab = ft.TextField(
+            label="Laboratório",
+            value=ex.get("laboratorio") or "",
+            bgcolor=CARD, border_color=BD2, focused_border_color=AZUL,
+            label_style=ft.TextStyle(color=SEC, size=11),
+            text_style=ft.TextStyle(color=TXT),
+            border_radius=8,
+        )
+        tf_medico = ft.TextField(
+            label="Médico solicitante",
+            value=ex.get("medico_solicit") or "",
+            bgcolor=CARD, border_color=BD2, focused_border_color=AZUL,
+            label_style=ft.TextStyle(color=SEC, size=11),
+            text_style=ft.TextStyle(color=TXT),
+            border_radius=8,
+        )
+
+        data_ini = ex.get("data_exame") or ""
+        if data_ini and len(data_ini) == 10 and data_ini[4] == "-":
+            d, mo, y = data_ini[8:], data_ini[5:7], data_ini[:4]
+            data_ini = f"{d}/{mo}/{y}"
+        row_data, tf_data = campo_data(
+            page, "Data coleta", value=data_ini,
+            cor_acento=AZUL, bgcolor=CARD, border_color=BD2,
+        )
+
+        txt_status = ft.Text("", size=11, color=VERD, visible=False)
+
+        def _salvar(e=None):
+            data_iso = normalizar_data(tf_data.value) if tf_data.value else None
+            try:
+                conn = sqlite3.connect(DB_PATH, timeout=10)
+                conn.execute("""
+                    UPDATE exames SET
+                        laboratorio   = ?,
+                        medico_solicit = ?,
+                        data_exame    = COALESCE(?, data_exame)
+                    WHERE id = ?
+                """, (
+                    (tf_lab.value or "").strip() or None,
+                    (tf_medico.value or "").strip() or None,
+                    data_iso,
+                    ex["id"],
+                ))
+                conn.commit()
+                conn.close()
+            except Exception as err:
+                txt_status.value = f"Erro: {err}"
+                txt_status.color = VERM
+                txt_status.visible = True
+                try: page.update()
+                except Exception: pass
+                return
+            txt_status.value = "Salvo."
+            txt_status.color = VERD
+            txt_status.visible = True
+            try: page.update()
+            except Exception: pass
+            import time; time.sleep(0.6)
+            _fechar()
+            _carregar_exames()
+
+        # arquivo selecionado pelo usuario (pode trocar)
+        _arquivo_sel = [ex.get("arquivo_origem") or ""]
+        txt_arquivo = ft.Text(
+            _arquivo_sel[0].split("\\")[-1].split("/")[-1] if _arquivo_sel[0] else "Nenhum arquivo",
+            size=10, color=SEC if _arquivo_sel[0] else MUT,
+            no_wrap=True, overflow=ft.TextOverflow.ELLIPSIS,
+        )
+
+        def _trocar_pdf(e=None):
+            import tkinter as tk
+            from tkinter import filedialog
+            try:
+                root = tk.Tk(); root.withdraw(); root.attributes("-topmost", True)
+                path = filedialog.askopenfilename(
+                    title="Selecionar PDF",
+                    filetypes=[("PDF", "*.pdf"), ("Todos", "*.*")],
+                )
+                root.destroy()
+                if path:
+                    _arquivo_sel[0] = path
+                    txt_arquivo.value = path.split("\\")[-1].split("/")[-1]
+                    txt_arquivo.color = VERD
+                    txt_status.value = "PDF selecionado. Clique em Reprocessar."
+                    txt_status.color = AZUL
+                    txt_status.visible = True
+                    try: page.update()
+                    except Exception: pass
+            except Exception as err:
+                txt_status.value = f"Erro ao abrir seletor: {err}"
+                txt_status.color = VERM
+                txt_status.visible = True
+                try: page.update()
+                except Exception: pass
+
+        def _reprocessar(e=None):
+            arquivo = _arquivo_sel[0]
+            if not arquivo:
+                txt_status.value = "Selecione um PDF primeiro."
+                txt_status.color = AMAR
+                txt_status.visible = True
+                try: page.update()
+                except Exception: pass
+                return
+            txt_status.value = "Reprocessando..."
+            txt_status.color = AZUL
+            txt_status.visible = True
+            try: page.update()
+            except Exception: pass
+
+            def _run():
+                try:
+                    from extratores.extrator_pdf import extrair_dados_pdf
+                    from extratores.processador_exame import salvar_exame
+                    dados = extrair_dados_pdf(arquivo)
+                    if dados:
+                        conn2 = sqlite3.connect(DB_PATH, timeout=10)
+                        conn2.execute("DELETE FROM exame_resultados WHERE exame_id=?", (ex["id"],))
+                        conn2.execute("UPDATE exames SET arquivo_origem=? WHERE id=?",
+                                      (arquivo, ex["id"]))
+                        conn2.commit()
+                        conn2.close()
+                        salvar_exame(dados, exame_id_existente=ex["id"])
+                        txt_status.value = "Reprocessado com sucesso."
+                        txt_status.color = VERD
+                    else:
+                        txt_status.value = "Nao foi possivel extrair dados do PDF."
+                        txt_status.color = AMAR
+                except Exception as err:
+                    txt_status.value = f"Erro: {err}"
+                    txt_status.color = VERM
+                txt_status.visible = True
+                try: page.update()
+                except Exception: pass
+            threading.Thread(target=_run, daemon=True).start()
+
+        btn_cancel = ft.Container(
+            content=ft.Text("Cancelar", size=13, color=SEC),
+            padding=ft.padding.symmetric(horizontal=14, vertical=10),
+            border_radius=8, bgcolor=f"{SEC}22", ink=True,
+        )
+        btn_cancel.on_click = _fechar
+
+        btn_salvar = ft.Container(
+            content=ft.Text("Salvar", size=13, color=VERD,
+                            weight=ft.FontWeight.W_600),
+            padding=ft.padding.symmetric(horizontal=14, vertical=10),
+            border_radius=8, bgcolor=f"{VERD}22", ink=True,
+        )
+        btn_salvar.on_click = _salvar
+
+        btn_trocar = ft.Container(
+            content=ft.Row([
+                ft.Icon("upload_file_rounded", size=13, color=LAR),
+                ft.Text("Trocar PDF", size=12, color=LAR),
+            ], spacing=4, tight=True),
+            padding=ft.padding.symmetric(horizontal=10, vertical=8),
+            border_radius=8,
+            bgcolor=ft.Colors.with_opacity(0.10, LAR),
+            border=ft.border.all(1, ft.Colors.with_opacity(0.3, LAR)),
+            ink=True,
+        )
+        btn_trocar.on_click = _trocar_pdf
+
+        btn_reproces = ft.Container(
+            content=ft.Row([
+                ft.Icon("refresh_rounded", size=13, color=AZUL),
+                ft.Text("Reprocessar", size=12, color=AZUL),
+            ], spacing=4, tight=True),
+            padding=ft.padding.symmetric(horizontal=10, vertical=8),
+            border_radius=8,
+            bgcolor=ft.Colors.with_opacity(0.10, AZUL),
+            border=ft.border.all(1, ft.Colors.with_opacity(0.3, AZUL)),
+            ink=True,
+        )
+        btn_reproces.on_click = _reprocessar
+
+        ref_ov[0] = ft.Container(
+            content=ft.Container(
+                content=ft.Column([
+                    ft.Row([
+                        ft.Icon("edit_rounded", size=16, color=AZUL),
+                        ft.Text("Editar Exame", size=15, color=TXT,
+                                weight=ft.FontWeight.W_700, expand=True),
+                    ], spacing=8),
+                    ft.Text(
+                        (ex.get("tipo_exame") or ex.get("arquivo_origem") or f"#{ex['id']}")[:50],
+                        size=11, color=MUT,
+                    ),
+                    ft.Divider(color=BD, height=1),
+                    tf_lab,
+                    row_data,
+                    tf_medico,
+                    ft.Divider(color=BD, height=1),
+                    ft.Row([
+                        ft.Icon("picture_as_pdf_rounded", size=12, color=MUT),
+                        txt_arquivo,
+                    ], spacing=6),
+                    ft.Row([btn_trocar, btn_reproces], spacing=8),
+                    txt_status,
+                    ft.Row([btn_cancel, btn_salvar], spacing=8,
+                           alignment=ft.MainAxisAlignment.END),
+                ], spacing=10, tight=True),
+                bgcolor=CARD, border_radius=14,
+                padding=ft.padding.all(20), width=340,
+            ),
+            bgcolor="#CC000000", expand=True, alignment=ft.Alignment(0, 0),
+        )
+        ref_ov[0].on_click = _fechar
+        page.overlay.append(ref_ov[0])
+        try: page.update()
+        except Exception: pass
+
     def _abrir_pdf(drive_id):
         if drive_id:
             webbrowser.open(f"https://drive.google.com/file/d/{drive_id}/view")
@@ -448,11 +703,68 @@ def criar_tela_exames_processados(page: ft.Page, voltar_fn):
         else:
             for ex in exames:
                 def _mk(e=ex):
+                    def _reprocess_direto(ev, x=e):
+                        arquivo = x.get("arquivo_origem") or ""
+                        if not arquivo:
+                            return
+                        # overlay de progresso
+                        ref_ov_r = [None]
+                        txt_prog = ft.Text("Reprocessando...", size=12, color=AZUL)
+                        ref_ov_r[0] = ft.Container(
+                            content=ft.Container(
+                                content=ft.Column([
+                                    ft.ProgressRing(color=AZUL, width=32, height=32, stroke_width=3),
+                                    ft.Container(height=8),
+                                    txt_prog,
+                                ], tight=True, spacing=4,
+                                   horizontal_alignment=ft.CrossAxisAlignment.CENTER),
+                                bgcolor=CARD, border_radius=14,
+                                padding=ft.padding.all(24), width=260,
+                            ),
+                            bgcolor="#CC000000", expand=True,
+                            alignment=ft.alignment.Alignment(0, 0),
+                        )
+                        page.overlay.append(ref_ov_r[0])
+                        try: page.update()
+                        except Exception: pass
+
+                        def _run():
+                            try:
+                                from extratores.extrator_pdf import extrair_dados_pdf
+                                from extratores.processador_exame import salvar_exame
+                                dados = extrair_dados_pdf(arquivo)
+                                if dados:
+                                    conn2 = sqlite3.connect(DB_PATH, timeout=10)
+                                    conn2.execute("DELETE FROM exame_resultados WHERE exame_id=?", (x["id"],))
+                                    conn2.commit(); conn2.close()
+                                    salvar_exame(dados, exame_id_existente=x["id"])
+                                    txt_prog.value = "Reprocessado com sucesso!"
+                                    txt_prog.color = VERD
+                                else:
+                                    txt_prog.value = "Não foi possível extrair dados."
+                                    txt_prog.color = AMAR
+                            except Exception as err:
+                                txt_prog.value = f"Erro: {err}"
+                                txt_prog.color = VERM
+                            try: page.update()
+                            except Exception: pass
+                            import time; time.sleep(1.5)
+                            if ref_ov_r[0] in page.overlay:
+                                page.overlay.remove(ref_ov_r[0])
+                            _carregar_exames()
+                            try: page.update()
+                            except Exception: pass
+
+                        import threading
+                        threading.Thread(target=_run, daemon=True).start()
+
                     return _card_exame(
                         e,
                         on_click_fn=lambda ev, x=e: _abrir_detalhe(
                             x["id"], x.get("tipo_exame") or x.get("arquivo_origem") or f"Exame #{x['id']}"),
                         on_pdf_fn=lambda ev, d=e.get("drive_file_id"): _abrir_pdf(d),
+                        on_edit_fn=lambda ev, x=e: _abrir_edicao(x),
+                        on_reprocess_fn=_reprocess_direto,
                     )
                 corpo_exames.controls.append(_mk())
 

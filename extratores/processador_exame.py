@@ -276,6 +276,8 @@ def construir_painel_conferencia(
     if icone_confirmar is None:
         icone_confirmar = "cloud_upload_outlined_rounded"
 
+    from dados.model_prontuario import DB_PATH
+
     results     = dados.get("resultados", [])
     pendencias  = list(pendencias_init)   # cópia local mutável
     params_pend = {p.get("parametro") for p in pendencias}
@@ -299,8 +301,17 @@ def construir_painel_conferencia(
             padding=ft.Padding(left=20, right=20, top=12, bottom=12),
         ),
         disabled=tem_pend[0],
-        on_click=lambda e: on_liberar(),
     )
+
+    def _click_confirmar(e):
+        btn_confirmar.disabled = True
+        btn_confirmar.style.bgcolor = MUT
+        try: page.update()
+        except Exception: pass
+        if on_liberar:
+            on_liberar()
+
+    btn_confirmar.on_click = _click_confirmar
 
     aviso_pend = ft.Container(
         visible=tem_pend[0],
@@ -572,6 +583,30 @@ def construir_painel_conferencia(
                 msg_form.value = f"Erro: {str(ex)[:60]}"
                 page.update()
 
+        # botao para abrir PDF sem fechar o formulario
+        _caminho_pdf = dados.get("arquivo_path") or dados.get("arquivo_origem") or ""
+        def _ver_pdf_form(e=None):
+            import webbrowser as _wb
+            if _caminho_pdf:
+                try:
+                    from pathlib import Path as _P
+                    _wb.open(_P(_caminho_pdf).resolve().as_uri())
+                except Exception:
+                    pass
+
+        btn_ver_pdf = ft.Container(
+            content=ft.Row([
+                ft.Icon("picture_as_pdf_rounded", size=12, color=AMAR),
+                ft.Text("Ver PDF", size=11, color=AMAR, weight=ft.FontWeight.W_600),
+            ], spacing=4, tight=True),
+            padding=ft.padding.symmetric(horizontal=8, vertical=4),
+            border_radius=6,
+            bgcolor=ft.Colors.with_opacity(0.10, AMAR),
+            border=ft.border.all(1, ft.Colors.with_opacity(0.30, AMAR)),
+            ink=True, visible=bool(_caminho_pdf),
+        )
+        btn_ver_pdf.on_click = _ver_pdf_form
+
         form_container.content = ft.Container(
             content=ft.Column([
                 ft.Row([f_nome], spacing=0),
@@ -580,7 +615,9 @@ def construir_painel_conferencia(
                 ft.Row([
                     ft.Icon("info_outline_rounded", size=12, color=MUT),
                     ref_hint,
-                ], spacing=4) if ref_raw else ft.Container(height=0),
+                    ft.Container(expand=True),
+                    btn_ver_pdf,
+                ], spacing=4, vertical_alignment=ft.CrossAxisAlignment.CENTER),
                 ft.Row([
                     ft.Text("Referência:", size=11, color=SEC),
                     f_ref_min,
@@ -748,6 +785,40 @@ def construir_painel_conferencia(
         lista_pend_col.controls.append(_card_pendencia(r))
 
     # ── Montar controles do painel ─────────────────────────────────────────────
+    def _iso_para_display(s):
+        if s and len(s) >= 10 and s[4:5] == "-":
+            try:
+                from datetime import datetime
+                return datetime.strptime(s[:10], "%Y-%m-%d").strftime("%d/%m/%Y")
+            except Exception:
+                pass
+        return s or ""
+
+    def _display_para_iso(s):
+        s = (s or "").strip()
+        if len(s) == 10 and s[2:3] == "/" and s[5:6] == "/":
+            try:
+                from datetime import datetime
+                return datetime.strptime(s, "%d/%m/%Y").strftime("%Y-%m-%d")
+            except Exception:
+                pass
+        return s
+
+    tf_data_conf = ft.TextField(
+        value=_iso_para_display(dados.get("data_exame") or ""),
+        hint_text="DD/MM/AAAA",
+        bgcolor=CARD,
+        border_color=BD,
+        focused_border_color=AZUL,
+        text_style=ft.TextStyle(color=AMAR, size=12, weight=ft.FontWeight.W_700),
+        border_radius=6,
+        content_padding=ft.padding.symmetric(horizontal=8, vertical=4),
+        width=140,
+    )
+    def _on_data_change(e):
+        dados["data_exame"] = _display_para_iso(e.control.value)
+    tf_data_conf.on_change = _on_data_change
+
     controles = [
         ft.Row([
             ft.Icon("assignment_turned_in_rounded", size=18, color=AZUL),
@@ -759,18 +830,20 @@ def construir_painel_conferencia(
             content=ft.Column([
                 ft.Row([
                     ft.Text("Tipo:",     size=12, color=SEC),
-                    ft.Text(dados.get("tipo_exame") or "—",    size=12, color=TXT),
-                    ft.Container(width=16),
-                    ft.Text("Data:",     size=12, color=SEC),
-                    ft.Text(dados.get("data_exame") or "—",    size=12, color=TXT),
-                ], spacing=4, wrap=True),
+                    ft.Text(dados.get("tipo_exame") or "—", size=12, color=TXT),
+                ], spacing=4),
                 ft.Row([
                     ft.Text("Lab:",      size=12, color=SEC),
-                    ft.Text(dados.get("laboratorio") or "—",   size=12, color=TXT),
-                    ft.Container(width=16),
+                    ft.Text(dados.get("laboratorio") or "—", size=12, color=TXT),
+                ], spacing=4),
+                ft.Row([
                     ft.Text("Paciente:", size=12, color=SEC),
                     ft.Text(dados.get("paciente_nome") or "—", size=12, color=TXT),
-                ], spacing=4, wrap=True),
+                ], spacing=4),
+                ft.Row([
+                    ft.Text("Data:", size=12, color=SEC),
+                    tf_data_conf,
+                ], spacing=8, vertical_alignment=ft.CrossAxisAlignment.CENTER),
             ], spacing=6),
             bgcolor=CARD, border_radius=8, padding=12,
             border=ft.Border(

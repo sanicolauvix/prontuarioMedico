@@ -155,16 +155,16 @@ def _tela_ficha_medico(page: ft.Page, medico, voltar_fn):
                     return
                 page.pubsub.send_all({"_tipo": "foto_medico", "status": "Enviando para o Drive..."})
                 try:
-                    from shared.drive_connector import upload_foto_medico
+                    from utils.drive_prontuario import upload_foto_medico
                     drive_id = upload_foto_medico(caminho)
                     foto_drive_id[0] = drive_id
                     page.pubsub.send_all({"_tipo": "foto_medico", "drive_id": drive_id,
                                           "status": "Foto salva no Drive"})
                 except Exception as ex:
-                    logger.error("upload_foto_medico: %s", ex, exc_info=True)
+                    logger.error("upload foto medico: %s", ex, exc_info=True)
                     foto_drive_id[0] = caminho
                     page.pubsub.send_all({"_tipo": "foto_medico", "drive_id": caminho,
-                                          "status": "Foto local (Drive indisponível)"})
+                                          "status": "Foto local (Drive indisponivel)"})
             except Exception as ex:
                 logger.error("_selecionar_foto: %s", ex, exc_info=True)
                 page.pubsub.send_all({"_tipo": "foto_medico", "status": f"Erro: {ex}"})

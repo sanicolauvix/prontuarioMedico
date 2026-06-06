@@ -12,8 +12,9 @@ import flet as ft
 from shared.auth import IS_ANDROID
 from dados.model_prontuario import (
     listar_consultas, salvar_consulta, listar_medicos,
-    salvar_receita, listar_receitas,
+    salvar_receita, listar_receitas_laudos as listar_receitas,
     salvar_remedio, listar_remedios,
+    registrar_receita_remedios,
 )
 
 logger = logging.getLogger(__name__)
@@ -409,6 +410,40 @@ def _tela_receita(page, consulta, voltar_fn):
             _sub[0] = True
         threading.Thread(target=_picker, daemon=True).start()
 
+    # resultado da IA fica aqui para o callback acessar
+    _ia_resultado = [None]  # {"remedios": [...], "texto": "..."}
+
+    def _on_ia_resultado(msg):
+        """Subscriber permanente — processa resultado da extração de receita."""
+        if not isinstance(msg, dict) or msg.get("_tipo") != "receita_ia":
+            return
+        btn_extrair.disabled = False
+        if "erro" in msg:
+            txt_status_ia.value = f"Erro na IA: {msg['erro']}"
+            txt_status_ia.color = VERM
+            try: page.update()
+            except Exception: pass
+            return
+        raw      = msg.get("texto", "")
+        remedios = msg.get("remedios") or []
+        if not remedios:
+            remedios = _parsear_remedios_texto(raw)
+        txt_instrucoes.value = raw
+        if remedios:
+            txt_status_ia.value = f"✓ {len(remedios)} medicamento(s) — revise e confirme"
+            txt_status_ia.color = VERD
+            try: page.update()
+            except Exception: pass
+            _abrir_overlay_remedios_dados(remedios)
+        else:
+            txt_status_ia.value = "Nenhum medicamento identificado"
+            txt_status_ia.color = AMAR
+            btn_salvar_remedios.visible = False
+            try: page.update()
+            except Exception: pass
+
+    page.pubsub.subscribe(_on_ia_resultado)
+
     def _extrair_ia(e):
         if not foto_path[0]:
             txt_status_ia.value = "Selecione uma foto primeiro."
@@ -424,66 +459,65 @@ def _tela_receita(page, consulta, voltar_fn):
         def _analisar():
             try:
                 import base64, json, urllib.request
+                from dados.model_prontuario import get_config
+                api_key = get_config("anthropic_api_key", "")
                 with open(foto_path[0], "rb") as f:
                     img_b64 = base64.b64encode(f.read()).decode()
                 ext  = foto_path[0].rsplit(".", 1)[-1].lower()
                 mime = {"jpg": "image/jpeg", "jpeg": "image/jpeg",
                         "png": "image/png", "webp": "image/webp"}.get(ext, "image/jpeg")
+                prompt = (
+                    "Esta é uma foto de uma receita médica brasileira com letra possivelmente ilegível.\n\n"
+                    "REGRAS CRÍTICAS:\n"
+                    "1. Use o contexto clínico para inferir nomes de medicamentos com grafia ruim.\n"
+                    "   Ex: 'Rimina', 'Litmine', 'Ritaline' -> provavelmente 'Ritalina' (metilfenidato).\n"
+                    "2. Considere a especialidade do medico e outros remedios para inferir nomes.\n"
+                    "3. NUNCA descarte um item por nao reconhecer — inclua com sua melhor interpretacao.\n\n"
+                    "Extraia TODOS os medicamentos e retorne APENAS um JSON array valido, sem markdown:\n"
+                    '[{"nome":"nome correto","nome_original":"como esta escrito",'
+                    '"dosagem":"10mg ou null","frequencia":"1cp 2x/dia ou null",'
+                    '"observacoes":"instrucoes ou null","confianca":"alta|media|baixa"}]'
+                )
+                headers = {
+                    "Content-Type": "application/json",
+                    "anthropic-version": "2023-06-01",
+                }
+                if api_key:
+                    headers["x-api-key"] = api_key
                 payload = json.dumps({
                     "model": "claude-sonnet-4-20250514",
                     "max_tokens": 1000,
                     "messages": [{"role": "user", "content": [
                         {"type": "image", "source": {
                             "type": "base64", "media_type": mime, "data": img_b64}},
-                        {"type": "text", "text": (
-                            "Esta é uma foto de uma receita médica. "
-                            "Extraia e liste todos os medicamentos prescritos com: "
-                            "nome, dosagem, frequência e duração. "
-                            "Formato: um por linha, ex:\n"
-                            "• Amoxicilina 500mg — 1 cápsula de 8 em 8h por 7 dias\n"
-                            "Se não conseguir ler algum campo, use '?'. "
-                            "Responda apenas a lista, sem introdução."
-                        )},
+                        {"type": "text", "text": prompt},
                     ]}],
                 }).encode()
                 req = urllib.request.Request(
                     "https://api.anthropic.com/v1/messages",
-                    data=payload,
-                    headers={"Content-Type": "application/json",
-                             "anthropic-version": "2023-06-01"},
-                    method="POST",
+                    data=payload, headers=headers, method="POST",
                 )
                 with urllib.request.urlopen(req, timeout=30) as resp:
                     data = json.loads(resp.read())
-                texto = "".join(
+                raw = "".join(
                     b.get("text", "") for b in data.get("content", [])
                     if b.get("type") == "text"
-                )
-                page.pubsub.send_all({"_tipo": "receita_ia", "texto": texto.strip()})
+                ).strip()
+                try:
+                    import re as _re
+                    m = _re.search(r'\[.*\]', raw, _re.DOTALL)
+                    remedios_json = json.loads(m.group()) if m else []
+                except Exception:
+                    remedios_json = []
+                page.pubsub.send_all({
+                    "_tipo": "receita_ia",
+                    "texto": raw,
+                    "remedios": remedios_json,
+                })
             except Exception as ex:
                 logger.error("_extrair_ia: %s", str(ex), exc_info=True)
                 page.pubsub.send_all({"_tipo": "receita_ia", "erro": str(ex)[:80]})
-            finally:
-                btn_extrair.disabled = False
 
-        _sub2 = [False]
-        def _on_ia(msg):
-            if not isinstance(msg, dict) or msg.get("_tipo") != "receita_ia":
-                return
-            if "erro" in msg:
-                txt_status_ia.value = f"Erro na IA: {msg['erro']}"
-                txt_status_ia.color = VERM
-            else:
-                txt_instrucoes.value = msg["texto"]
-                txt_status_ia.value  = "✓ Extração concluída — revise e salve"
-                txt_status_ia.color  = VERD
-                btn_salvar_remedios.visible = bool(_parsear_remedios_texto(msg["texto"]))
-            try: page.update()
-            except Exception: pass
-
-        if not _sub2[0]:
-            page.pubsub.subscribe(_on_ia)
-            _sub2[0] = True
         threading.Thread(target=_analisar, daemon=True).start()
 
     btn_extrair.on_click = _extrair_ia
@@ -496,6 +530,9 @@ def _tela_receita(page, consulta, voltar_fn):
             try: page.update()
             except Exception: pass
             return
+        _abrir_overlay_remedios_dados(remedios_parsed)
+
+    def _abrir_overlay_remedios_dados(remedios_parsed):
 
         ref_ov = [None]
 
@@ -508,107 +545,118 @@ def _tela_receita(page, consulta, voltar_fn):
         # Campos editáveis + checkbox por medicamento
         itens_ui = []
         for r in remedios_parsed:
+            confianca    = r.get("confianca", "alta")
+            nome_orig    = r.get("nome_original", "")
+            cor_conf     = VERD if confianca == "alta" else AMAR if confianca == "media" else VERM
+            label_conf   = {"alta": "✓ leitura segura", "media": "⚠ inferido", "baixa": "⚠ incerto"}.get(confianca, "")
+
             sel = ft.Checkbox(value=True, active_color=VERD)
             fn  = ft.TextField(
-                value=r["nome"], label="Medicamento",
+                value=r.get("nome") or nome_orig,
+                label="Medicamento (edite se necessário)",
                 bgcolor="#0D1117", border_color=BD2, focused_border_color=VERD,
                 label_style=ft.TextStyle(color=SEC, size=10),
                 text_style=ft.TextStyle(color=TXT, size=13),
                 border_radius=6, expand=True,
             )
             fd  = ft.TextField(
-                value=r["dosagem"], label="Dosagem",
+                value=r.get("dosagem") or "",
+                label="Dosagem",
                 bgcolor="#0D1117", border_color=BD2, focused_border_color=VERD,
                 label_style=ft.TextStyle(color=SEC, size=10),
                 text_style=ft.TextStyle(color=TXT, size=12),
                 border_radius=6, width=110,
             )
             ff  = ft.TextField(
-                value=r["frequencia"], label="Frequência",
+                value=r.get("frequencia") or "",
+                label="Frequência",
                 bgcolor="#0D1117", border_color=BD2, focused_border_color=VERD,
                 label_style=ft.TextStyle(color=SEC, size=10),
                 text_style=ft.TextStyle(color=TXT, size=12),
                 border_radius=6, expand=True,
             )
-            itens_ui.append({"sel": sel, "fn": fn, "fd": fd, "ff": ff, "obs": r["observacoes"]})
+            itens_ui.append({
+                "sel": sel, "fn": fn, "fd": fd, "ff": ff,
+                "obs": r.get("observacoes"),
+                "nome_orig": nome_orig,
+                "cor_conf": cor_conf,
+                "label_conf": label_conf,
+            })
 
         cards_col = ft.Column(spacing=8)
         for it in itens_ui:
+            # Linha de aviso se nome foi inferido
+            aviso = []
+            if it["nome_orig"] and it["nome_orig"] != (it["fn"].value or ""):
+                aviso.append(ft.Row([
+                    ft.Icon("warning_amber_rounded", size=12, color=it["cor_conf"]),
+                    ft.Text(
+                        f"Escrito na receita: \"{it['nome_orig']}\" — {it['label_conf']}",
+                        size=10, color=it["cor_conf"], italic=True,
+                    ),
+                ], spacing=4))
+
             cards_col.controls.append(ft.Container(
                 content=ft.Column([
                     ft.Row([
                         it["sel"],
                         it["fn"],
                     ], spacing=6, vertical_alignment=ft.CrossAxisAlignment.CENTER),
+                    *aviso,
                     ft.Row([it["fd"], it["ff"]], spacing=6),
-                ], spacing=6),
+                ], spacing=4),
                 bgcolor=BD, border_radius=8,
                 padding=ft.padding.symmetric(horizontal=10, vertical=10),
                 border=ft.Border(
                     top=ft.BorderSide(1, BD2), bottom=ft.BorderSide(1, BD2),
-                    left=ft.BorderSide(2, VERD), right=ft.BorderSide(1, BD2),
+                    left=ft.BorderSide(2, it["cor_conf"]), right=ft.BorderSide(1, BD2),
                 ),
             ))
 
         txt_result = ft.Text("", size=12, color=VERD)
 
         def _confirmar(e):
-            salvos = 0
-            medico_id = consulta.get("medico_id")
-            data_ini  = consulta.get("data") or datetime.date.today().isoformat()
-            rid_rec   = _receita_id_sal[0]
+            medico_id  = consulta.get("medico_id")
+            data_ini   = consulta.get("data") or datetime.date.today().isoformat()
+            rid_rec    = _receita_id_sal[0]
+            consulta_id = consulta.get("id")
 
-            # Verifica remédios existentes para evitar duplicata óbvia (inclui inativos)
-            existentes = {r["nome"].strip().upper(): r for r in listar_remedios(so_ativos=False)}
-
+            # Monta lista apenas dos selecionados com dados editados
+            selecionados = []
             for it in itens_ui:
                 if not it["sel"].value:
                     continue
                 nome_val = (it["fn"].value or "").strip()
                 if not nome_val:
                     continue
-                chave = nome_val.upper()
-                if chave in existentes:
-                    # Atualiza médico, receita e data_inicio se já existe
-                    rem_ex = existentes[chave]
-                    salvar_remedio({
-                        "id":         rem_ex["id"],
-                        "nome":       rem_ex["nome"],
-                        "dosagem":    (it["fd"].value or "").strip() or rem_ex.get("dosagem"),
-                        "frequencia": (it["ff"].value or "").strip() or rem_ex.get("frequencia"),
-                        "data_inicio": data_ini,
-                        "data_fim":   rem_ex.get("data_fim"),
-                        "medico_id":  medico_id or rem_ex.get("medico_id"),
-                        "receita_id": rid_rec or rem_ex.get("receita_id"),
-                        "estoque_atual":  rem_ex.get("estoque_atual", 0),
-                        "estoque_minimo": rem_ex.get("estoque_minimo", 5),
-                        "observacoes": it["obs"] or rem_ex.get("observacoes"),
-                        "ativo":       rem_ex.get("ativo", 1),
-                        "principio_ativo": rem_ex.get("principio_ativo"),
-                        "tipo":       rem_ex.get("tipo", "remedio"),
-                        "prescrito":  1,
-                    })
-                else:
-                    salvar_remedio({
-                        "id":          None,
-                        "nome":        nome_val,
-                        "dosagem":     (it["fd"].value or "").strip() or None,
-                        "frequencia":  (it["ff"].value or "").strip() or None,
-                        "data_inicio": data_ini,
-                        "data_fim":    None,
-                        "medico_id":   medico_id,
-                        "receita_id":  rid_rec,
-                        "estoque_atual":  0,
-                        "estoque_minimo": 5,
-                        "observacoes": it["obs"] or None,
-                        "ativo":       1,
-                        "principio_ativo": None,
-                        "tipo":       "remedio",
-                        "prescrito":  1,
-                    })
-                salvos += 1
+                selecionados.append({
+                    "nome":        nome_val,
+                    "dosagem":     (it["fd"].value or "").strip() or None,
+                    "frequencia":  (it["ff"].value or "").strip() or None,
+                    "observacoes": it.get("obs"),
+                })
 
-            txt_result.value = f"✓ {salvos} medicamento(s) salvos em Remédios"
+            if not selecionados:
+                txt_result.value = "Nenhum medicamento selecionado."
+                txt_result.color = AMAR
+                try: page.update()
+                except Exception: pass
+                return
+
+            resultado = registrar_receita_remedios(
+                remedios_extraidos=selecionados,
+                receita_id=rid_rec,
+                consulta_id=consulta_id,
+                medico_id=medico_id,
+                data_consulta=data_ini,
+            )
+
+            novos     = sum(1 for r in resultado if not r["ja_existia"])
+            atualizados = sum(1 for r in resultado if r["ja_existia"])
+            partes = []
+            if novos:       partes.append(f"{novos} cadastrado(s)")
+            if atualizados: partes.append(f"{atualizados} atualizado(s) + mov. registrada")
+            txt_result.value = "✓ " + ", ".join(partes)
             txt_result.color = VERD
             try: page.update()
             except Exception: pass
@@ -698,35 +746,51 @@ def _tela_receita(page, consulta, voltar_fn):
             try: page.update()
             except Exception: pass
             return
-        drive_id = None
-        nome_arq = ""
-        if foto_path[0]:
-            try:
-                from shared.drive_connector import upload_foto_medico
-                txt_status_ia.value = "Enviando para o Drive..."
-                try: page.update()
-                except Exception: pass
-                drive_id = upload_foto_medico(foto_path[0])
-                nome_arq = foto_path[0].replace("\\", "/").split("/")[-1]
-            except Exception as ex:
-                logger.error("upload receita Drive: %s", str(ex), exc_info=True)
-                nome_arq = foto_path[0].replace("\\", "/").split("/")[-1]
-        rid = salvar_receita({
-            "consulta_id":   consulta["id"],
-            "medico_id":     consulta.get("medico_id"),
-            "drive_file_id": drive_id,
-            "nome_arquivo":  nome_arq,
-            "data":          datetime.date.today().isoformat(),
-            "observacoes":   txt_instrucoes.value.strip() or None,
-        })
-        _receita_id_sal[0]   = rid
-        foto_path[0]         = ""
-        txt_status_ia.value  = "✓ Receita salva! Agora salve os remédios →"
-        txt_status_ia.color  = VERD
-        btn_extrair.visible  = False
-        btn_salvar_remedios.visible = bool(
-            _parsear_remedios_texto(txt_instrucoes.value or ""))
-        _carregar_lista()
+
+        txt_status_ia.value = "Salvando receita..."
+        txt_status_ia.color = AZUL
+        try: page.update()
+        except Exception: pass
+
+        def _run():
+            drive_id = None
+            nome_arq = ""
+            foto_local = foto_path[0]
+            if foto_local:
+                try:
+                    from utils.drive_sync import upload_receita
+                    drive_id, nome_arq = upload_receita(
+                        foto_local, consulta["id"])
+                except Exception as ex:
+                    logger.error("upload receita Drive: %s", ex, exc_info=True)
+                    nome_arq = foto_local.replace("\\", "/").split("/")[-1]
+
+            rid = salvar_receita({
+                "consulta_id":   consulta["id"],
+                "medico_id":     consulta.get("medico_id"),
+                "drive_file_id": drive_id,
+                "nome_arquivo":  nome_arq,
+                "data":          datetime.date.today().isoformat(),
+                "observacoes":   txt_instrucoes.value.strip() or None,
+            })
+            _receita_id_sal[0] = rid
+            foto_path[0]       = ""
+
+            page.pubsub.send_all({"_tipo": "receita_salva", "rid": rid,
+                                  "nome": nome_arq})
+
+        def _on_salva(msg):
+            if not isinstance(msg, dict) or msg.get("_tipo") != "receita_salva":
+                return
+            txt_status_ia.value = "✓ Receita salva! Agora salve os remédios →"
+            txt_status_ia.color = VERD
+            btn_extrair.visible = False
+            btn_salvar_remedios.visible = bool(
+                _parsear_remedios_texto(txt_instrucoes.value or ""))
+            _carregar_lista()
+
+        page.pubsub.subscribe(_on_salva)
+        threading.Thread(target=_run, daemon=True).start()
 
     _carregar_lista()
 

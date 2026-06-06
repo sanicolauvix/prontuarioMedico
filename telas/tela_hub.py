@@ -10,7 +10,7 @@ from versao import APP_VERSAO
 
 log = logging.getLogger(__name__)
 
-BG       = "#0D1117"; CARD = "#161B22"; BD  = "#21262D"
+BG       = "#1A1A2E"; CARD = "#161B22"; BD  = "#21262D"
 TXT      = "#E6EDF3"; SEC  = "#8B949E"; MUT = "#484F58"
 ROXO     = "#BC8CFF"; AZUL = "#58A6FF"; VERD = "#3FB950"
 AMAR     = "#D29922"; VERM = "#F85149"; VERM_INT = "#CC1111"
@@ -471,6 +471,94 @@ def criar_tela_hub(page: ft.Page, voltar_fn=None, modo_medico: bool = False) -> 
     def _abrir_glicemia():
         from telas.tela_glicemia import criar_tela_glicemia
         _navegar(criar_tela_glicemia, _voltar_hub)
+
+    def _overlay_glicemia_padrao():
+        import sqlite3 as _sqg
+        from shared.exame_card import abrir_overlay_exame
+        _TERMOS = ["glicose", "glucose", "glicemia", "glicada", "hba1c",
+                   "frutosamina", "insulina", "homa"]
+        COR = "#FF6B6B"
+
+        def _avaliar_cor_glic(val_str):
+            try:
+                v = float(str(val_str).replace(",", "."))
+                if v < 70 or v > 200: return VERM
+                if v > 125:           return AMAR
+                if v > 99:            return AMAR
+                return VERD
+            except Exception:
+                return AZUL
+
+        grupos = []
+        try:
+            conn_g = _sqg.connect(DB_PATH, timeout=30)
+
+            # medicoes domesticas (marcadores_leituras)
+            dom_rows = conn_g.execute("""
+                SELECT valor, unidade, referencia, data_medicao
+                FROM marcadores_leituras
+                WHERE """ + " OR ".join([f"LOWER(parametro) LIKE ?" for _ in _TERMOS]) + """
+                ORDER BY data_medicao DESC
+            """, [f"%{t}%" for t in _TERMOS]).fetchall()
+
+            if dom_rows:
+                hist_dom = [{"valor": r[0], "unidade": r[1] or "mg/dL",
+                              "referencia": r[2] or "", "data": r[3] or "",
+                              "cor_val": _avaliar_cor_glic(r[0])} for r in dom_rows]
+                ult = dom_rows[0]
+                grupos.append({
+                    "label":      "Medicoes Domesticas",
+                    "n":          len(dom_rows),
+                    "ultimo_val": str(ult[0]),
+                    "unidade":    ult[1] or "mg/dL",
+                    "ultima_data": ult[3] or "",
+                    "referencia": "70 - 99",
+                    "cor_val":    _avaliar_cor_glic(ult[0]),
+                    "historico":  hist_dom,
+                })
+
+            # exames de laboratorio agrupados por parametro
+            lab_rows = conn_g.execute("""
+                SELECT COALESCE(ep.nome_oficial, r.parametro) AS param,
+                       r.valor, r.unidade, r.referencia, e.data_exame
+                FROM exame_resultados r
+                JOIN exames e ON r.exame_id = e.id
+                LEFT JOIN exames_padrao ep ON r.exame_padrao_id = ep.id
+                WHERE (""" + " OR ".join([f"LOWER(COALESCE(ep.nome_oficial, r.parametro)) LIKE ?" for _ in _TERMOS]) + """)
+                  AND r.valor IS NOT NULL AND r.valor != ''
+                ORDER BY param, e.data_exame DESC
+            """, [f"%{t}%" for t in _TERMOS]).fetchall()
+            conn_g.close()
+
+            _por_param = {}
+            for param, val, uni, ref, data in lab_rows:
+                key = (param or "").strip().lower()
+                if key not in _por_param:
+                    _por_param[key] = {"label": (param or "").strip().title(),
+                                       "registros": []}
+                _por_param[key]["registros"].append(
+                    {"valor": val, "unidade": uni or "", "referencia": ref or "",
+                     "data": data or "", "cor_val": _avaliar_cor_glic(val)})
+
+            for key, info in _por_param.items():
+                regs = info["registros"]
+                ult  = regs[0]
+                grupos.append({
+                    "label":       info["label"],
+                    "n":           len(regs),
+                    "ultimo_val":  str(ult["valor"]),
+                    "unidade":     ult["unidade"] or "mg/dL",
+                    "ultima_data": ult["data"],
+                    "referencia":  ult["referencia"],
+                    "cor_val":     _avaliar_cor_glic(ult["valor"]),
+                    "historico":   regs,
+                })
+
+        except Exception as ex:
+            log.warning("[HUB] overlay_glicemia: %s", ex)
+
+        abrir_overlay_exame(page, "Glicemia", COR, grupos,
+                            icone="water_drop_rounded")
 
     def _abrir_acido_urico():
         from telas.tela_acido_urico import criar_tela_acido_urico
@@ -1318,6 +1406,9 @@ def criar_tela_hub(page: ft.Page, voltar_fn=None, modo_medico: bool = False) -> 
 
     def _mk_click_uti(lbl, termos, cor):
         def _h(e, _lbl=lbl, _termos=termos, _cor=cor):
+            if _lbl == "Glicemia":
+                _abrir_glicemia()
+                return
             if _lbl == "Vitaminas":
                 ref_vit = next((r for r in _uti_refs if r["lbl"] == "Vitaminas"), None)
                 _score_txt = ref_vit["val"].value  if ref_vit else "--"
@@ -1780,7 +1871,7 @@ def criar_tela_hub(page: ft.Page, voltar_fn=None, modo_medico: bool = False) -> 
                                 "enoxaparina", "heparina", "fenitoina", "aciclovir",
                                 "fluconazol", "itraconazol"],
         }),
-        ("Visão & Audição", "sensors_rounded",    "#00BCD4", {
+        ("Visão & Audição", "visibility_rounded",  "#00BCD4", {
             "categorias":      ["Oftalmologia", "Audiologia"],
             "tipo_exame":      ["campo visual", "campimetria", "retinografia", "oct",
                                 "tonometria", "paquimetria", "biomicroscopia",
@@ -3392,12 +3483,599 @@ def criar_tela_hub(page: ft.Page, voltar_fn=None, modo_medico: bool = False) -> 
         sc.on_click = lambda e, l=slbl, i=sico, c=scor, cfg=scfg: _abrir_sistema(l, i, c, cfg)
         return sc
 
-    # layout 3 + 3
-    _s = _SISTEMAS
-    row_sistemas = ft.Column([
-        ft.Row([_card_sistema(*s) for s in _s[:3]], spacing=8),
-        ft.Row([_card_sistema(*s) for s in _s[3:6]], spacing=8),
-    ], spacing=8)
+    def _card_imagem(slbl, sico, scor, scfg, img_src, img_fit=ft.ImageFit.COVER):
+        sc = ft.Container(
+            content=ft.Image(
+                src=img_src,
+                fit=img_fit,
+                width=float("inf"),
+                height=float("inf"),
+            ),
+            bgcolor=CARD,
+            border=ft.border.all(1, ft.Colors.with_opacity(0.25, scor)),
+            border_radius=10,
+            padding=ft.padding.symmetric(horizontal=6, vertical=8),
+            expand=True, ink=True,
+            clip_behavior=ft.ClipBehavior.HARD_EDGE,
+            tooltip=slbl,
+            height=96,
+        )
+        sc.on_click = lambda e, l=slbl, i=sico, c=scor, cfg=scfg: _abrir_sistema(l, i, c, cfg)
+        return sc
+
+    _CARD_IMAGENS = {
+        "Ortopedia": ("assets/imagens.jpg", ft.ImageFit.COVER),
+        "Sangue":    ("assets/sangue.jpg",  ft.ImageFit.COVER),
+    }
+
+    def _build_card(s):
+        if s[0] == "Sangue":
+            img_src, img_fit = _CARD_IMAGENS["Sangue"]
+            card = _card_imagem("Exames de Sangue", s[1], s[2], s[3], img_src, img_fit)
+            card.on_click = lambda e: _navegar(
+                __import__("telas.tela_sangue", fromlist=["criar_tela_sangue"])
+                .criar_tela_sangue,
+                voltar_fn=_voltar_hub,
+            )
+            return card
+        if s[0] == "Ortopedia":
+            img_src, img_fit = _CARD_IMAGENS["Ortopedia"]
+            card = _card_imagem("Exames (outros)", s[1], s[2], s[3], img_src, img_fit)
+            card.on_click = lambda e: _navegar(
+                __import__("telas.tela_imagens", fromlist=["criar_tela_imagens"])
+                .criar_tela_imagens,
+                voltar_fn=_voltar_hub,
+            )
+            return card
+        if s[0] in _CARD_IMAGENS:
+            img_src, img_fit = _CARD_IMAGENS[s[0]]
+            return _card_imagem(s[0], s[1], s[2], s[3], img_src, img_fit)
+        return _card_sistema(*s)
+
+    # card Resumo do Dia
+    import os as _os_hub
+    _img_res_hub = _os_hub.path.join(
+        _os_hub.path.dirname(_os_hub.path.abspath(__file__)),
+        "..", "assets", "resumo.png")
+    if _os_hub.path.isfile(_img_res_hub):
+        _res_hub_content = ft.Image(
+            src=_img_res_hub, fit=ft.ImageFit.COVER,
+            width=float("inf"), expand=True)
+    else:
+        _res_hub_content = ft.Column([
+            ft.Icon("balance_rounded", size=18, color=AZUL),
+            ft.Text("Resumo", size=9, color=AZUL,
+                    weight=ft.FontWeight.W_600, text_align=ft.TextAlign.CENTER),
+        ], alignment=ft.MainAxisAlignment.CENTER,
+           horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+           spacing=3, tight=True)
+
+    card_resumo_hub = ft.Container(
+        content=_res_hub_content,
+        height=96, expand=True, border_radius=10,
+        clip_behavior=ft.ClipBehavior.HARD_EDGE,
+        bgcolor=CARD, tooltip="Resultado Energetico",
+        border=ft.border.all(1, ft.Colors.with_opacity(0.25, AZUL)),
+        ink=True,
+    )
+
+    def _click_resumo_hub(e=None):
+        # abre tela_rotina_diaria e dispara o overlay de resumo calorico
+        from telas.tela_rotina_diaria import criar_tela_rotina_diaria
+        from dados.model_prontuario import (
+            listar_templates, listar_momentos,
+            calcular_nutricao_momento as _cnm,
+            calcular_gasto_item as _cgi,
+            calcular_tmb as _ctmb,
+            calcular_vitaminas_minerais_rotina as _cvmr,
+            _VITS_LABEL as _VL,
+            DB_PATH as _DB,
+        )
+        import sqlite3 as _sq3, json as _json3
+
+        templates = listar_templates(so_ativos=True)
+
+        # ingestão
+        tot = {}
+        for t in templates:
+            for m in listar_momentos(t["id"]):
+                n = _cnm(m["id"])
+                if n:
+                    for k, v in n.items():
+                        if v: tot[k] = tot.get(k, 0.0) + float(v)
+        kcal_in = tot.get("kcal") or 0.0
+
+        # TMB
+        tmb_d = _ctmb()
+        tmb   = tmb_d.get("tmb") or 0.0
+        try:
+            with _sq3.connect(_DB, timeout=5) as _c3:
+                rp3 = _c3.execute("SELECT peso FROM perfil_usuario LIMIT 1").fetchone()
+            peso = float(rp3[0]) if rp3 and rp3[0] else 80.0
+        except Exception:
+            peso = 80.0
+
+        # gasto atividades
+        _TIPOS_G = {"exercicio", "trabalho", "estudo"}
+        kcal_ativ = 0.0
+        linhas_g  = []
+        for t in templates:
+            if t.get("tipo") not in _TIPOS_G: continue
+            hi = t.get("hora_inicio") or ""; hf = t.get("hora_fim") or ""
+            if not (hi and hf): continue
+            eh_f = t.get("tipo") == "exercicio" or bool(t.get("intensidade_fisica"))
+            r = _cgi(hi, hf,
+                     t.get("intensidade_fisica") if eh_f else None,
+                     t.get("intensidade_mental") if not eh_f else None,
+                     peso)
+            if not r: continue
+            kcal_ativ += r["kcal_gasto"]
+            h2 = r["duracao_min"] // 60; m2 = r["duracao_min"] % 60
+            dur = f"{h2}h{m2:02d}min" if h2 else f"{m2}min"
+            linhas_g.append((t["nome"], hi, hf, dur, r["kcal_gasto"]))
+
+        kcal_out  = tmb + kcal_ativ
+        saldo     = kcal_in - kcal_out
+        cor_s     = "#3FB950" if saldo >= 0 else "#DA3633"
+        sinal     = "+" if saldo >= 0 else ""
+
+        _LAR  = "#F0883E"; _BD2 = "#30363D"
+
+        def _row(lbl, val, unid, cor=TXT, bold=False):
+            return ft.Row([
+                ft.Text(lbl, size=12, color=MUT, expand=True),
+                ft.Text(f"{val:.0f}" if val is not None else "—",
+                        size=12, color=cor,
+                        weight=ft.FontWeight.W_700 if bold else ft.FontWeight.NORMAL),
+                ft.Text(f" {unid}", size=11, color=MUT),
+            ], spacing=2)
+
+        ref_ov = [None]
+        def _fechar(e=None):
+            if ref_ov[0] in page.overlay:
+                page.overlay.remove(ref_ov[0])
+            try: page.update()
+            except Exception: pass
+
+        def _abrir_ingredientes(item_nome, item_id, campo, unid, cor):
+            """Nivel 2: ingredientes de um item especifico."""
+            from dados.model_prontuario import (
+                _porcao_em_gramas as _peg, _nutricao_proporcional as _np,
+                carregar_nutricao as _cn, DB_PATH as _DB2,
+            )
+            import sqlite3 as _sq2
+
+            with _sq2.connect(_DB2, timeout=5) as _c:
+                ings = _c.execute("""
+                    SELECT ii.id, ii.tipo, ii.descricao, ii.quantidade, ii.unidade,
+                           ii.sub_receita_id, ii.calorias, ii.proteinas, ii.peso_unitario_g,
+                           r.nome
+                    FROM item_ingredientes ii
+                    LEFT JOIN receitas r ON r.id = ii.sub_receita_id
+                    WHERE ii.item_id=?
+                """, (item_id,)).fetchall()
+
+            linhas_ing = []
+            for iid, tipo, desc, qty, unid_i, sub_rid, cal_m, prot_m, peso_u, rec_nome in ings:
+                nome_ing = desc if tipo == "item" else (rec_nome or "Receita")
+                if (unid_i or "").strip() == "Unidade" and peso_u:
+                    try:    gramas = float(qty or 1) * peso_u
+                    except: gramas = peso_u
+                else:
+                    gramas = _peg(qty, unid_i or "g")
+                if tipo == "receita" and sub_rid:
+                    n = _cn("receita", sub_rid)
+                    ni = _np(n, gramas) if n else {}
+                else:
+                    n = _cn("ingrediente_item", iid)
+                    ni = _np(n, gramas) if n else {}
+                if not ni and cal_m:
+                    ni = {"kcal": cal_m * gramas / 100,
+                          "proteinas": (prot_m or 0) * gramas / 100}
+                v = ni.get(campo) or 0
+                qty_txt = f"{qty} {unid_i}".strip() if qty else ""
+                linhas_ing.append((nome_ing, qty_txt, v))
+
+            linhas_ing = [(n, q, v) for n, q, v in linhas_ing if v > 0]
+            linhas_ing.sort(key=lambda x: x[2], reverse=True)
+            total_ing = sum(x[2] for x in linhas_ing)
+
+            ref_ing = [None]
+            def _fechar_ing(e=None):
+                if ref_ing[0] in page.overlay:
+                    page.overlay.remove(ref_ing[0])
+                try: page.update()
+                except Exception: pass
+
+            col_ing = ft.Column(spacing=6, scroll=ft.ScrollMode.AUTO, expand=True)
+            if not linhas_ing:
+                col_ing.controls.append(
+                    ft.Text("Sem detalhamento de ingredientes.", size=12, color=MUT))
+            else:
+                for nome_ing, qty_txt, v in linhas_ing:
+                    pct = (v / total_ing * 100) if total_ing else 0
+                    card = ft.Container(
+                        content=ft.Column([
+                            ft.Row([
+                                ft.Text(nome_ing, size=12, color=TXT, expand=True),
+                                ft.Text(f"{v:.1f}".rstrip("0").rstrip("."),
+                                        size=13, color=cor, weight=ft.FontWeight.W_700),
+                                ft.Text(f" {unid}", size=11, color=MUT),
+                            ], spacing=2),
+                            ft.Row([
+                                ft.Text(qty_txt, size=10, color=MUT, expand=True),
+                                ft.Text(f"{pct:.0f}%", size=10, color=MUT),
+                            ], spacing=2),
+                            ft.ProgressBar(value=pct/100, color=cor,
+                                           bgcolor=_BD2, height=3),
+                        ], spacing=3, tight=True),
+                        bgcolor=CARD, border_radius=8,
+                        padding=ft.padding.symmetric(horizontal=12, vertical=8),
+                        border=ft.Border(
+                            left=ft.BorderSide(2, cor),
+                            top=ft.BorderSide(1, _BD2), bottom=ft.BorderSide(1, _BD2),
+                            right=ft.BorderSide(1, _BD2)),
+                    )
+                    col_ing.controls.append(card)
+
+                col_ing.controls.append(ft.Container(height=4))
+                col_ing.controls.append(ft.Container(
+                    content=ft.Row([
+                        ft.Text("TOTAL", size=11, color=MUT,
+                                weight=ft.FontWeight.W_700, expand=True),
+                        ft.Text(f"{total_ing:.1f}".rstrip("0").rstrip("."),
+                                size=14, color=cor, weight=ft.FontWeight.W_900),
+                        ft.Text(f" {unid}", size=11, color=MUT),
+                    ], spacing=2),
+                    bgcolor=CARD, border_radius=8,
+                    padding=ft.padding.symmetric(horizontal=12, vertical=10),
+                    border=ft.Border(
+                        left=ft.BorderSide(3, cor),
+                        top=ft.BorderSide(1, _BD2), bottom=ft.BorderSide(1, _BD2),
+                        right=ft.BorderSide(1, _BD2)),
+                ))
+
+            from shared.layout import Layout as _Lay4
+            _lay4 = _Lay4(page)
+            _cab_ing = _lay4.criar_cabecalho(
+                item_nome, _fechar_ing,
+                icone_titulo="format_list_bulleted_rounded", cor_titulo=cor)
+            ref_ing[0] = ft.Container(
+                content=ft.Column([
+                    ft.Container(height=_lay4.spacer_topo, bgcolor=BG),
+                    _cab_ing,
+                    ft.Container(
+                        content=col_ing, expand=True,
+                        padding=ft.padding.symmetric(horizontal=16, vertical=8)),
+                ], spacing=0, expand=True),
+                bgcolor=BG, expand=True)
+            page.overlay.append(ref_ing[0])
+            try: page.update()
+            except Exception: pass
+
+        def _abrir_analitico(titulo, campo, unid, cor):
+            """Nivel 1: template > item > valor. Click no item abre nivel 2 (ingredientes)."""
+            from dados.model_prontuario import (
+                calcular_nutricao_item as _cni2,
+                DB_PATH as _DB2,
+            )
+            import sqlite3 as _sq2
+
+            # monta lista: (tnome, iid, desc, qty, unid_item, val)
+            linhas = []
+            for t in templates:
+                for m in listar_momentos(t["id"]):
+                    with _sq2.connect(_DB2, timeout=5) as _c:
+                        itens_m = _c.execute(
+                            "SELECT id, descricao, quantidade, unidade FROM itens_momento WHERE momento_id=?",
+                            (m["id"],)
+                        ).fetchall()
+                    for iid, desc, qty, unid_item in itens_m:
+                        ni = _cni2(iid)
+                        v = ni.get(campo)
+                        if v:
+                            linhas.append((t["nome"], iid, desc, qty, unid_item, float(v)))
+
+            linhas.sort(key=lambda x: x[5], reverse=True)
+            total = sum(x[5] for x in linhas)
+
+            ref_an = [None]
+            def _fechar_an(e=None):
+                if ref_an[0] in page.overlay:
+                    page.overlay.remove(ref_an[0])
+                try: page.update()
+                except Exception: pass
+
+            col_itens = ft.Column(spacing=6, scroll=ft.ScrollMode.AUTO, expand=True)
+            if not linhas:
+                col_itens.controls.append(
+                    ft.Text("Nenhum item com dados nutricionais.", size=12, color=MUT))
+            else:
+                template_atual = ""
+                for tnome, iid, desc, qty, unid_item, val in linhas:
+                    if tnome != template_atual:
+                        template_atual = tnome
+                        col_itens.controls.append(ft.Container(
+                            content=ft.Row([
+                                ft.Icon("restaurant_rounded", size=11, color=VERD),
+                                ft.Text(tnome, size=10, color=VERD,
+                                        weight=ft.FontWeight.W_700),
+                            ], spacing=4),
+                            padding=ft.padding.only(top=6, bottom=2)))
+                    pct = (val / total * 100) if total else 0
+                    qty_txt = f"{qty} {unid_item}".strip() if qty else ""
+                    card = ft.Container(
+                        content=ft.Column([
+                            ft.Row([
+                                ft.Text(desc or "—", size=12, color=TXT, expand=True),
+                                ft.Text(f"{val:.1f}".rstrip("0").rstrip("."),
+                                        size=13, color=cor, weight=ft.FontWeight.W_700),
+                                ft.Text(f" {unid}", size=11, color=MUT),
+                                ft.Icon("chevron_right_rounded", size=12, color=MUT),
+                            ], spacing=2),
+                            ft.Row([
+                                ft.Text(qty_txt, size=10, color=MUT, expand=True),
+                                ft.Text(f"{pct:.0f}%", size=10, color=MUT),
+                            ], spacing=2),
+                            ft.ProgressBar(value=pct/100, color=cor,
+                                           bgcolor=_BD2, height=3),
+                        ], spacing=3, tight=True),
+                        bgcolor=CARD, border_radius=8, ink=True,
+                        padding=ft.padding.symmetric(horizontal=12, vertical=8),
+                        border=ft.Border(
+                            left=ft.BorderSide(2, cor),
+                            top=ft.BorderSide(1, _BD2), bottom=ft.BorderSide(1, _BD2),
+                            right=ft.BorderSide(1, _BD2)),
+                    )
+                    card.on_click = lambda e, n=desc, i=iid, _c=campo, _u=unid, _cr=cor: \
+                        _abrir_ingredientes(n or "Item", i, _c, _u, _cr)
+                    col_itens.controls.append(card)
+
+                col_itens.controls.append(ft.Container(height=4))
+                col_itens.controls.append(ft.Container(
+                    content=ft.Row([
+                        ft.Text("TOTAL", size=11, color=MUT,
+                                weight=ft.FontWeight.W_700, expand=True),
+                        ft.Text(f"{total:.1f}".rstrip("0").rstrip("."),
+                                size=14, color=cor, weight=ft.FontWeight.W_900),
+                        ft.Text(f" {unid}", size=11, color=MUT),
+                    ], spacing=2),
+                    bgcolor=CARD, border_radius=8,
+                    padding=ft.padding.symmetric(horizontal=12, vertical=10),
+                    border=ft.Border(
+                        left=ft.BorderSide(3, cor),
+                        top=ft.BorderSide(1, _BD2), bottom=ft.BorderSide(1, _BD2),
+                        right=ft.BorderSide(1, _BD2)),
+                ))
+
+            from shared.layout import Layout as _Lay3
+            _lay3 = _Lay3(page)
+            _cab_an = _lay3.criar_cabecalho(titulo, _fechar_an,
+                                            icone_titulo="analytics_rounded",
+                                            cor_titulo=cor)
+            ref_an[0] = ft.Container(
+                content=ft.Column([
+                    ft.Container(height=_lay3.spacer_topo, bgcolor=BG),
+                    _cab_an,
+                    ft.Container(
+                        content=col_itens, expand=True,
+                        padding=ft.padding.symmetric(horizontal=16, vertical=8)),
+                ], spacing=0, expand=True),
+                bgcolor=BG, expand=True)
+            page.overlay.append(ref_an[0])
+            try: page.update()
+            except Exception: pass
+
+        def _row_click(lbl, val, unid, cor=TXT, bold=False, campo=None):
+            """Linha clicavel — abre analitico se campo fornecido."""
+            txt_val = ft.Text(
+                f"{val:.0f}" if val is not None else "—",
+                size=12, color=cor,
+                weight=ft.FontWeight.W_700 if bold else ft.FontWeight.NORMAL)
+            row = ft.Container(
+                content=ft.Row([
+                    ft.Text(lbl, size=12, color=MUT, expand=True),
+                    txt_val,
+                    ft.Text(f" {unid}", size=11, color=MUT),
+                    ft.Icon("chevron_right_rounded", size=12, color=MUT)
+                    if campo else ft.Container(width=12),
+                ], spacing=2),
+                border_radius=6, ink=bool(campo),
+                padding=ft.padding.symmetric(vertical=2),
+            )
+            if campo:
+                row.on_click = lambda e, l=lbl, c=campo, u=unid, cr=cor: \
+                    _abrir_analitico(l, c, u, cr)
+            return row
+
+        from shared.layout import Layout as _Lay2
+        _lay2 = _Lay2(page)
+        cab = _lay2.criar_cabecalho("Resumo do Dia", _fechar,
+                                    icone_titulo="balance_rounded", cor_titulo=AZUL)
+
+        area = ft.Column(spacing=10, scroll=ft.ScrollMode.AUTO, expand=True)
+
+        # TMB
+        _tmb_completo = tmb_d.get("completo")
+        _tmb_info = (f"Mifflin-St Jeor · {tmb_d['sexo']} · {tmb_d['idade']} anos · "
+                     f"{peso:.0f}kg · {tmb_d['altura']:.0f}cm"
+                     if _tmb_completo
+                     else "Complete o perfil: peso, altura, data nasc. e sexo")
+
+        # vitaminas e minerais
+        _vits, _mins = _cvmr()
+
+        # ingestão — macros + micronutrientes
+        def _card_micro(titulo, icone, cor, dados):
+            aberto = [False]
+            rows_dados = [ft.Row([
+                ft.Text(_VL.get(k, k), size=11, color=SEC, expand=True),
+                ft.Text(f"{v:.1f}".rstrip("0").rstrip("."),
+                        size=12, color=TXT, weight=ft.FontWeight.W_600),
+                ft.Text(f" {u}", size=10, color=MUT),
+            ], spacing=2)
+            for k, (v, u) in sorted(dados.items(), key=lambda x: _VL.get(x[0], x[0]))]
+            corpo_col = ft.Column(rows_dados, spacing=4, visible=False)
+            seta = ft.Icon("expand_more_rounded", size=14, color=cor)
+            def _tog(e=None):
+                aberto[0] = not aberto[0]
+                corpo_col.visible = aberto[0]
+                seta.name = "expand_less_rounded" if aberto[0] else "expand_more_rounded"
+                try: page.update()
+                except Exception: pass
+            cab = ft.Container(
+                content=ft.Row([
+                    ft.Icon(icone, size=13, color=cor),
+                    ft.Text(titulo, size=10, color=cor, weight=ft.FontWeight.W_700, expand=True),
+                    ft.Text(f"{len(dados)} itens", size=10, color=MUT),
+                    seta,
+                ], spacing=6), ink=True,
+            )
+            cab.on_click = _tog
+            return ft.Column([
+                ft.Divider(height=1, color=_BD2),
+                cab, corpo_col,
+            ], spacing=4, tight=True)
+
+        _micro_widgets = []
+        if _vits:
+            _micro_widgets.append(_card_micro("VITAMINAS", "science_rounded", ROXO, _vits))
+        if _mins:
+            _micro_widgets.append(_card_micro("MINERAIS", "diamond_rounded", AZUL, _mins))
+
+        area.controls.append(ft.Container(
+            content=ft.Column([
+                ft.Row([ft.Icon("restaurant_rounded", size=14, color=VERD),
+                        ft.Text("INGESTÃO", size=10, color=VERD, weight=ft.FontWeight.W_700)], spacing=6),
+                ft.Divider(height=1, color=VERD),
+                _row_click("Energia",      kcal_in,                "kcal", _LAR, True,  "kcal"),
+                _row_click("Carboidratos", tot.get("carboidratos"), "g",   TXT,  False, "carboidratos"),
+                _row_click("Proteínas",    tot.get("proteinas"),    "g",   VERD, True,  "proteinas"),
+                _row_click("Gorduras",     tot.get("gorduras"),     "g",   TXT,  False, "gorduras"),
+                _row_click("Fibras",       tot.get("fibras"),       "g",   TXT,  False, "fibras"),
+                _row_click("Sódio",        tot.get("sodio"),        "mg",  TXT,  False, "sodio"),
+                *_micro_widgets,
+            ], spacing=6, tight=True),
+            bgcolor=CARD, border_radius=10, padding=ft.padding.all(14),
+            border=ft.Border(top=ft.BorderSide(1, BD), bottom=ft.BorderSide(1, BD),
+                             left=ft.BorderSide(3, VERD), right=ft.BorderSide(1, BD))))
+
+        # gasto atividades
+        linhas_ctrl = [
+            ft.Row([ft.Icon("local_fire_department_rounded", size=12, color=VERM),
+                    ft.Text(nome, size=12, color=TXT, expand=True),
+                    ft.Text(f"{hi}–{hf}  {dur}", size=10, color=MUT),
+                    ft.Text(f"−{kcal:.0f} kcal", size=12, color=VERM,
+                            weight=ft.FontWeight.W_600)], spacing=6)
+            for nome, hi, hf, dur, kcal in linhas_g
+        ] or [ft.Text("Nenhuma atividade com horario definido.", size=11, color=MUT)]
+
+        area.controls.append(ft.Container(
+            content=ft.Column([
+                ft.Row([ft.Icon("directions_run_rounded", size=14, color=VERM),
+                        ft.Text("GASTO POR ATIVIDADE", size=10, color=VERM,
+                                weight=ft.FontWeight.W_700)], spacing=6),
+                ft.Divider(height=1, color=VERM),
+                *linhas_ctrl,
+                ft.Divider(height=1, color=_BD2),
+                _row("Atividades",        kcal_ativ, "kcal", VERM, True),
+                ft.Row([
+                    ft.Text("TMB (basal)", size=12, color=MUT, expand=True),
+                    ft.Text(f"−{tmb:.0f}" if _tmb_completo else "—",
+                            size=12, color=VERM if _tmb_completo else MUT,
+                            weight=ft.FontWeight.W_700 if _tmb_completo else ft.FontWeight.NORMAL),
+                    ft.Text(" kcal" if _tmb_completo else "", size=11, color=MUT),
+                ], spacing=2),
+                ft.Text(_tmb_info, size=9, color=MUT if _tmb_completo else _LAR),
+                _row("Gasto total do dia", kcal_out,  "kcal", VERM, True),
+            ], spacing=6, tight=True),
+            bgcolor=CARD, border_radius=10, padding=ft.padding.all(14),
+            border=ft.Border(top=ft.BorderSide(1, BD), bottom=ft.BorderSide(1, BD),
+                             left=ft.BorderSide(3, VERM), right=ft.BorderSide(1, BD))))
+
+        # saldo
+        icon_s = "trending_up_rounded" if saldo >= 0 else "trending_down_rounded"
+        area.controls.append(ft.Container(
+            content=ft.Column([
+                ft.Row([ft.Icon("balance_rounded", size=14, color=AZUL),
+                        ft.Text("SALDO DO DIA", size=10, color=AZUL,
+                                weight=ft.FontWeight.W_700)], spacing=6),
+                ft.Divider(height=1, color=AZUL),
+                ft.Row([ft.Icon(icon_s, size=20, color=cor_s),
+                        ft.Text(f"{sinal}{saldo:.0f} kcal", size=22, color=cor_s,
+                                weight=ft.FontWeight.W_900)], spacing=8,
+                       vertical_alignment=ft.CrossAxisAlignment.CENTER),
+                ft.Row([ft.Text("Ingestão", size=11, color=MUT, expand=True),
+                        ft.Text(f"+{kcal_in:.0f} kcal", size=11, color=_LAR)], spacing=4),
+                ft.Row([ft.Text("Gasto", size=11, color=MUT, expand=True),
+                        ft.Text(f"−{kcal_out:.0f} kcal", size=11, color=VERM)], spacing=4),
+                ft.ProgressBar(
+                    value=min(kcal_in / kcal_out, 1.0) if kcal_out > 0 else 1.0,
+                    color=cor_s, bgcolor=_BD2, height=6),
+            ], spacing=8, tight=True),
+            bgcolor=CARD, border_radius=10, padding=ft.padding.all(14),
+            border=ft.Border(top=ft.BorderSide(1, BD), bottom=ft.BorderSide(1, BD),
+                             left=ft.BorderSide(3, AZUL), right=ft.BorderSide(1, BD))))
+
+        ref_ov[0] = ft.Container(
+            content=ft.Column([
+                ft.Container(height=_lay2.spacer_topo, bgcolor=BG),
+                cab,
+                ft.Container(content=area, expand=True,
+                             padding=ft.padding.symmetric(horizontal=16, vertical=8)),
+            ], spacing=0, expand=True),
+            bgcolor=BG, expand=True)
+        page.overlay.append(ref_ov[0])
+        try: page.update()
+        except Exception: pass
+
+    card_resumo_hub.on_click = _click_resumo_hub
+
+    # card Checkup com imagem
+    import os as _os_ck
+    _img_ck = _os_ck.path.join(
+        _os_ck.path.dirname(_os_ck.path.abspath(__file__)),
+        "..", "assets", "checkup.jpg")
+    card_checkup_hub = ft.Container(
+        content=ft.Image(
+            src=_img_ck, fit=ft.ImageFit.COVER,
+            width=float("inf"), height=float("inf"),
+        ),
+        bgcolor=CARD,
+        border=ft.border.all(1, ft.Colors.with_opacity(0.25, VERD)),
+        border_radius=10,
+        padding=ft.padding.symmetric(horizontal=6, vertical=8),
+        expand=True, ink=True,
+        clip_behavior=ft.ClipBehavior.HARD_EDGE,
+        tooltip="Checkup de Saúde",
+        height=96,
+    )
+    card_checkup_hub.on_click = lambda e: _navegar(
+        __import__("telas.tela_checkup", fromlist=["criar_tela_checkup"])
+        .criar_tela_checkup,
+        voltar_fn=_voltar_hub,
+    )
+
+    # sistemas que NAO estao na silhueta + resumo + checkup em rows de 4
+    _SISTEMAS_SILHUETA = {"Cardiaco", "Visceral", "Psiquiatria", "Visão & Audição"}
+    _todos = [s for s in _SISTEMAS if s[0] not in _SISTEMAS_SILHUETA] + [None, "checkup"]
+    _rows_sis = []
+    for i in range(0, len(_todos), 4):
+        grupo = _todos[i:i+4]
+        cards = []
+        for s in grupo:
+            if s is None:
+                cards.append(card_resumo_hub)
+            elif s == "checkup":
+                cards.append(card_checkup_hub)
+            else:
+                cards.append(_build_card(s))
+        # preencher linha se menos de 4
+        while len(cards) < 4:
+            cards.append(ft.Container(expand=True))
+        _rows_sis.append(ft.Row(cards, spacing=8))
+
+    row_sistemas = ft.Column(_rows_sis, spacing=8)
 
     # ══════════════════════════════════════════════════════════
     # RESUMO — Linha do Tempo, Remédios, Rotina, Consultas
@@ -3416,9 +4094,9 @@ def criar_tela_hub(page: ft.Page, voltar_fn=None, modo_medico: bool = False) -> 
                 ft.Text(label, size=8, color=SEC, text_align=ft.TextAlign.CENTER),
             ], alignment=ft.MainAxisAlignment.CENTER,
                horizontal_alignment=ft.CrossAxisAlignment.CENTER,
-               spacing=3),
+               spacing=3, tight=True),
             bgcolor=CARD, border=ft.border.all(1, BD),
-            border_radius=8, padding=7, expand=True,
+            border_radius=8, padding=7, expand=True, height=72,
             alignment=ft.alignment.Alignment(0, 0), ink=True,
         )
         c.on_click = lambda e: fn()
@@ -3433,13 +4111,13 @@ def criar_tela_hub(page: ft.Page, voltar_fn=None, modo_medico: bool = False) -> 
                          _lazy_fn("tela_diagnosticos", "criar_tela_diagnosticos")),
             _card_resumo(txt_n_remedios, "Medicacao",   "medication_rounded",     VERD,
                          _lazy_fn("tela_remedios", "criar_tela_remedios", readonly=True)),
-        ], spacing=8),
+        ], spacing=8, height=72),
         ft.Row([
-            _card_resumo(txt_n_rotinas,  "Rotina Diaria","calendar_today_rounded", AZUL,
+            _card_resumo(txt_n_rotinas,  "Rotinas","today_rounded", AZUL,
                          _lazy_fn("tela_rotina_diaria", "criar_tela_rotina_diaria")),
             _card_resumo(txt_n_consultas,"Compromissos", "event_note_rounded",     ROXO,
                          _lazy_fn("tela_compromissos", "criar_tela_compromissos")),
-        ], spacing=8, visible=not modo_medico),
+        ], spacing=8, height=72, visible=not modo_medico),
     ], spacing=8)
 
     # ══════════════════════════════════════════════════════════
@@ -3523,7 +4201,7 @@ def criar_tela_hub(page: ft.Page, voltar_fn=None, modo_medico: bool = False) -> 
         ("Mais",    "grid_view_rounded",         SEC),
     ]
     barra_abas_row = ft.Row(spacing=0)
-    area_conteudo  = ft.ListView(spacing=12, padding=ft.padding.all(16), expand=True)
+    area_conteudo  = ft.Column(spacing=12, scroll=ft.ScrollMode.AUTO, expand=True)
 
     def _rebuild_abas():
         barra_abas_row.controls.clear()
@@ -3552,15 +4230,153 @@ def criar_tela_hub(page: ft.Page, voltar_fn=None, modo_medico: bool = False) -> 
                 tab.on_click = lambda e, idx=i: _trocar_aba(idx)
             barra_abas_row.controls.append(tab)
 
+    # ── Silhueta anatomica ───────────────────────────────────
+    def _criar_widget_silhueta():
+        try:
+            from telas.silhueta_orgaos import criar_silhueta
+            larg = min(int((page.width or 380) - 32), 580)
+
+            # Mapa orgao -> (label, icone, cor, cfg_sistema)
+            def _cfg(label):
+                return next((cfg for lbl, ico, cor, cfg in _SISTEMAS if lbl == label), {})
+            def _ico(label):
+                return next((ico for lbl, ico, cor, cfg in _SISTEMAS if lbl == label), "")
+            def _cor(label):
+                return next((cor for lbl, ico, cor, cfg in _SISTEMAS if lbl == label), SEC)
+
+            _ORGAO_SISTEMA = {
+                "coracao":  ("Cardiaco", _ico("Cardiaco"), _cor("Cardiaco"), _cfg("Cardiaco")),
+                "coracao2": ("Cardiaco", _ico("Cardiaco"), _cor("Cardiaco"), _cfg("Cardiaco")),
+                "visceral": ("Visceral",    _ico("Visceral"),    _cor("Visceral"),    _cfg("Visceral")),
+                "cerebro":  ("Psiquiatria",    _ico("Psiquiatria"),    _cor("Psiquiatria"),    _cfg("Psiquiatria")),
+                "olhos":    ("Visão & Audição", _ico("Visão & Audição"), _cor("Visão & Audição"), _cfg("Visão & Audição")),
+                "urinario": None,  # TODO: tela urinario/prostata/penis a definir
+            }
+
+            def _on_orgao(nome_id: str):
+                entry = _ORGAO_SISTEMA.get(nome_id)
+                if entry is None:
+                    # Orgao mapeado mas tela ainda nao definida
+                    snack = ft.SnackBar(
+                        content=ft.Text("Em desenvolvimento...", color="#E6EDF3"),
+                        bgcolor="#161B22",
+                    )
+                    page.overlay.append(snack)
+                    snack.open = True
+                    try: page.update()
+                    except Exception: pass
+                elif entry:
+                    _abrir_sistema(entry[0], entry[1], entry[2], entry[3])
+
+            return ft.Container(
+                content=ft.Column([
+                    ft.Text(
+                        "Clique no Órgão que Deseja Pesquisar",
+                        size=12, color=SEC, text_align="center",
+                        weight=ft.FontWeight.W_600,
+                    ),
+                    ft.Container(height=6),
+                    criar_silhueta(
+                        page,
+                        on_orgao_click=_on_orgao,
+                        largura=larg,
+                        mostrar_borda=False,
+                    ),
+                ], horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+                   spacing=0, tight=True),
+                alignment=ft.alignment.center,
+                padding=ft.padding.symmetric(vertical=8),
+            )
+        except Exception as ex:
+            log.warning("[HUB] silhueta erro: %s", ex)
+            return ft.Container(height=0)
+
+    _widget_silhueta = _criar_widget_silhueta()
+
     # ── ABA 0: Inicio ────────────────────────────────────────
+    _claudia_aberta = [False]
+    _monitor_aberto = [False]
+    _resumo_aberto  = [False]
+
+    _claudia_corpo  = ft.Column([card_claudia],     visible=False, spacing=0)
+    _monitor_corpo  = ft.Column([card_monitor_uti], visible=False, spacing=0)
+    _resumo_corpo   = ft.Column([row_resumo],       visible=False, spacing=8)
+
+    _ico_claudia = ft.Icon("expand_more_rounded", size=14, color=ROXO)
+    _ico_monitor = ft.Icon("expand_more_rounded", size=14, color=SEC)
+    _ico_resumo  = ft.Icon("expand_more_rounded", size=14, color=ROXO)
+
+    def _toggle_claudia(e=None):
+        _claudia_aberta[0] = not _claudia_aberta[0]
+        _claudia_corpo.visible = _claudia_aberta[0]
+        _ico_claudia.name = ("expand_less_rounded" if _claudia_aberta[0]
+                             else "expand_more_rounded")
+        try: page.update()
+        except Exception: pass
+
+    def _toggle_monitor(e=None):
+        _monitor_aberto[0] = not _monitor_aberto[0]
+        _monitor_corpo.visible = _monitor_aberto[0]
+        _ico_monitor.name = ("expand_less_rounded" if _monitor_aberto[0]
+                             else "expand_more_rounded")
+        try: page.update()
+        except Exception: pass
+
+    def _toggle_resumo(e=None):
+        _resumo_aberto[0] = not _resumo_aberto[0]
+        _resumo_corpo.visible = _resumo_aberto[0]
+        _ico_resumo.name = ("expand_less_rounded" if _resumo_aberto[0]
+                            else "expand_more_rounded")
+        try: page.update()
+        except Exception: pass
+
+    _header_claudia = ft.Container(
+        content=ft.Row([
+            ft.Icon("auto_awesome_rounded", size=12, color=ROXO),
+            ft.Text("CLAUDIA", size=10, weight=ft.FontWeight.W_700, color=ROXO),
+            ft.Container(expand=True),
+            _ico_claudia,
+        ], spacing=6),
+        padding=ft.padding.symmetric(horizontal=4, vertical=4),
+        border_radius=8, ink=True,
+    )
+    _header_claudia.on_click = _toggle_claudia
+
+    _header_monitor = ft.Container(
+        content=ft.Row([
+            ft.Icon("monitor_heart_rounded", size=12, color="#FF7675"),
+            ft.Text("MONITOR VITAL", size=10, weight=ft.FontWeight.W_700, color=SEC),
+            ft.Container(expand=True),
+            _ico_monitor,
+        ], spacing=6),
+        padding=ft.padding.symmetric(horizontal=4, vertical=4),
+        border_radius=8, ink=True,
+    )
+    _header_monitor.on_click = _toggle_monitor
+
+    _header_resumo = ft.Container(
+        content=ft.Row([
+            ft.Icon("insights_rounded", size=12, color=ROXO),
+            ft.Text("RESUMO", size=10, weight=ft.FontWeight.W_700, color=ROXO),
+            ft.Container(expand=True),
+            _ico_resumo,
+        ], spacing=6),
+        padding=ft.padding.symmetric(horizontal=4, vertical=4),
+        border_radius=8, ink=True,
+    )
+    _header_resumo.on_click = _toggle_resumo
+
     def _conteudo_inicio():
         return [
-            card_claudia,
-            card_monitor_uti,
+            _header_claudia,
+            _claudia_corpo,
+            _header_monitor,
+            _monitor_corpo,
+            _header_resumo,
+            _resumo_corpo,
             _secao_titulo("SISTEMAS", "category_rounded", AZUL),
+            _widget_silhueta,
             row_sistemas,
-            _secao_titulo("RESUMO", "insights_rounded", ROXO),
-            row_resumo,
         ]
 
     # ── ABA 2: Clinico ───────────────────────────────────────
@@ -3606,17 +4422,29 @@ def criar_tela_hub(page: ft.Page, voltar_fn=None, modo_medico: bool = False) -> 
             ]
         else:
             itens = [
+                _btn_item("health_and_safety_rounded", "Checkup de Saude",
+                          "Visao geral — alertas, sistemas e tendencias", VERD,
+                          _lazy_fn("tela_checkup", "criar_tela_checkup")),
+                _btn_item("favorite_rounded", "Sistema Cardiaco",
+                          "Diagnosticos, exames, historico, medicos e remedios",
+                          "#FF6B6B",
+                          _lazy_fn("tela_orgao_cardiaco",
+                                   "criar_tela_orgao_cardiaco")),
+                _btn_item("diagnosis_rounded", "Diagnosticos",
+                          "Todos os diagnosticos medicos", AZUL,
+                          _lazy_fn("tela_diagnosticos",
+                                   "criar_tela_diagnosticos")),
                 _btn_item("event_note_rounded", "Compromissos",
                           "Consultas, coletas e fisioterapia", VERD,
                           _lazy_fn("tela_compromissos", "criar_tela_compromissos")),
                 _btn_item("medication_rounded", "Medicacao",
                           "Remedios e suplementos", AMAR,
                           _lazy_fn("tela_remedios", "criar_tela_remedios")),
-                _btn_item("calendar_today_rounded", "Rotinas Diarias",
-                          "Templates de habitos e alimentacao", VERD,
-                          _lazy_fn("tela_rotinas", "criar_tela_rotinas")),
-                _btn_item("menu_book_rounded", "Diario de Saude",
-                          "Agua, desafios, suspensoes e sintomas", AZUL,
+                _btn_item("storefront_rounded", "Fornecedores",
+                          "Farmacias e fornecedores", ROXO,
+                          _lazy_fn("tela_fornecedores", "criar_tela_fornecedores")),
+                _btn_item("today_rounded", "Rotinas Diarias",
+                          "Agua do dia e rotinas de habitos", AZUL,
                           _lazy_fn("tela_rotina_diaria", "criar_tela_rotina_diaria")),
                 _btn_item("psychology_rounded", "Claudia IA",
                           "Conversar com Claudia", ROXO,
@@ -3719,6 +4547,9 @@ def criar_tela_hub(page: ft.Page, voltar_fn=None, modo_medico: bool = False) -> 
                 _item("local_hospital_rounded", "Clinicas",
                       "Locais de atendimento", AZUL,
                       _lazy_fn("tela_clinicas", "criar_tela_clinicas")),
+                _item("storefront_rounded", "Fornecedores",
+                      "Farmacias e fornecedores", VERD,
+                      _lazy_fn("tela_fornecedores", "criar_tela_fornecedores")),
                 _item("link_rounded", "Links Medico",
                       "Tokens de acesso", AZUL,
                       _lazy_fn("tela_links_medico", "criar_tela_links_medico")),
@@ -3743,6 +4574,13 @@ def criar_tela_hub(page: ft.Page, voltar_fn=None, modo_medico: bool = False) -> 
         area_conteudo.controls.clear()
         idx = aba_ativa[0]
         if idx == 0:
+            # garante estado consistente dos dropdowns
+            _claudia_aberta[0] = False; _claudia_corpo.visible = False
+            _monitor_aberto[0] = False; _monitor_corpo.visible = False
+            _resumo_aberto[0]  = False; _resumo_corpo.visible  = False
+            _ico_claudia.name  = "expand_more_rounded"
+            _ico_monitor.name  = "expand_more_rounded"
+            _ico_resumo.name   = "expand_more_rounded"
             area_conteudo.controls.extend(_conteudo_inicio())
         elif idx == 2:
             area_conteudo.controls.extend(_conteudo_clinico())
@@ -4421,7 +5259,7 @@ def criar_tela_hub(page: ft.Page, voltar_fn=None, modo_medico: bool = False) -> 
     corpo = ft.Column([
         ft.Container(height=28, bgcolor=BG),
         header,
-        area_conteudo,
+        ft.Container(content=area_conteudo, expand=True, bgcolor=BG),
         row_sync,
         ft.Container(
             content=ft.Text(f"v{APP_VERSAO}", size=10, color=MUT,

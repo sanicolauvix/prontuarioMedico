@@ -25,6 +25,7 @@ def _e_sem_creditos(ex: Exception) -> bool:
 
 
 _MODELO = "claude-sonnet-4-6"
+_MAX_TOKENS_OUT = 4096   # tokens de saida — aumentado para PDFs com muitos parametros
 _MAX_TEXTO = 12000   # chars — suficiente para qualquer laudo; evita estourar tokens
 
 _SYSTEM = (
@@ -46,7 +47,7 @@ Se MULTIPLOS LAUDOS detectados, retorne SOMENTE:
   "multiplos_laudos": true,
   "laboratorio": "nome do lab ou null",
   "paciente_nome": "NOME COMPLETO EM MAIUSCULAS ou null",
-  "data_exame": "YYYY-MM-DD ou null",
+  "data_exame": "YYYY-MM-DD ou null (data de coleta/exame — NUNCA data de emissao ou liberacao do laudo)",
   "medico_solicit": "nome do medico ou null",
   "laudos": [
     {{
@@ -68,7 +69,7 @@ Se EXAME UNICO, retorne JSON com este formato exato (sem comentarios, sem texto 
 {{
   "laboratorio": "nome do laboratorio (ex: MedSenior, Cremasco, Pretti, Virchow)",
   "paciente_nome": "NOME COMPLETO EM MAIUSCULAS ou null",
-  "data_exame": "YYYY-MM-DD ou null",
+  "data_exame": "YYYY-MM-DD ou null (data de coleta/exame — NUNCA data de emissao ou liberacao do laudo)",
   "medico_solicit": "nome do medico solicitante ou null",
   "tipo": "numerico",
   "tipo_exame": "nome(s) dos exames principais separados por virgula (ex: TSH, SHBG)",
@@ -91,6 +92,14 @@ Regras obrigatorias:
 - tipo "laudo": laudos descritivos (histopatologico, parasitologico, urocultura, endoscopia) -> resultados=[], laudo={{tipo_exame,texto_completo,resumo,conclusao}}
 - tipo "mapa": MAPA de pressao arterial ambulatorial -> resultados com PA sist/diast/FC, laudo com resumo
 - parametro: nome canonico portugues padronizado, sem abreviacoes desnecessarias
+- data_exame: use SEMPRE a data de coleta (campo "Data coleta", "Data..", "Data do exame"), NUNCA "Emissao", "Liberado em" ou data de impressao do laudo
+- NUNCA use "Valor de referencia", "Valores de referencia", "Resultado", "Material", "Metodo" ou qualquer label/cabecalho como nome do parametro
+- O nome do parametro e sempre o nome clinico do exame (ex: Ureia, Creatinina, Sodio, Potassio, Troponina I de Alta Sensibilidade, Tempo de Protrombina)
+- Formato MedSenior: nome do exame aparece como TITULO sozinho em MAIUSCULAS, depois "Valor de referencia:" numa linha separada, depois "Resultado: X unidade   ref". Exemplo:
+    UREIA                          <- este e o nome = "Ureia"
+    Valor de referencia:           <- ignorar este label
+    Resultado: 56,5 mg/dL ...      <- valor=56.5 unidade=mg/dL
+  -> parametro:"Ureia", valor:56.5, unidade:"mg/dL", ref_min:16.6, ref_max:48.5
 - valor: numero float (ponto como decimal), null se nao houver valor numerico claro
 - ref_min/ref_max: float ou null; extraia do intervalo de referencia (ex: "13,2 a 89,5" -> 13.2, 89.5)
 - Para intervalos por sexo/idade, use o intervalo masculino adulto como padrao
@@ -123,7 +132,7 @@ def extrair_via_api(texto: str, nome_arquivo: str = "") -> dict | None:
     try:
         resp = client.messages.create(
             model=_MODELO,
-            max_tokens=2048,
+            max_tokens=_MAX_TOKENS_OUT,
             system=_SYSTEM,
             messages=[{
                 "role": "user",
@@ -197,7 +206,7 @@ retorne SOMENTE este formato:
   "multiplos_laudos": true,
   "laboratorio": "nome do lab",
   "paciente_nome": "NOME COMPLETO EM MAIUSCULAS ou null",
-  "data_exame": "YYYY-MM-DD ou null",
+  "data_exame": "YYYY-MM-DD ou null (data de coleta/exame — NUNCA data de emissao ou liberacao do laudo)",
   "medico_solicit": "nome do medico ou null",
   "laudos": [
     {
@@ -219,7 +228,7 @@ Se o PDF contiver apenas UM laudo/exame, retorne:
 {
   "laboratorio": "nome do lab",
   "paciente_nome": "NOME COMPLETO EM MAIUSCULAS ou null",
-  "data_exame": "YYYY-MM-DD ou null",
+  "data_exame": "YYYY-MM-DD ou null (data de coleta/exame — NUNCA data de emissao ou liberacao do laudo)",
   "medico_solicit": "nome do medico ou null",
   "tipo": "numerico" ou "laudo",
   "tipo_exame": "nome do exame (ex: EDA, Colonoscopia, TSH)",

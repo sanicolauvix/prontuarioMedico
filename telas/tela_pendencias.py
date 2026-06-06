@@ -712,6 +712,396 @@ def _bloco_secao(icone, titulo, n, cor, conteudo_col):
 
 
 # ══════════════════════════════════════════════════════════════
+# ABA ESPECIALIDADES DOS MÉDICOS
+# ══════════════════════════════════════════════════════════════
+
+def _aba_especialidades(page, voltar_fn):
+    from dados.model_prontuario import DB_PATH
+
+    lista    = ft.Column(spacing=6)
+    txt_info = ft.Text("", size=12, color=SEC)
+
+    def _snack(msg, cor=VERD):
+        page.snack_bar = ft.SnackBar(ft.Text(msg, color=TXT), bgcolor=CARD)
+        page.snack_bar.open = True
+        page.update()
+
+    def _recarregar():
+        nova = criar_tela_pendencias(page, voltar_fn=voltar_fn)
+        page.controls.clear()
+        page.controls.append(nova)
+        page.update()
+
+    def _salvar_especialidade(medico_id, dd, txt_esp):
+        esp = dd.value or txt_esp.value.strip()
+        if not esp:
+            _snack("Informe a especialidade.", AMAR)
+            return
+        conn = sqlite3.connect(DB_PATH, timeout=30)
+        conn.execute(
+            "UPDATE medicos SET especialidade=? WHERE id=?",
+            (esp, medico_id)
+        )
+        conn.commit()
+        conn.close()
+        _snack(f"Especialidade salva: {esp}", VERD)
+        _recarregar()
+
+    def carregar():
+        lista.controls.clear()
+        conn = sqlite3.connect(DB_PATH, timeout=30)
+        rows = conn.execute("""
+            SELECT m.id, m.nome, m.crm,
+                   COUNT(DISTINCT c.id) as consultas,
+                   COUNT(DISTINCT e.id) as exames
+            FROM medicos m
+            LEFT JOIN consultas c  ON c.medico_id  = m.id
+            LEFT JOIN exames    e  ON e.medico_id  = m.id
+            WHERE m.ativo = 1
+              AND (m.especialidade IS NULL OR m.especialidade = '')
+              AND (m.especialidade_id IS NULL)
+            GROUP BY m.id
+            ORDER BY (consultas + exames) DESC, m.nome
+        """).fetchall()
+
+        especialidades_opcoes = conn.execute(
+            "SELECT nome FROM especialidades ORDER BY nome"
+        ).fetchall()
+        conn.close()
+
+        opcoes = [ft.dropdown.Option(r[0]) for r in especialidades_opcoes]
+
+        txt_info.value = (
+            f"{len(rows)} médico(s) sem especialidade" if rows
+            else "Todos os médicos com especialidade ✓"
+        )
+
+        if not rows:
+            lista.controls.append(ft.Container(
+                content=ft.Column([
+                    ft.Icon("check_circle_outline_rounded", size=44, color=VERD),
+                    ft.Text("Todos os médicos classificados!", size=15,
+                            color=VERD, weight=ft.FontWeight.W_600),
+                ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=8),
+                alignment=ft.alignment.Alignment(0, 0), padding=40,
+            ))
+            page.update()
+            return
+
+        for mid, nome, crm, consultas, exames in rows:
+            dd = ft.Dropdown(
+                label="Especialidade",
+                label_style=ft.TextStyle(color=SEC, size=11),
+                text_style=ft.TextStyle(color=TXT, size=12),
+                bgcolor=BG, border_color=BD, focused_border_color=AZUL,
+                border_radius=6,
+                content_padding=ft.padding.symmetric(horizontal=8, vertical=4),
+                options=opcoes,
+                expand=True,
+            )
+            txt_esp = ft.TextField(
+                label="Ou digitar",
+                label_style=ft.TextStyle(color=SEC, size=11),
+                text_style=ft.TextStyle(color=TXT, size=12),
+                bgcolor=BG, border_color=BD, focused_border_color=AZUL,
+                border_radius=6,
+                content_padding=ft.padding.symmetric(horizontal=8, vertical=6),
+                width=160,
+            )
+            btn = ft.Container(
+                content=ft.Row([
+                    ft.Icon("save_outlined_rounded", size=14, color=BG),
+                    ft.Text("Salvar", size=12, color=BG, weight=ft.FontWeight.W_600),
+                ], spacing=4, tight=True),
+                bgcolor=AZUL, border_radius=7, ink=True,
+                padding=ft.padding.symmetric(horizontal=12, vertical=8),
+            )
+            btn.on_click = lambda e, m=mid, d=dd, t=txt_esp: _salvar_especialidade(m, d, t)
+
+            lista.controls.append(ft.Container(
+                content=ft.Column([
+                    ft.Row([
+                        ft.Icon("person_outlined_rounded", size=14, color=AZUL),
+                        ft.Text(nome, size=13, color=TXT,
+                                weight=ft.FontWeight.W_600, expand=True),
+                        ft.Text(f"CRM {crm}" if crm else "", size=10, color=MUT),
+                    ], spacing=8, vertical_alignment=ft.CrossAxisAlignment.CENTER),
+                    ft.Text(
+                        f"{consultas} consulta(s) · {exames} exame(s) associado(s)",
+                        size=11, color=SEC,
+                    ),
+                    ft.Row([dd, txt_esp, btn], spacing=8,
+                           vertical_alignment=ft.CrossAxisAlignment.CENTER),
+                ], spacing=8),
+                bgcolor=CARD, border_radius=8,
+                padding=ft.padding.symmetric(horizontal=12, vertical=12),
+                border=_borda_esq(AZUL),
+            ))
+
+        page.update()
+
+    carregar()
+    return ft.Column([
+        ft.Row([txt_info], vertical_alignment=ft.CrossAxisAlignment.CENTER),
+        lista,
+    ], spacing=8, expand=True)
+
+
+# ══════════════════════════════════════════════════════════════
+# ABA CLASSIFICAÇÃO DE EXAMES
+# ══════════════════════════════════════════════════════════════
+
+def _aba_classificacao(page, voltar_fn):
+    from dados.model_prontuario import DB_PATH
+
+    lista    = ft.Column(spacing=6)
+    txt_info = ft.Text("", size=12, color=SEC)
+
+    def _snack(msg, cor=VERD):
+        page.snack_bar = ft.SnackBar(ft.Text(msg, color=TXT), bgcolor=CARD)
+        page.snack_bar.open = True
+        page.update()
+
+    def _recarregar():
+        nova = criar_tela_pendencias(page, voltar_fn=voltar_fn)
+        page.controls.clear()
+        page.controls.append(nova)
+        page.update()
+
+    def _salvar_grupo(exame_id, dd):
+        gid = dd.value
+        if not gid:
+            _snack("Selecione um grupo.", AMAR)
+            return
+        conn = sqlite3.connect(DB_PATH, timeout=30)
+        conn.execute("UPDATE exames SET grupo_id=? WHERE id=?", (int(gid), exame_id))
+        conn.commit()
+        conn.close()
+        _snack("Grupo salvo.", VERD)
+        _recarregar()
+
+    def carregar():
+        lista.controls.clear()
+        conn = sqlite3.connect(DB_PATH, timeout=30)
+
+        rows = conn.execute("""
+            SELECT e.id, e.tipo_exame, e.laboratorio, e.data_exame,
+                   e.tipo, p.nome as paciente
+            FROM exames e
+            LEFT JOIN pacientes p ON e.paciente_id = p.id
+            WHERE e.grupo_id IS NULL
+            ORDER BY e.data_exame DESC
+        """).fetchall()
+
+        grupos = conn.execute(
+            "SELECT id, nome, tipo FROM grupos_exame WHERE ativo=1 ORDER BY tipo, ordem"
+        ).fetchall()
+        conn.close()
+
+        txt_info.value = (
+            f"{len(rows)} exame(s) sem classificação" if rows
+            else "Todos os exames classificados ✓"
+        )
+
+        if not rows:
+            lista.controls.append(ft.Container(
+                content=ft.Column([
+                    ft.Icon("check_circle_outline_rounded", size=44, color=VERD),
+                    ft.Text("Todos os exames classificados!", size=15,
+                            color=VERD, weight=ft.FontWeight.W_600),
+                ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=8),
+                alignment=ft.alignment.Alignment(0, 0), padding=40,
+            ))
+            page.update()
+            return
+
+        # Organiza opções por tipo
+        _icone_tipo = {"sangue": "bloodtype_rounded",
+                       "imagem": "image_search_rounded",
+                       "outros": "more_horiz_rounded"}
+        opcoes = []
+        tipo_atual = ""
+        for gid, gnome, gtipo in grupos:
+            if gtipo != tipo_atual:
+                opcoes.append(ft.dropdown.Option(
+                    key=f"__{gtipo}",
+                    text=f"── {gtipo.upper()} ──",
+                    disabled=True,
+                ))
+                tipo_atual = gtipo
+            opcoes.append(ft.dropdown.Option(key=str(gid), text=gnome))
+
+        for eid, tipo_exame, lab, data, tipo, paciente in rows:
+            cor_tipo = AZUL if tipo == "numerico" else LAR
+            icone_tipo = "science_rounded" if tipo == "numerico" else "description_rounded"
+
+            dd = ft.Dropdown(
+                label="Selecionar grupo",
+                label_style=ft.TextStyle(color=SEC, size=11),
+                text_style=ft.TextStyle(color=TXT, size=12),
+                bgcolor=BG, border_color=BD, focused_border_color=AZUL,
+                border_radius=6,
+                content_padding=ft.padding.symmetric(horizontal=8, vertical=4),
+                options=opcoes,
+                expand=True,
+            )
+            btn = ft.Container(
+                content=ft.Row([
+                    ft.Icon("save_outlined_rounded", size=14, color=BG),
+                    ft.Text("Salvar", size=12, color=BG, weight=ft.FontWeight.W_600),
+                ], spacing=4, tight=True),
+                bgcolor=VERD, border_radius=7, ink=True,
+                padding=ft.padding.symmetric(horizontal=12, vertical=8),
+            )
+            btn.on_click = lambda e, m=eid, d=dd: _salvar_grupo(m, d)
+
+            lista.controls.append(ft.Container(
+                content=ft.Column([
+                    ft.Row([
+                        ft.Icon(icone_tipo, size=14, color=cor_tipo),
+                        ft.Text(tipo_exame or "Sem tipo", size=13, color=TXT,
+                                weight=ft.FontWeight.W_600, expand=True),
+                        ft.Text(str(data or "")[:10], size=10, color=MUT),
+                    ], spacing=8, vertical_alignment=ft.CrossAxisAlignment.CENTER),
+                    ft.Row([
+                        ft.Text(lab or "Lab desconhecido", size=11, color=SEC),
+                        ft.Text("·", size=11, color=MUT),
+                        ft.Text(paciente or "Paciente desconhecido", size=11, color=SEC),
+                    ], spacing=4),
+                    ft.Row([dd, btn], spacing=8,
+                           vertical_alignment=ft.CrossAxisAlignment.CENTER),
+                ], spacing=8),
+                bgcolor=CARD, border_radius=8,
+                padding=ft.padding.symmetric(horizontal=12, vertical=12),
+                border=_borda_esq(AMAR),
+            ))
+
+        page.update()
+
+    carregar()
+    return ft.Column([
+        ft.Row([txt_info], vertical_alignment=ft.CrossAxisAlignment.CENTER),
+        lista,
+    ], spacing=8, expand=True)
+
+
+# ══════════════════════════════════════════════════════════════
+# ABA 5 — SISTEMA (exames_padrao sem sistema)
+# ══════════════════════════════════════════════════════════════
+
+def _aba_sistema(page, voltar_fn):
+    from dados.model_prontuario import DB_PATH
+
+    lista    = ft.Column(spacing=6)
+    txt_info = ft.Text("", size=12, color=SEC)
+
+    _SISTEMAS_OPCOES = [
+        "Cardiaco", "Visceral", "Psiquiatria",
+        "Ortopedia", "Sangue", "Visao & Audicao",
+    ]
+
+    def _snack(msg, cor=VERD):
+        page.snack_bar = ft.SnackBar(ft.Text(msg, color=TXT), bgcolor=CARD)
+        page.snack_bar.open = True
+        page.update()
+
+    def _recarregar():
+        nova = criar_tela_pendencias(page, voltar_fn=voltar_fn)
+        page.controls.clear()
+        page.controls.append(nova)
+        page.update()
+
+    def _salvar_sistema(ep_id, dd):
+        val = dd.value
+        if not val:
+            _snack("Selecione um sistema.", AMAR)
+            return
+        conn = sqlite3.connect(DB_PATH, timeout=30)
+        conn.execute("UPDATE exames_padrao SET sistema=? WHERE id=?", (val, ep_id))
+        conn.commit()
+        conn.close()
+        _snack("Sistema salvo.", VERD)
+        _recarregar()
+
+    def carregar():
+        lista.controls.clear()
+        conn = sqlite3.connect(DB_PATH, timeout=30)
+        rows = conn.execute("""
+            SELECT ep.id, ep.nome_oficial, ep.categoria, ep.grupo_id,
+                   g.nome as grupo_nome
+            FROM exames_padrao ep
+            LEFT JOIN grupos_exame g ON g.id = ep.grupo_id
+            WHERE ep.sistema IS NULL AND ep.ativo = 1
+            ORDER BY ep.nome_oficial
+        """).fetchall()
+        conn.close()
+
+        txt_info.value = (
+            f"{len(rows)} exame(s) sem sistema definido" if rows
+            else "Todos os exames com sistema definido ✓"
+        )
+
+        if not rows:
+            lista.controls.append(ft.Container(
+                content=ft.Column([
+                    ft.Icon("check_circle_outline_rounded", size=44, color=VERD),
+                    ft.Text("Todos os exames com sistema!", size=15,
+                            color=VERD, weight=ft.FontWeight.W_600),
+                ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=8),
+                alignment=ft.alignment.Alignment(0, 0), padding=40,
+            ))
+            page.update()
+            return
+
+        opcoes = [ft.dropdown.Option(s) for s in _SISTEMAS_OPCOES]
+
+        for ep_id, nome, categoria, grupo_id, grupo_nome in rows:
+            dd = ft.Dropdown(
+                label="Selecionar sistema",
+                label_style=ft.TextStyle(color=SEC, size=11),
+                text_style=ft.TextStyle(color=TXT, size=12),
+                bgcolor=BG, border_color=BD, focused_border_color=ROXO,
+                border_radius=6,
+                content_padding=ft.padding.symmetric(horizontal=8, vertical=4),
+                options=opcoes,
+                expand=True,
+            )
+            btn = ft.Container(
+                content=ft.Row([
+                    ft.Icon("save_outlined_rounded", size=14, color=BG),
+                    ft.Text("Salvar", size=12, color=BG, weight=ft.FontWeight.W_600),
+                ], spacing=4, tight=True),
+                bgcolor=ROXO, border_radius=7, ink=True,
+                padding=ft.padding.symmetric(horizontal=12, vertical=8),
+            )
+            btn.on_click = lambda e, m=ep_id, d=dd: _salvar_sistema(m, d)
+
+            lista.controls.append(ft.Container(
+                content=ft.Column([
+                    ft.Row([
+                        ft.Icon("biotech_rounded", size=14, color=ROXO),
+                        ft.Text(nome or "Sem nome", size=13, color=TXT,
+                                weight=ft.FontWeight.W_600, expand=True),
+                    ], spacing=8),
+                    ft.Text(grupo_nome or categoria or "Sem grupo", size=11, color=SEC),
+                    ft.Row([dd, btn], spacing=8,
+                           vertical_alignment=ft.CrossAxisAlignment.CENTER),
+                ], spacing=8),
+                bgcolor=CARD, border_radius=8,
+                padding=ft.padding.symmetric(horizontal=12, vertical=12),
+                border=_borda_esq(ROXO),
+            ))
+
+        page.update()
+
+    carregar()
+    return ft.Column([
+        ft.Row([txt_info], vertical_alignment=ft.CrossAxisAlignment.CENTER),
+        lista,
+    ], spacing=8, expand=True)
+
+
+# ══════════════════════════════════════════════════════════════
 # TELA PRINCIPAL COM ABAS
 # ══════════════════════════════════════════════════════════════
 
@@ -722,27 +1112,76 @@ def criar_tela_pendencias(page: ft.Page, voltar_fn=None):
     conteudo  = ft.Column(spacing=0, expand=True)
     abas_row  = ft.Row(spacing=0)
 
+    _ABAS = [
+        ("Parâmetros",      LAR),
+        ("PDFs",            SALM),
+        ("Conferência",     AMAR),
+        ("Especialidades",  AZUL),
+        ("Classificação",   VERD),
+        ("Sistema",         ROXO),
+    ]
+
+    def _contar_pendencias():
+        """Conta pendências de cada aba para exibir badges."""
+        from dados.model_prontuario import DB_PATH
+        from dados.limpeza import buscar_nao_identificados
+        try:
+            conn = sqlite3.connect(DB_PATH, timeout=10)
+            n_pdfs   = conn.execute("SELECT COUNT(*) FROM pdfs_incompativeis").fetchone()[0]
+            n_conf   = conn.execute("""
+                SELECT COUNT(*) FROM exames WHERE tipo='numerico'
+                AND NOT EXISTS (SELECT 1 FROM exame_resultados r WHERE r.exame_id=exames.id)
+            """).fetchone()[0]
+            n_esp    = conn.execute("""
+                SELECT COUNT(*) FROM medicos
+                WHERE ativo=1 AND (especialidade IS NULL OR especialidade='')
+                AND especialidade_id IS NULL
+            """).fetchone()[0]
+            n_class  = conn.execute(
+                "SELECT COUNT(*) FROM exames WHERE grupo_id IS NULL"
+            ).fetchone()[0]
+            n_sis    = conn.execute(
+                "SELECT COUNT(*) FROM exames_padrao WHERE sistema IS NULL AND ativo=1"
+            ).fetchone()[0]
+            conn.close()
+            n_param = len(buscar_nao_identificados())
+        except Exception:
+            n_param = n_pdfs = n_conf = n_esp = n_class = n_sis = 0
+        return [n_param, n_pdfs, n_conf, n_esp, n_class, n_sis]
+
+    _counts = _contar_pendencias()
+
     def _renderizar_abas():
         abas_row.controls.clear()
-        for i, (label, cor) in enumerate([
-            ("Parâmetros", LAR),
-            ("PDFs Incompatíveis", SALM),
-            ("Conferência", AMAR),
-        ]):
+        for i, (label, cor) in enumerate(_ABAS):
             ativo = aba_ativa[0] == i
+            n     = _counts[i]
             def _click(e, idx=i):
                 aba_ativa[0] = idx
                 _renderizar_abas()
                 _carregar_aba()
+
+            badge = ft.Container(
+                content=ft.Text(str(n), size=9, color=cor if n > 0 else VERD,
+                                weight=ft.FontWeight.W_700),
+                bgcolor=ft.Colors.with_opacity(0.18, cor if n > 0 else VERD),
+                border_radius=8,
+                padding=ft.padding.symmetric(horizontal=5, vertical=1),
+                visible=True,
+            ) if n > 0 else ft.Container(width=0)
+
             abas_row.controls.append(
                 ft.GestureDetector(
                     content=ft.Container(
-                        content=ft.Text(
-                            label, size=13,
-                            color=TXT if ativo else SEC,
-                            weight=ft.FontWeight.W_600 if ativo else ft.FontWeight.W_400,
-                        ),
-                        padding=ft.padding.symmetric(horizontal=16, vertical=10),
+                        content=ft.Row([
+                            ft.Text(
+                                label, size=13,
+                                color=TXT if ativo else SEC,
+                                weight=ft.FontWeight.W_600 if ativo else ft.FontWeight.W_400,
+                            ),
+                            badge,
+                        ], spacing=4, tight=True),
+                        padding=ft.padding.symmetric(horizontal=14, vertical=10),
                         border=ft.Border(
                             bottom=ft.BorderSide(2, cor if ativo else "transparent")
                         ),
@@ -754,12 +1193,19 @@ def criar_tela_pendencias(page: ft.Page, voltar_fn=None):
 
     def _carregar_aba():
         conteudo.controls.clear()
-        if aba_ativa[0] == 0:
+        idx = aba_ativa[0]
+        if idx == 0:
             conteudo.controls.append(_aba_parametros(page, voltar_fn))
-        elif aba_ativa[0] == 1:
+        elif idx == 1:
             conteudo.controls.append(_aba_incompativeis(page, voltar_fn))
-        else:
+        elif idx == 2:
             conteudo.controls.append(_aba_conferencia(page, voltar_fn))
+        elif idx == 3:
+            conteudo.controls.append(_aba_especialidades(page, voltar_fn))
+        elif idx == 4:
+            conteudo.controls.append(_aba_classificacao(page, voltar_fn))
+        elif idx == 5:
+            conteudo.controls.append(_aba_sistema(page, voltar_fn))
         page.update()
 
     _renderizar_abas()

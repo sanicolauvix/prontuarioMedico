@@ -658,6 +658,54 @@ def editar_foto(path_rel: str, operacao: str) -> str:
         return ""
 
 
+def criar_thumb_drive(
+    page,
+    path_local: str,
+    drive_file_id: str,
+    largura: int = 52,
+    altura: int = 52,
+    border_radius: int = 6,
+    icone_vazio: str = "image_rounded",
+    cor_vazio: str = "#BC8CFF",
+    on_click_viewer=None,
+) -> ft.Container:
+    """
+    Cria um Container thumbnail que exibe foto do Drive.
+
+    - Se o arquivo ja existe localmente (path_local ou cache), exibe imediatamente.
+    - Se so existe no Drive, baixa em background e atualiza o widget ao concluir.
+    - on_click_viewer(path_local): chamado ao clicar na thumbnail (opcional).
+
+    Padrao definitivo Koios para exibicao de fotos em listas.
+    """
+    thumb = ft.Container(
+        width=largura, height=altura, border_radius=border_radius,
+        clip_behavior=ft.ClipBehavior.ANTI_ALIAS,
+        content=ft.Icon(icone_vazio, size=largura // 2, color=cor_vazio),
+        bgcolor=ft.Colors.with_opacity(0.12, cor_vazio),
+        alignment=ft.alignment.center,
+    )
+
+    def _aplicar(src: str):
+        thumb.content   = ft.Image(src=src, width=largura, height=altura,
+                                   fit=ft.ImageFit.COVER, border_radius=border_radius)
+        thumb.bgcolor   = None
+        thumb.alignment = None
+        if on_click_viewer:
+            thumb.on_click = lambda e, p=src: on_click_viewer(p)
+        try: page.update()
+        except Exception: pass
+
+    if drive_file_id:
+        src_cache = resolver_foto(path_local, drive_file_id, on_baixado=_aplicar)
+        if src_cache:
+            _aplicar(src_cache)
+    elif path_local and os.path.exists(path_local):
+        _aplicar(path_local)
+
+    return thumb
+
+
 def upload_foto_imediato(
     page,
     path_abs: str,

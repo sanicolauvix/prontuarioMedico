@@ -13,7 +13,7 @@ from shared.layout import Layout
 from shared.auth import IS_ANDROID
 from dados.model_prontuario import (
     listar_consultas, salvar_consulta, listar_medicos,
-    salvar_receita, listar_receitas,
+    salvar_receita, listar_receitas_laudos as listar_receitas, excluir_receita,
     listar_clinicas, normalizar_data as _norm_data,
     listar_remedios, iniciar_periodo_uso, vincular_receita_remedio,
     listar_periodos_uso, total_dias_uso,
@@ -583,23 +583,149 @@ def _tela_receita(page, consulta, voltar_fn, pode_editar=True):
                 content=ft.Text("Nenhuma receita cadastrada.", color=SEC, size=13),
                 padding=ft.padding.symmetric(vertical=12),
             ))
+
         for r in recs:
-            foto = r.get("foto_path") or ""
-            if foto and _os.path.exists(foto):
-                thumb = ft.Container(
-                    content=ft.Image(src=foto, width=52, height=52,
-                                     fit=ft.ImageFit.COVER, border_radius=6),
-                    width=52, height=52, border_radius=6,
-                    clip_behavior=ft.ClipBehavior.ANTI_ALIAS,
-                    ink=True, on_click=lambda e, p=foto: _abrir_viewer(p),
+            rec_id   = r.get("id")
+            foto     = r.get("foto_path") or ""
+            drive_id = r.get("drive_file_id") or ""
+            no_drive = not drive_id
+
+            from utils.foto_picker import criar_thumb_drive
+            thumb = criar_thumb_drive(
+                page, foto, drive_id,
+                largura=52, altura=52, border_radius=6,
+                icone_vazio="receipt_long_rounded", cor_vazio=ROXO,
+                on_click_viewer=_abrir_viewer,
+            )
+
+            # Badge "sem Drive" se foto existe localmente mas não foi enviada
+            badge_drive = ft.Container(
+                content=ft.Text("sem Drive", size=9, color=AMAR,
+                                weight=ft.FontWeight.W_600),
+                bgcolor=ft.Colors.with_opacity(0.15, AMAR),
+                border_radius=4,
+                padding=ft.padding.symmetric(horizontal=6, vertical=2),
+                visible=no_drive and bool(foto),
+            )
+
+            def _excluir(e, rid=rec_id, fpath=foto, fid=drive_id):
+                def _confirmar():
+                    # Remove do Drive se tiver drive_id
+                    if fid:
+                        def _del_drive():
+                            try:
+                                from utils.drive_sync import _get_creds
+                                import urllib.request as _ur
+                                creds = _get_creds()
+                                req = _ur.Request(
+                                    f"https://www.googleapis.com/drive/v3/files/{fid}",
+                                    headers={"Authorization": f"Bearer {creds.token}"},
+                                    method="DELETE",
+                                )
+                                _ur.urlopen(req, timeout=10)
+                            except Exception as ex:
+                                logger.warning("[RECEITA] delete Drive: %s", ex)
+                        threading.Thread(target=_del_drive, daemon=True).start()
+                    excluir_receita(rid)
+                    _carregar_lista()
+
+                # Overlay de confirmação
+                ov = [None]
+                def _fechar(e=None):
+                    if ov[0] in page.overlay: page.overlay.remove(ov[0])
+                    try: page.update()
+                    except Exception: pass
+                btn_sim = ft.Container(
+                    content=ft.Text("Excluir", size=13, color=VERM,
+                                    weight=ft.FontWeight.W_600),
+                    bgcolor=ft.Colors.with_opacity(0.10, VERM), border_radius=8,
+                    padding=ft.padding.symmetric(horizontal=20, vertical=10),
+                    ink=True, on_click=lambda e: (_fechar(), _confirmar()),
+                    border=ft.Border(
+                        top=ft.BorderSide(1, ft.Colors.with_opacity(0.4, VERM)),
+                        bottom=ft.BorderSide(1, ft.Colors.with_opacity(0.4, VERM)),
+                        left=ft.BorderSide(1, ft.Colors.with_opacity(0.4, VERM)),
+                        right=ft.BorderSide(1, ft.Colors.with_opacity(0.4, VERM)),
+                    ),
                 )
-            else:
-                thumb = ft.Container(
-                    content=ft.Icon("receipt_long_rounded", size=22, color=ROXO),
-                    width=52, height=52, border_radius=6,
-                    bgcolor=ft.Colors.with_opacity(0.12, ROXO),
-                    alignment=ft.alignment.center,
+                btn_nao = ft.Container(
+                    content=ft.Text("Cancelar", size=13, color=SEC),
+                    bgcolor=BD, border_radius=8,
+                    padding=ft.padding.symmetric(horizontal=20, vertical=10),
+                    ink=True, on_click=_fechar,
                 )
+                ov[0] = ft.Container(
+                    content=ft.Container(
+                        content=ft.Column([
+                            ft.Icon("delete_outline_rounded", size=32, color=VERM),
+                            ft.Container(height=8),
+                            ft.Text("Excluir receita?", size=15, color=TXT,
+                                    weight=ft.FontWeight.W_700,
+                                    text_align=ft.TextAlign.CENTER),
+                            ft.Text("A imagem será removida do Drive e do banco.",
+                                    size=12, color=SEC, text_align=ft.TextAlign.CENTER),
+                            ft.Container(height=16),
+                            ft.Row([btn_nao, btn_sim], spacing=8,
+                                   alignment=ft.MainAxisAlignment.CENTER),
+                        ], horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+                           tight=True, spacing=4),
+                        bgcolor=CARD, border_radius=14,
+                        padding=ft.padding.all(24), width=300,
+                        border=ft.border.all(1, BD2),
+                    ),
+                    bgcolor="#CC000000", expand=True, alignment=ft.Alignment(0, 0),
+                    on_click=_fechar,
+                )
+                page.overlay.append(ov[0])
+                try: page.update()
+                except Exception: pass
+
+            def _reenviar_drive(e, fpath=foto, rid=rec_id, cid=consulta["id"]):
+                if not fpath or not _os.path.exists(fpath):
+                    return
+                fechar = lay.loading("Reenviando para o Drive...")
+                def _run():
+                    try:
+                        import sqlite3 as _sql
+                        from utils.drive_prontuario import upload_receita as _up
+                        from dados.model_prontuario import DB_PATH as _DB
+                        drive_id_novo, nome_novo = _up(fpath, cid)
+                        with _sql.connect(_DB, timeout=10) as conn:
+                            conn.execute(
+                                "UPDATE receitas SET drive_file_id=?, nome_arquivo=? WHERE id=?",
+                                (drive_id_novo, nome_novo, rid),
+                            )
+                        logger.info("[RECEITA] reenvio Drive OK: %s", drive_id_novo)
+                    except Exception as ex:
+                        logger.error("reenviar Drive: %s", ex)
+                    finally:
+                        page.pubsub.send_all({"_tipo": "_rec_reenvio_ok"})
+
+                def _on_reenvio(msg):
+                    if isinstance(msg, dict) and msg.get("_tipo") == "_rec_reenvio_ok":
+                        fechar()
+                        _carregar_lista()
+                page.pubsub.subscribe(_on_reenvio)
+                threading.Thread(target=_run, daemon=True).start()
+
+            # Menu 3 pontos
+            item_excluir = ft.PopupMenuItem(text="Excluir receita")
+            item_excluir.on_click = _excluir
+
+            menu_itens = [item_excluir]
+
+            if no_drive and foto and _os.path.exists(foto):
+                item_reenviar = ft.PopupMenuItem(text="Reenviar para Drive")
+                item_reenviar.on_click = _reenviar_drive
+                menu_itens.insert(0, item_reenviar)
+
+            btn_menu = ft.PopupMenuButton(
+                icon="more_vert_rounded",
+                icon_color=MUT,
+                icon_size=18,
+                items=menu_itens,
+            )
+
             lista_rec.controls.append(ft.Container(
                 content=ft.Row([
                     thumb,
@@ -608,8 +734,13 @@ def _tela_receita(page, consulta, voltar_fn, pode_editar=True):
                                 color=TXT, weight=ft.FontWeight.W_600),
                         ft.Text(r.get("observacoes") or "", size=11, color=SEC,
                                 max_lines=2),
-                    ], spacing=2, expand=True),
-                    ft.Text(_para_display(r.get("data") or ""), size=11, color=MUT),
+                        badge_drive,
+                    ], spacing=2, expand=True, tight=True),
+                    ft.Column([
+                        ft.Text(_para_display(r.get("data") or ""), size=11, color=MUT),
+                        btn_menu,
+                    ], spacing=4, horizontal_alignment=ft.CrossAxisAlignment.END,
+                       tight=True),
                 ], spacing=10, vertical_alignment=ft.CrossAxisAlignment.CENTER),
                 bgcolor=CARD, border_radius=10,
                 padding=ft.padding.symmetric(horizontal=12, vertical=10),
@@ -759,14 +890,16 @@ def _tela_receita(page, consulta, voltar_fn, pode_editar=True):
                     content.append({"type": "image", "source": {
                         "type": "base64", "media_type": mime, "data": img_b64}})
                 content.append({"type": "text", "text": (
-                    f"Estas sao {n} foto(s) de uma receita medica (podem ser frente e verso "
-                    "ou paginas diferentes da mesma receita). "
-                    "Extraia e liste TODOS os medicamentos prescritos com: "
-                    "nome, dosagem, frequencia e duracao. "
-                    "Formato: um por linha, ex:\n"
-                    "• Amoxicilina 500mg — 1 capsula de 8 em 8h por 7 dias\n"
-                    "Se nao conseguir ler algum campo, use '?'. "
-                    "Responda apenas a lista consolidada, sem introducao."
+                    f"Estas sao {n} foto(s) de uma receita medica brasileira com letra possivelmente ilegivel.\n\n"
+                    "REGRAS CRITICAS:\n"
+                    "1. Use o contexto clinico para inferir nomes de medicamentos com grafia ruim.\n"
+                    "   Ex: 'Rimina', 'Litmine', 'Ritaline' -> provavelmente 'Ritalina' (metilfenidato).\n"
+                    "2. Considere a especialidade do medico e outros remedios para inferir nomes.\n"
+                    "3. NUNCA descarte um item por nao reconhecer — inclua com sua melhor interpretacao.\n\n"
+                    "Extraia TODOS os medicamentos e retorne APENAS um JSON array valido, sem markdown:\n"
+                    '[{"nome":"nome correto","nome_original":"como esta escrito",'
+                    '"dosagem":"10mg ou null","frequencia":"1cp 2x/dia ou null",'
+                    '"observacoes":"instrucoes ou null","confianca":"alta|media|baixa"}]'
                 )})
                 client = get_client()
                 resp = client.messages.create(
@@ -774,8 +907,18 @@ def _tela_receita(page, consulta, voltar_fn, pode_editar=True):
                     max_tokens=1500,
                     messages=[{"role": "user", "content": content}],
                 )
-                texto = "".join(b.text for b in resp.content if hasattr(b, "text"))
-                page.pubsub.send_all({"_tipo": "rec_ia_comp", "texto": texto.strip()})
+                import re as _re, json as _json
+                raw = "".join(b.text for b in resp.content if hasattr(b, "text")).strip()
+                try:
+                    m = _re.search(r'\[.*\]', raw, _re.DOTALL)
+                    remedios_json = _json.loads(m.group()) if m else []
+                except Exception:
+                    remedios_json = []
+                page.pubsub.send_all({
+                    "_tipo": "rec_ia_comp",
+                    "texto": raw,
+                    "remedios": remedios_json,
+                })
             except Exception as ex:
                 logger.error("_extrair_ia receita: %s", ex)
                 page.pubsub.send_all({"_tipo": "rec_ia_comp", "erro": str(ex)[:100]})
@@ -787,6 +930,8 @@ def _tela_receita(page, consulta, voltar_fn, pode_editar=True):
         def _on_ia(msg):
             if not isinstance(msg, dict) or msg.get("_tipo") != "rec_ia_comp":
                 return
+            btn_extrair.disabled = False
+            progress_ia.visible  = False
             if "erro" in msg:
                 txt_status_ia.value = f"Erro IA: {msg['erro']}"
                 txt_status_ia.color = VERM
@@ -794,12 +939,173 @@ def _tela_receita(page, consulta, voltar_fn, pode_editar=True):
                 except Exception: pass
                 return
 
-            txt_instrucoes.value = msg["texto"]
-            txt_status_ia.value  = "Extracao concluida — revise e salve"
-            txt_status_ia.color  = VERD
+            raw      = msg.get("texto", "")
+            remedios = msg.get("remedios") or []
 
-            # Montar painel de vínculo com remédios cadastrados
-            _montar_vinculos(msg["texto"])
+            txt_instrucoes.value = raw
+            if remedios:
+                txt_status_ia.value = f"✓ {len(remedios)} medicamento(s) — revise e confirme"
+                txt_status_ia.color = VERD
+                try: page.update()
+                except Exception: pass
+                _abrir_overlay_remedios(remedios)
+            else:
+                txt_status_ia.value = "Nenhum medicamento identificado"
+                txt_status_ia.color = AMAR
+                try: page.update()
+                except Exception: pass
+
+        def _abrir_overlay_remedios(remedios_list):
+            """Overlay com campos editáveis para revisar e confirmar os remédios extraídos."""
+            ref_ov = [None]
+
+            def _fechar(e=None):
+                if ref_ov[0] in page.overlay:
+                    page.overlay.remove(ref_ov[0])
+                try: page.update()
+                except Exception: pass
+
+            itens_ui = []
+            for r in remedios_list:
+                confianca  = r.get("confianca", "alta")
+                nome_orig  = r.get("nome_original", "")
+                cor_conf   = VERD if confianca == "alta" else AMAR if confianca == "media" else VERM
+                label_conf = {"alta": "leitura segura", "media": "⚠ inferido", "baixa": "⚠ incerto"}.get(confianca, "")
+                sel = ft.Checkbox(value=True, active_color=VERD)
+                fn  = ft.TextField(
+                    value=r.get("nome") or nome_orig,
+                    label="Medicamento (edite se necessário)",
+                    bgcolor="#0D1117", border_color=BD2, focused_border_color=VERD,
+                    label_style=ft.TextStyle(color=SEC, size=10),
+                    text_style=ft.TextStyle(color=TXT, size=13),
+                    border_radius=6, expand=True,
+                )
+                fd = ft.TextField(
+                    value=r.get("dosagem") or "",
+                    label="Dosagem",
+                    bgcolor="#0D1117", border_color=BD2, focused_border_color=VERD,
+                    label_style=ft.TextStyle(color=SEC, size=10),
+                    text_style=ft.TextStyle(color=TXT, size=12),
+                    border_radius=6, width=110,
+                )
+                ff = ft.TextField(
+                    value=r.get("frequencia") or "",
+                    label="Frequência",
+                    bgcolor="#0D1117", border_color=BD2, focused_border_color=VERD,
+                    label_style=ft.TextStyle(color=SEC, size=10),
+                    text_style=ft.TextStyle(color=TXT, size=12),
+                    border_radius=6, expand=True,
+                )
+                itens_ui.append({
+                    "sel": sel, "fn": fn, "fd": fd, "ff": ff,
+                    "obs": r.get("observacoes"),
+                    "nome_orig": nome_orig, "cor_conf": cor_conf, "label_conf": label_conf,
+                })
+
+            cards_col = ft.Column(spacing=8)
+            for it in itens_ui:
+                aviso = []
+                if it["nome_orig"] and it["nome_orig"] != (it["fn"].value or ""):
+                    aviso.append(ft.Row([
+                        ft.Icon("warning_amber_rounded", size=12, color=it["cor_conf"]),
+                        ft.Text(f"Escrito: \"{it['nome_orig']}\" — {it['label_conf']}",
+                                size=10, color=it["cor_conf"], italic=True),
+                    ], spacing=4))
+                cards_col.controls.append(ft.Container(
+                    content=ft.Column([
+                        ft.Row([it["sel"], it["fn"]], spacing=6,
+                               vertical_alignment=ft.CrossAxisAlignment.CENTER),
+                        *aviso,
+                        ft.Row([it["fd"], it["ff"]], spacing=6),
+                    ], spacing=4),
+                    bgcolor=BD, border_radius=8,
+                    padding=ft.padding.symmetric(horizontal=10, vertical=10),
+                    border=ft.Border(
+                        top=ft.BorderSide(1, BD2), bottom=ft.BorderSide(1, BD2),
+                        left=ft.BorderSide(2, it["cor_conf"]), right=ft.BorderSide(1, BD2),
+                    ),
+                ))
+
+            txt_result = ft.Text("", size=12, color=VERD)
+
+            def _confirmar_remedios(e=None):
+                from dados.model_prontuario import registrar_receita_remedios
+                selecionados = []
+                for it in itens_ui:
+                    if not it["sel"].value: continue
+                    nome_val = (it["fn"].value or "").strip()
+                    if not nome_val: continue
+                    selecionados.append({
+                        "nome":        nome_val,
+                        "dosagem":     (it["fd"].value or "").strip() or None,
+                        "frequencia":  (it["ff"].value or "").strip() or None,
+                        "observacoes": it.get("obs"),
+                    })
+                if not selecionados:
+                    txt_result.value = "Nenhum medicamento selecionado."
+                    txt_result.color = AMAR
+                    try: page.update()
+                    except Exception: pass
+                    return
+                resultado = registrar_receita_remedios(
+                    remedios_extraidos=selecionados,
+                    receita_id=_receita_id_salva[0],
+                    consulta_id=consulta.get("id"),
+                    medico_id=consulta.get("medico_id"),
+                    data_consulta=consulta.get("data") or datetime.date.today().isoformat(),
+                )
+                novos = sum(1 for r in resultado if not r["ja_existia"])
+                atua  = sum(1 for r in resultado if r["ja_existia"])
+                partes = []
+                if novos: partes.append(f"{novos} cadastrado(s)")
+                if atua:  partes.append(f"{atua} atualizado(s)")
+                txt_result.value = "✓ " + ", ".join(partes)
+                txt_result.color = VERD
+                try: page.update()
+                except Exception: pass
+                import threading as _thr
+                _thr.Timer(1.5, _fechar).start()
+
+            btn_conf = ft.Container(
+                content=ft.Row([
+                    ft.Icon("medication_rounded", size=14, color=BG),
+                    ft.Text("Confirmar e salvar", size=13, color=BG, weight=ft.FontWeight.W_600),
+                ], spacing=6, tight=True, alignment=ft.MainAxisAlignment.CENTER),
+                bgcolor=VERD, border_radius=10, ink=True, expand=True,
+                padding=ft.padding.symmetric(horizontal=16, vertical=12),
+            )
+            btn_conf.on_click = _confirmar_remedios
+
+            btn_cancel = ft.Container(
+                content=ft.Text("Cancelar", size=13, color=SEC),
+                padding=ft.padding.symmetric(horizontal=16, vertical=12),
+                border_radius=10, bgcolor=BD, ink=True,
+            )
+            btn_cancel.on_click = _fechar
+
+            ref_ov[0] = ft.Container(
+                content=ft.Container(
+                    content=ft.Column([
+                        ft.Row([
+                            ft.Icon("medication_rounded", size=16, color=VERD),
+                            ft.Text("Confirmar Medicamentos", size=15, color=TXT,
+                                    weight=ft.FontWeight.W_700, expand=True),
+                        ], spacing=8),
+                        ft.Text("Revise os nomes, edite se necessário e confirme.",
+                                size=11, color=SEC),
+                        ft.Container(height=4),
+                        cards_col,
+                        txt_result,
+                        ft.Container(height=8),
+                        ft.Row([btn_cancel, btn_conf], spacing=8),
+                    ], spacing=8, tight=True, scroll=ft.ScrollMode.AUTO),
+                    bgcolor=CARD, border_radius=14,
+                    padding=ft.padding.all(20), width=400,
+                ),
+                bgcolor="#CC000000", expand=True, alignment=ft.Alignment(0, 0),
+            )
+            ref_ov[0].on_click = _fechar
+            page.overlay.append(ref_ov[0])
             try: page.update()
             except Exception: pass
 
@@ -905,65 +1211,146 @@ def _tela_receita(page, consulta, voltar_fn, pode_editar=True):
 
     btn_extrair.on_click = _extrair_ia
 
+    def _processar_vinculos(receita_id, checks):
+        """Vincula remedios marcados a esta receita."""
+        if not checks or not receita_id:
+            return
+        hoje = datetime.date.today().isoformat()
+        for rem_id, cb in checks.items():
+            if cb.value:
+                try:
+                    vincular_receita_remedio(receita_id, rem_id, hoje)
+                except Exception as ex:
+                    logger.warning("[RECEITA] vincular remedio %s: %s", rem_id, ex)
+
     def _salvar_receita(e):
         if not fotos_paths and not txt_instrucoes.value.strip():
             txt_status_ia.value = "Adicione uma foto ou instrucoes."
             try: page.update()
             except Exception: pass
             return
-        obs = txt_instrucoes.value.strip() or None
-        if fotos_paths:
-            for caminho in fotos_paths:
-                # Se já está em _ASSETS_DIR (processado pelo image_processor), não re-copiar
-                if _os.path.normpath(caminho).startswith(_os.path.normpath(_ASSETS_DIR)):
-                    foto_local = caminho
-                else:
-                    foto_local = _copiar_para_assets(caminho)
-                drive_id   = None
-                nome_arq   = caminho.replace("\\", "/").split("/")[-1]
-                try:
-                    from shared.drive_connector import upload_foto_medico
-                    drive_id = upload_foto_medico(foto_local)
-                except Exception as ex:
-                    logger.error("upload receita Drive: %s", ex)
-                rid = salvar_receita({
-                    "consulta_id":   consulta["id"],
-                    "medico_id":     consulta.get("medico_id"),
-                    "drive_file_id": drive_id,
-                    "nome_arquivo":  nome_arq,
-                    "data":          datetime.date.today().isoformat(),
-                    "observacoes":   obs,
-                    "foto_path":     foto_local,
-                })
-                _receita_id_salva[0] = rid
-        else:
+
+        obs           = txt_instrucoes.value.strip() or None
+        fotos_salvar  = list(fotos_paths)
+        consulta_id   = consulta["id"]
+        medico_id     = consulta.get("medico_id")
+        data_hoje     = datetime.date.today().isoformat()
+        checks        = getattr(col_vinculos, "_checks", {})
+
+        if not fotos_salvar:
+            # Sem foto — salva só as instrucoes
             rid = salvar_receita({
-                "consulta_id":   consulta["id"],
-                "medico_id":     consulta.get("medico_id"),
+                "consulta_id":   consulta_id,
+                "medico_id":     medico_id,
                 "drive_file_id": None,
                 "nome_arquivo":  "",
-                "data":          datetime.date.today().isoformat(),
+                "data":          data_hoje,
                 "observacoes":   obs,
                 "foto_path":     None,
             })
             _receita_id_salva[0] = rid
-        _houve_edicao[0] = True
+            _houve_edicao[0] = True
+            _processar_vinculos(rid, checks)
+            fotos_paths.clear()
+            txt_instrucoes.value = ""
+            txt_status_ia.value  = "Receita salva!"
+            txt_status_ia.color  = VERD
+            _carregar_lista()
+            return
 
-        # Processar vínculos com remédios se houver
-        checks = getattr(col_vinculos, "_checks", {})
-        if checks and _receita_id_salva[0]:
-            hoje = datetime.date.today().isoformat()
-            for rid, cb in checks.items():
-                if cb.value:
-                    try:
-                        vincular_receita_remedio(_receita_id_salva[0], rid, hoje)
-                    except Exception as ex:
-                        logger.warning("[RECEITA] vincular remedio %s: %s", rid, ex)
+        # Com fotos — upload em background com loading (padrao Koios)
+        total   = len(fotos_salvar)
+        feitas  = [0]
+        fechar_loading = lay.loading(f"Enviando foto 1 de {total} para o Drive...")
 
-        fotos_paths.clear()
-        txt_instrucoes.value = ""
-        txt_status_ia.value  = "Receita(s) salva(s)!"
-        txt_status_ia.color  = VERD
+        def _processar_fila(idx=0):
+            if idx >= total:
+                # Tudo enviado
+                _houve_edicao[0] = True
+                fotos_paths.clear()
+                page.pubsub.send_all({"_tipo": "rec_salva_ok"})
+                return
+
+            caminho = fotos_salvar[idx]
+            if _os.path.normpath(caminho).startswith(_os.path.normpath(_ASSETS_DIR)):
+                foto_local = caminho
+            else:
+                foto_local = _copiar_para_assets(caminho)
+
+            def _ok(drive_id, nome_arq):
+                rid = salvar_receita({
+                    "consulta_id":   consulta_id,
+                    "medico_id":     medico_id,
+                    "drive_file_id": drive_id,
+                    "nome_arquivo":  nome_arq,
+                    "data":          data_hoje,
+                    "observacoes":   obs,
+                    "foto_path":     foto_local,
+                })
+                _receita_id_salva[0] = rid
+                _processar_vinculos(rid, checks)
+                feitas[0] += 1
+                prox = idx + 1
+                if prox < total:
+                    page.pubsub.send_all({
+                        "_tipo": "rec_upload_prog",
+                        "msg": f"Enviando foto {prox + 1} de {total}...",
+                    })
+                _processar_fila(prox)
+
+            def _err(msg):
+                # Falhou o upload — salva sem drive_id e continua
+                logger.error("upload receita Drive foto %d: %s", idx + 1, msg)
+                nome_arq = _os.path.basename(foto_local)
+                rid = salvar_receita({
+                    "consulta_id":   consulta_id,
+                    "medico_id":     medico_id,
+                    "drive_file_id": None,
+                    "nome_arquivo":  nome_arq,
+                    "data":          data_hoje,
+                    "observacoes":   obs,
+                    "foto_path":     foto_local,
+                })
+                _receita_id_salva[0] = rid
+                _processar_vinculos(rid, checks)
+                feitas[0] += 1
+                page.pubsub.send_all({
+                    "_tipo": "rec_upload_prog",
+                    "msg": f"Aviso: foto {idx+1} salva so localmente.",
+                })
+                _processar_fila(idx + 1)
+
+            from utils.drive_prontuario import upload_receita as _up_rec
+            def _run():
+                try:
+                    drive_id, nome_arq = _up_rec(foto_local, consulta_id)
+                    _ok(drive_id, nome_arq)
+                except Exception as ex:
+                    _err(str(ex))
+            threading.Thread(target=_run, daemon=True).start()
+
+        def _on_prog(msg):
+            if not isinstance(msg, dict): return
+            t = msg.get("_tipo", "")
+            if t == "rec_upload_prog":
+                fechar_loading()
+                # Mostra novo loading para proxima foto
+                page.pubsub.send_all({
+                    "_tipo": "_rec_novo_loading",
+                    "msg": msg.get("msg", "Enviando..."),
+                })
+            elif t == "_rec_novo_loading":
+                fechar_loading.__self__ if hasattr(fechar_loading, "__self__") else None
+                lay.loading(msg.get("msg", "Enviando..."))
+            elif t == "rec_salva_ok":
+                fechar_loading()
+                txt_instrucoes.value = ""
+                txt_status_ia.value  = f"✓ {total} receita(s) salva(s) no Drive!"
+                txt_status_ia.color  = VERD
+                _carregar_lista()
+
+        page.pubsub.subscribe(_on_prog)
+        _processar_fila(0)
         btn_extrair.visible  = False
         col_vinculos.controls.clear()
         col_vinculos.visible = False

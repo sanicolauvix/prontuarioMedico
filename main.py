@@ -65,7 +65,7 @@ def _marcar_encerramento_normal() -> None:
         pass
 
 
-from utils.drive_sync import _LOGS_CRASH_ID as _LOGS_CRASH_PASTA_ID
+_LOGS_CRASH_PASTA_ID = None   # ID da pasta logs_crash no Drive (configurar se necessario)
 _LOGS_CRASH_MAX      = 10
 
 
@@ -221,21 +221,51 @@ def main(page: ft.Page):
         return resultado[0]
 
     def _restaurar_e_abrir():
-        """Padrao Koios: apaga local, restaura Drive, init_db, watcher, abre hub."""
-        import os as _os
+        """Padrao Koios: verifica Drive, apaga local, restaura, exibe contagem, abre hub."""
+        import os as _os, sqlite3 as _sql3, time as _time
         from dados.model_prontuario import DB_PATH
+        _log = logging.getLogger(__name__)
 
+        # 1. Verifica Drive antes de apagar banco local
+        _set_splash("Verificando Drive...")
+        drive_ok = _verificar_drive()
+
+        if not drive_ok:
+            if _os.path.exists(DB_PATH):
+                _log.warning("Drive indisponivel -- usando banco local existente")
+                _set_splash("Offline. Usando dados locais...")
+                _time.sleep(1.0)
+                try:
+                    from dados.model_prontuario import criar_tabelas
+                    criar_tabelas()
+                except Exception: pass
+                _abrir_prontuario()
+            else:
+                _log.warning("Drive indisponivel e sem banco local -- indo para login")
+                _set_splash("Sem conexao. Reconectando...")
+                _time.sleep(1.5)
+                try:
+                    from telas_shared.tela_login import criar_tela_login
+                    def _on_login():
+                        threading.Thread(target=_restaurar_e_abrir, daemon=True).start()
+                    _nav(criar_tela_login(page, on_login_sucesso=_on_login))
+                except Exception as ex:
+                    import traceback
+                    _tela_erro(f"Erro ao abrir login:\n{traceback.format_exc()[-600:]}")
+            return
+
+        # 2. Apaga banco local — Drive e sempre autoritativo
         _set_splash("Preparando banco...")
-
-        # 1. Apaga banco local — Drive e sempre autoritativo
         try:
             if _os.path.exists(DB_PATH):
                 _os.remove(DB_PATH)
+            _log.info("Banco local removido para restore limpo do Drive")
         except Exception as ex:
-            logging.getLogger(__name__).warning("remover banco local: %s", ex)
+            _log.warning("remover banco local (nao critico): %s", ex)
 
-        # 2. Restaura do Drive
+        # 3. Restaura do Drive
         _set_splash("Restaurando do Drive...")
+        restaurado = False
         try:
             resultado = [False]
             def _do_restore():
@@ -248,17 +278,53 @@ def main(page: ft.Page):
             t = threading.Thread(target=_do_restore, daemon=True)
             t.start()
             t.join(timeout=TIMEOUT_RESTORE)
+            restaurado = resultado[0]
         except Exception as ex:
-            logging.getLogger(__name__).warning("restore startup: %s", ex)
+            _log.warning("restore startup (nao critico): %s", ex)
 
-        # 3. Aplica migracoes no banco restaurado (ou cria vazio se restore falhou)
+        # 4. Exibe contagem de registros restaurados — igual ao Prestanista
+        if restaurado:
+            _log.info("Banco restaurado do Drive no startup")
+            try:
+                conn = _sql3.connect(DB_PATH)
+                def _cnt(tabela, tem_ativo=True):
+                    try:
+                        if tem_ativo:
+                            return conn.execute(
+                                f"SELECT COUNT(*) FROM {tabela} WHERE ativo=1 OR ativo IS NULL"
+                            ).fetchone()[0]
+                        return conn.execute(
+                            f"SELECT COUNT(*) FROM {tabela}"
+                        ).fetchone()[0]
+                    except Exception:
+                        return 0
+                n_med  = _cnt("medicos")
+                n_cons = _cnt("consultas", tem_ativo=False)
+                n_exam = _cnt("exames")
+                n_rem  = _cnt("remedios")
+                conn.close()
+                _set_splash(
+                    f"{n_med} medico(s)  |  {n_cons} consulta(s)  |  "
+                    f"{n_exam} exame(s)  |  {n_rem} remedio(s)"
+                )
+                _time.sleep(2.0)
+            except Exception as ex:
+                _log.warning("contar registros pos-restore: %s", ex)
+                _set_splash("Banco atualizado!")
+                _time.sleep(0.8)
+        else:
+            _log.warning("Drive sem backup ou restore falhou -- banco vazio")
+            _set_splash("Pronto!")
+            _time.sleep(0.2)
+
+        # 5. Aplica migracoes no banco restaurado (ou cria vazio)
         try:
             from dados.model_prontuario import criar_tabelas
             criar_tabelas()
+            _log.info("criar_tabelas() aplicado apos restore")
         except Exception as ex:
-            logging.getLogger(__name__).warning("criar_tabelas pos-restore: %s", ex)
+            _log.warning("criar_tabelas pos-restore (nao critico): %s", ex)
 
-        _set_splash("Pronto!")
         _abrir_prontuario()
 
     def _iniciar():
@@ -289,38 +355,8 @@ def main(page: ft.Page):
                 _tela_erro(f"Erro ao abrir login:\n{traceback.format_exc()[-600:]}")
             return
 
-        # Sessao ativa — verifica Drive
-        _set_splash("Verificando conexao...")
-        drive_ok = _verificar_drive()
-
-        if not drive_ok:
-            # Offline: usa banco local se existir
-            from dados.model_prontuario import DB_PATH as _DB_PATH
-            import os as _os
-            if _os.path.exists(_DB_PATH):
-                _set_splash("Offline. Usando dados locais...")
-                import time as _t; _t.sleep(1.0)
-                try:
-                    from dados.model_prontuario import criar_tabelas
-                    criar_tabelas()
-                except Exception:
-                    pass
-                _abrir_prontuario()
-            else:
-                _set_splash("Sem conexao e sem dados locais...")
-                import time as _t; _t.sleep(1.5)
-                try:
-                    from telas_shared.tela_login import criar_tela_login
-                    def _on_login():
-                        threading.Thread(target=_restaurar_e_abrir, daemon=True).start()
-                    _nav(criar_tela_login(page, on_login_sucesso=_on_login))
-                except Exception as ex:
-                    import traceback
-                    _tela_erro(f"Erro ao abrir login:\n{traceback.format_exc()[-600:]}")
-            return
-
-        # Drive disponivel — apaga local e restaura
-        _restaurar_e_abrir()
+        # Sessao ativa — restaura do Drive (a funcao ja trata offline internamente)
+        threading.Thread(target=_restaurar_e_abrir, daemon=True).start()
 
     threading.Thread(target=_iniciar, daemon=True).start()
 

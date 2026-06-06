@@ -1,413 +1,359 @@
 # -*- coding: utf-8 -*-
-# Prontuario | telas/tela_glicemia.py -- Glicemia: medicoes domesticas + exames de lab
-import datetime
-import sqlite3
+# Prontuario | telas/tela_glicemia.py -- Glicemia no padrao tela_sangue
 import flet as ft
-import logging
-from shared.layout import Layout
-from shared.widgets import abrir_sub_grafico
-from shared.date_field import campo_data
-from dados.model_prontuario import (
-    listar_exames_glicemia, listar_leituras_marcador,
-    salvar_leitura_marcador, DB_PATH, normalizar_data,
-)
-from telas.tela_exames import buscar_historico_exame
+import sqlite3
 
-log = logging.getLogger(__name__)
+from dados.model_prontuario import DB_PATH
 
-BG   = "#0D1117"; CARD = "#161B22"; BD  = "#21262D"; BD2 = "#30363D"
+BG   = "#0D1117"; CARD = "#161B22"; BD  = "#21262D"
 TXT  = "#E6EDF3"; SEC  = "#8B949E"; MUT = "#484F58"
-AZUL = "#58A6FF"; VERD = "#3FB950"; AMAR = "#D29922"
-VERM = "#F85149"; VERM_INT = "#CC1111"; COR = "#FF6B6B"; ROXO = "#BC8CFF"
+VERD = "#3FB950"; VERM = "#DA3633"; COR = "#FF6B6B"
 
-_TERMOS = ["glicose", "glucose", "glicemia", "glicada", "hba1c"]
-
-# (label, referencia, limite_alto_para_claudia)
-_MOMENTOS = [
-    ("Jejum",      "70 - 99",  99),
-    ("Apos 1h",    "< 180",   180),
-    ("Apos 2h",    "< 140",   140),
-    ("Ao acordar", "70 - 99",  99),
-    ("Aleatoria",  "70 - 140", 140),
+# Dois grupos fixos de glicemia — filtragem por nome_oficial
+_GRUPOS_GLIC = [
+    {
+        "id":     "direta",
+        "nome":   "Glicose Direta",
+        "icone":  "water_drop_rounded",
+        "desc":   "Glicemia de jejum, pos-prandial, dextrosol",
+        "nomes":  {
+            "glicose", "glicemia", "glicemia de jejum", "glicose em jejum",
+            "glicemia media estimada", "glicemia 1h pos-dextrosol",
+            "glicemia 2h pos-dextrosol", "glicemia pos-prandial",
+        },
+    },
+    {
+        "id":     "controle",
+        "nome":   "Controle Glicemico",
+        "icone":  "monitor_heart_rounded",
+        "desc":   "HbA1c, insulina, HOMA-IR, frutosamina",
+        "nomes":  {
+            "hemoglobina glicada", "hemoglobina glicada (hba1c)",
+            "insulina", "insulina basal", "homa-ir", "frutosamina",
+            "glicemia media estimada",
+        },
+    },
 ]
 
 
-def _label_sec(texto, cor=MUT):
-    return ft.Text(texto, size=10, color=cor, weight=ft.FontWeight.W_700)
-
-
-def _avaliar_cor(valor_str):
-    """5 niveis: azul=otimo, verde=bom, amarelo=atencao, vermelho=ruim, verm_int=muito_ruim."""
+def _montar_exame_selecionado(param_nome: str) -> dict | None:
+    """
+    Igual a tela_sangue mas inclui tambem marcadores_leituras (medicoes caseiras)
+    unificadas pelo mesmo nome de parametro.
+    """
     try:
-        v = float(str(valor_str).replace(",", "."))
-        if v < 54:    return VERM_INT  # hipoglicemia critica
-        if v < 70:    return VERM      # hipoglicemia leve
-        if v <= 99:   return AZUL      # otimo (jejum normal)
-        if v <= 109:  return VERD      # bom
-        if v <= 125:  return AMAR      # atencao (pre-diabetico)
-        if v <= 199:  return VERM      # ruim (diabetico)
-        return VERM_INT                # muito ruim (hiperglicemia critica)
+        conn = sqlite3.connect(DB_PATH, timeout=10)
+
+        rows_lab = conn.execute("""
+            SELECT er.valor, er.unidade, e.data_exame, er.referencia,
+                   er.nivel_interpretacao,
+                   COALESCE(ep.nome_oficial, er.parametro),
+                   COALESCE(ep.unidade, er.unidade),
+                   COALESCE(e.laboratorio, '')
+            FROM exame_resultados er
+            JOIN exames e ON e.id = er.exame_id
+            LEFT JOIN exames_padrao ep ON ep.id = er.exame_padrao_id
+            WHERE UPPER(COALESCE(ep.nome_oficial, er.parametro)) = UPPER(?)
+              AND er.valor IS NOT NULL AND er.valor != ''
+              AND (e.status IS NULL OR e.status NOT IN ('rascunho','revisao'))
+        """, (param_nome,)).fetchall()
+
+        rows_cas = conn.execute("""
+            SELECT valor, unidade, data_medicao, referencia,
+                   NULL, parametro, unidade, 'Caseiro'
+            FROM marcadores_leituras
+            WHERE UPPER(parametro) = UPPER(?)
+        """, (param_nome,)).fetchall()
+
+        conn.close()
     except Exception:
-        return AZUL
+        return None
+
+    todas = rows_lab + rows_cas
+    if not todas:
+        return None
+
+    def _dt(r):
+        from datetime import datetime
+        for fmt in ("%Y-%m-%d", "%d/%m/%Y"):
+            try: return datetime.strptime((r[2] or "")[:10], fmt)
+            except: pass
+        from datetime import datetime as _dt2
+        return _dt2.min
+
+    todas.sort(key=_dt)
+
+    nome_oficial = rows_lab[0][5] if rows_lab else param_nome
+    unidade      = rows_lab[0][6] if rows_lab else (str(rows_cas[0][1]) if rows_cas else "mg/dL")
+
+    historico = [
+        {
+            "valor":       str(r[0]),
+            "unidade":     r[1] or unidade,
+            "data":        r[2] or "",
+            "referencia":  r[3] or "",
+            "nivel":       r[4] or "sem_referencia",
+            "laboratorio": r[7] or "",
+        }
+        for r in todas
+    ]
+
+    return {"nome_oficial": nome_oficial, "unidade": unidade, "historico": historico}
 
 
-def _nivel_glicemia(valor_str):
-    try:
-        v = float(str(valor_str).replace(",", "."))
-        if v < 54:    return "critico_baixo"
-        if v < 70:    return "baixo"
-        if v <= 99:   return "otimo"
-        if v <= 109:  return "bom"
-        if v <= 125:  return "atencao"
-        if v <= 199:  return "alto"
-        return "critico_alto"
-    except Exception:
-        return "sem_referencia"
+def criar_tela_glicemia(page: ft.Page, voltar_fn=None) -> ft.Column:
 
+    _nivel       = [0]
+    _grupo_atual = [None]   # dict do _GRUPOS_GLIC
+    _selecionados = set()
 
-def _parse_data(data_str):
-    for fmt in ("%Y-%m-%d", "%d/%m/%Y"):
+    titulo    = ft.Text("Glicemia", size=18, color=TXT,
+                        weight=ft.FontWeight.W_700)
+    subtitulo = ft.Text("", size=12, color=SEC)
+    area      = ft.Column(spacing=8, scroll=ft.ScrollMode.AUTO, expand=True)
+
+    def _voltar_grupos(e=None):
+        _nivel[0] = 0
+        _grupo_atual[0] = None
+        _selecionados.clear()
+        titulo.value    = "Glicemia"
+        subtitulo.value = ""
+        _renderizar_grupos()
+
+    # -- Nivel 1: dois grupos fixos -----------------------------------
+    def _renderizar_grupos():
+        area.controls.clear()
+
         try:
-            return datetime.datetime.strptime((data_str or "")[:10], fmt).date()
-        except ValueError:
-            pass
-    return None
-
-
-def _dias_txt(data_str):
-    dt = _parse_data(data_str)
-    if dt is None:
-        return data_str[:10] if data_str else "—"
-    dias = (datetime.date.today() - dt).days
-    if dias == 0:  return "hoje"
-    if dias == 1:  return "1 dia atras"
-    return f"{dias} dias atras"
-
-
-def _para_display(s):
-    if s and len(s) >= 10 and s[4:5] == "-":
-        try:
-            return datetime.datetime.strptime(s[:10], "%Y-%m-%d").strftime("%d/%m/%Y")
+            conn = sqlite3.connect(DB_PATH, timeout=10)
+            # conta quantos resultados existem para cada conjunto de nomes
+            contagens = {}
+            for g in _GRUPOS_GLIC:
+                placeholders = ",".join("?" * len(g["nomes"]))
+                row = conn.execute(f"""
+                    SELECT COUNT(DISTINCT er.id)
+                    FROM exame_resultados er
+                    JOIN exames e ON e.id = er.exame_id
+                    LEFT JOIN exames_padrao ep ON ep.id = er.exame_padrao_id
+                    WHERE LOWER(COALESCE(ep.nome_oficial, er.parametro)) IN ({placeholders})
+                      AND (e.status IS NULL OR e.status NOT IN ('rascunho','revisao'))
+                """, list(g["nomes"])).fetchone()
+                contagens[g["id"]] = row[0] if row else 0
+            conn.close()
         except Exception:
-            pass
-    return s or ""
+            contagens = {g["id"]: 0 for g in _GRUPOS_GLIC}
 
+        subtitulo.value = "2 grupos"
 
-def _fora_do_range(valor: float, momento_label: str) -> bool:
-    ref_limite = {m[0]: m[2] for m in _MOMENTOS}
-    limite = ref_limite.get(momento_label, 140)
-    return valor > limite or valor < 70
+        for g in _GRUPOS_GLIC:
+            n       = contagens.get(g["id"], 0)
+            cor_brd = COR if n > 0 else MUT
+            card = ft.Container(
+                content=ft.Row([
+                    ft.Container(
+                        content=ft.Icon(g["icone"], size=22, color=COR),
+                        bgcolor=ft.Colors.with_opacity(0.12, COR),
+                        border_radius=10, width=44, height=44,
+                        alignment=ft.alignment.Alignment(0, 0),
+                    ),
+                    ft.Column([
+                        ft.Text(g["nome"], size=14, color=TXT,
+                                weight=ft.FontWeight.W_600),
+                        ft.Text(g["desc"], size=11, color=SEC,
+                                no_wrap=True,
+                                overflow=ft.TextOverflow.ELLIPSIS),
+                        ft.Text(
+                            f"{n} resultado(s)" if n else "Nenhum resultado ainda",
+                            size=11, color=VERD if n > 0 else MUT,
+                        ),
+                    ], spacing=2, expand=True),
+                    ft.Icon("chevron_right_rounded", size=18, color=MUT),
+                ], spacing=14,
+                   vertical_alignment=ft.CrossAxisAlignment.CENTER),
+                bgcolor=CARD, border_radius=10,
+                padding=ft.padding.symmetric(horizontal=16, vertical=14),
+                border=ft.Border(
+                    left=ft.BorderSide(3, cor_brd),
+                    top=ft.BorderSide(1, BD),
+                    bottom=ft.BorderSide(1, BD),
+                    right=ft.BorderSide(1, BD),
+                ),
+                ink=True,
+            )
+            card.on_click = lambda e, _g=g: _abrir_grupo(_g)
+            area.controls.append(card)
 
+        try: page.update()
+        except Exception: pass
 
-# ══════════════════════════════════════════════════════════════
-# TELA PRINCIPAL
-# ══════════════════════════════════════════════════════════════
+    # -- Nivel 2: parametros do grupo ---------------------------------
+    def _abrir_grupo(g):
+        _nivel[0]       = 1
+        _grupo_atual[0] = g
+        titulo.value    = g["nome"]
+        _carregar_params(g, selecionar_primeiro=True)
 
-def criar_tela_glicemia(page: ft.Page, voltar_fn):
-    import threading
-    lay           = Layout(page)
-    _montado      = [False]
-    _status_banco = ["normal"]   # "normal" | "em_edicao"
-    _handler_ant  = [None]
-    wrapper       = ft.Column(expand=True)
+    def _carregar_params(g, selecionar_primeiro=False):
+        nomes = g["nomes"]
+        placeholders = ",".join("?" * len(nomes))
+        try:
+            conn = sqlite3.connect(DB_PATH, timeout=10)
+            params = conn.execute(f"""
+                SELECT DISTINCT COALESCE(ep.nome_oficial, er.parametro) AS nome
+                FROM exame_resultados er
+                JOIN exames e ON e.id = er.exame_id
+                LEFT JOIN exames_padrao ep ON ep.id = er.exame_padrao_id
+                WHERE LOWER(COALESCE(ep.nome_oficial, er.parametro)) IN ({placeholders})
+                  AND (e.status IS NULL OR e.status NOT IN ('rascunho','revisao'))
+                ORDER BY nome
+            """, list(nomes)).fetchall()
+            conn.close()
+        except Exception:
+            params = []
 
-    area_lista = ft.Column(spacing=8)
-
-    _HORAS = [f"{h:02d}:00" for h in range(24)]
-
-    # ── Overlay bloqueante de sync ─────────────────────────────────
-    # apos_sync_fn=None: fecha overlay e permanece na tela (usado no Salvar)
-    # apos_sync_fn=fn:   fecha overlay e navega (usado no Voltar)
-    def _sync(apos_sync_fn=None):
-        ov = ft.Container(
-            content=ft.Container(
+        if not params:
+            area.controls.clear()
+            subtitulo.value = "Nenhum resultado neste grupo"
+            area.controls.append(ft.Container(
                 content=ft.Column([
-                    ft.ProgressRing(color=COR, width=36, height=36, stroke_width=3),
-                    ft.Container(height=10),
-                    ft.Text("Sincronizando com Drive...", size=13, color=TXT,
-                            weight=ft.FontWeight.W_600, text_align="center"),
-                    ft.Text("Aguarde", size=11, color=SEC, text_align="center"),
-                ], tight=True, spacing=2,
-                   horizontal_alignment=ft.CrossAxisAlignment.CENTER),
-                bgcolor=CARD, border_radius=14,
-                padding=ft.padding.all(24), width=240,
-            ),
-            bgcolor="#DD000000", expand=True, alignment=ft.Alignment(0, 0),
-        )
-        page.overlay.append(ov)
-        try:
-            page.update()
-        except Exception:
-            pass
+                    ft.Icon("inbox_rounded", size=48, color=MUT),
+                    ft.Text("Nenhum resultado neste grupo.", size=14, color=SEC),
+                ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=8),
+                alignment=ft.alignment.Alignment(0, 0), padding=60,
+            ))
+            try: page.update()
+            except Exception: pass
+            return
 
-        def _run():
-            try:
-                from backup.drive_backup import fazer_backup
-                fazer_backup(forcar=True)
-            except Exception as ex:
-                log.warning("[GLIC] sync: %s", ex)
-            finally:
-                _status_banco[0] = "normal"
-                if ov in page.overlay:
-                    page.overlay.remove(ov)
-                try:
-                    page.update()
-                except Exception:
-                    pass
-                if apos_sync_fn:
-                    apos_sync_fn()
+        if selecionar_primeiro or not _selecionados:
+            _selecionados.clear()
+            _selecionados.add(params[0][0])
 
-        threading.Thread(target=_run, daemon=True).start()
+        titulo.value = g["nome"]
+        _renderizar_nivel2(params, g)
 
-    # ── Ponto de saida unificado ───────────────────────────────────
-    def _sair(destino_fn):
-        _desregistrar_voltar_hw()
-        if _status_banco[0] == "em_edicao":
-            _sync(destino_fn)
+    grafico_container = ft.Container(expand=False)
+
+    def _atualizar_grafico():
+        from shared.grafico import renderizar_grafico_combinado
+        exames = [_montar_exame_selecionado(n) for n in sorted(_selecionados)]
+        exames = [e for e in exames if e]
+        if exames:
+            grafico_container.content = renderizar_grafico_combinado(page, exames)
         else:
-            destino_fn()
+            grafico_container.content = ft.Container(
+                content=ft.Column([
+                    ft.Icon("bar_chart_rounded", size=36, color=MUT),
+                    ft.Text("Selecione ao menos um parametro.", size=12, color=MUT),
+                ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=6),
+                alignment=ft.alignment.Alignment(0, 0), padding=30,
+            )
+        try: page.update()
+        except Exception: pass
 
-    # ── Voltar hardware (Escape / botao Android) ───────────────────
-    def _registrar_voltar_hw():
-        _handler_ant[0] = page.on_keyboard_event
-        def _on_hw(e):
-            if e.key == "Escape":
-                _sair(voltar_fn)
-        page.on_keyboard_event = _on_hw
+    # -- Form rapido: nova medicao caseira ----------------------------
+    def _abrir_form_caseiro(on_salvo):
+        import datetime
+        from shared.date_field import campo_data
+        from dados.model_prontuario import normalizar_data
 
-    def _desregistrar_voltar_hw():
-        page.on_keyboard_event = _handler_ant[0]
+        _MOMENTOS = [
+            ("Jejum",       "70 - 99",  "Glicemia de Jejum"),
+            ("Apos 1h",     "< 180",    "Glicemia 1h Pos-Dextrosol"),
+            ("Apos 2h",     "< 140",    "Glicemia 2h Pos-Dextrosol"),
+            ("Pos-Prandial","< 140",    "Glicemia Pos-Prandial"),
+            ("Aleatoria",   "70 - 140", "Glicemia de Jejum"),
+        ]
 
-    def _abrir_grafico(titulo, exame_dict):
-        abrir_sub_grafico(page, wrapper, lay, titulo, exame_dict, _mostrar_principal)
-
-    # ── Overlay: contexto Claudia apos valor anormal ────────────
-
-    def _claudia_ctx(param, val, unidade, ref, leitura_id):
         ref_ov = [None]
 
         def _fechar(e=None):
             if ref_ov[0] in page.overlay:
                 page.overlay.remove(ref_ov[0])
-            try:
-                page.update()
-            except Exception:
-                pass
-
-        tf_ctx = ft.TextField(
-            label="O que estava acontecendo antes?",
-            hint_text="Ex: comi carboidrato, estresse, esqueci o remedio...",
-            bgcolor=CARD, border_color=BD2, focused_border_color=ROXO,
-            label_style=ft.TextStyle(color=SEC, size=11),
-            text_style=ft.TextStyle(color=TXT),
-            border_radius=8, multiline=True, min_lines=2, max_lines=3,
-        )
-
-        def _salvar_ctx(e):
-            ctx = (tf_ctx.value or "").strip()
-            if ctx and leitura_id:
-                try:
-                    with sqlite3.connect(DB_PATH, timeout=30) as conn:
-                        conn.execute(
-                            "UPDATE marcadores_leituras SET contexto = ? WHERE id = ?",
-                            (ctx, leitura_id),
-                        )
-                except Exception as ex:
-                    log.warning("[GLIC] salvar_ctx: %s", ex)
-            _fechar()
-
-        btn_pular = ft.Container(
-            content=ft.Text("Pular", size=12, color=SEC),
-            padding=ft.padding.symmetric(horizontal=14, vertical=9),
-            border_radius=8, bgcolor=f"{SEC}22", ink=True,
-        )
-        btn_pular.on_click = _fechar
-
-        btn_ctx = ft.Container(
-            content=ft.Text("Salvar contexto", size=12, color=ROXO,
-                            weight=ft.FontWeight.W_600),
-            padding=ft.padding.symmetric(horizontal=14, vertical=9),
-            border_radius=8, bgcolor=f"{ROXO}22", ink=True,
-        )
-        btn_ctx.on_click = _salvar_ctx
-
-        val_str = f"{val:.1f}" if isinstance(val, float) else str(val)
-
-        ref_ov[0] = ft.Container(
-            content=ft.Container(
-                content=ft.Column([
-                    ft.Row([
-                        ft.Icon("psychology_rounded", size=18, color=ROXO),
-                        ft.Text("Claudia", size=14, color=ROXO,
-                                weight=ft.FontWeight.W_700),
-                    ], spacing=6),
-                    ft.Container(height=4),
-                    ft.Text(
-                        f"Registrei {val_str} {unidade} ({param}).",
-                        size=13, color=TXT, weight=ft.FontWeight.W_600,
-                    ),
-                    ft.Text(f"Valor fora do esperado ({ref}).", size=12, color=VERM),
-                    ft.Container(height=8),
-                    tf_ctx,
-                    ft.Container(height=12),
-                    ft.Row([btn_pular, btn_ctx], spacing=8,
-                           alignment=ft.MainAxisAlignment.END),
-                ], tight=True, spacing=4),
-                bgcolor=CARD, border_radius=14,
-                padding=ft.padding.all(20), width=320,
-            ),
-            bgcolor="#CC000000", expand=True, alignment=ft.Alignment(0, 0),
-        )
-        ref_ov[0].on_click = _fechar
-        page.overlay.append(ref_ov[0])
-        try:
-            page.update()
-        except Exception:
-            pass
-
-    # ── Overlay: nova leitura / editar leitura de glicemia ─────
-
-    def _abrir_form(e=None, leitura=None, on_salvo=None):
-        ref_ov   = [None]
-        _edit_id = leitura["id"] if leitura else None
-
-        _obs_raw      = (leitura.get("observacoes") or "") if leitura else ""
-        _momento_ini  = "Jejum"
-        _obs_ini      = ""
-        if _obs_raw.startswith("[") and "]" in _obs_raw:
-            _end         = _obs_raw.index("]")
-            _momento_ini = _obs_raw[1:_end].strip() or "Jejum"
-            _obs_ini     = _obs_raw[_end + 1:].strip()
-        elif leitura:
-            _obs_ini = _obs_raw
-
-        _momento_ref = [_momento_ini]
-
-        _val_ini = ""
-        if leitura:
-            try:
-                _val_ini = f"{float(str(leitura['valor']).replace(',', '.')):.1f}"
-            except Exception:
-                _val_ini = str(leitura.get("valor", ""))
+            try: page.update()
+            except Exception: pass
 
         tf_valor = ft.TextField(
             label="Glicemia (mg/dL)",
-            value=_val_ini,
-            bgcolor=CARD, border_color=BD2, focused_border_color=COR,
+            bgcolor=CARD, border_color=BD, focused_border_color=COR,
             label_style=ft.TextStyle(color=SEC, size=11),
             text_style=ft.TextStyle(color=TXT),
-            border_radius=8,
-            keyboard_type=ft.KeyboardType.NUMBER,
-            autofocus=not bool(leitura),
+            border_radius=8, keyboard_type=ft.KeyboardType.NUMBER,
+            autofocus=True,
         )
         dd_momento = ft.Dropdown(
             label="Momento",
-            bgcolor=CARD, border_color=BD2, focused_border_color=COR,
+            bgcolor=CARD, border_color=BD, focused_border_color=COR,
             label_style=ft.TextStyle(color=SEC),
             text_style=ft.TextStyle(color=TXT),
-            border_radius=8,
-            value=_momento_ini,
+            border_radius=8, value="Jejum",
             options=[ft.dropdown.Option(m[0]) for m in _MOMENTOS],
         )
-        _data_ini = (_para_display(leitura.get("data_medicao", "")) if leitura
-                     else datetime.date.today().strftime("%d/%m/%Y"))
         row_data, tf_data = campo_data(
             page, "Data",
-            value=_data_ini,
-            cor_acento=COR, bgcolor=CARD, border_color=BD2,
-        )
-        _hora_ini = (leitura.get("hora_medicao") or "").strip() if leitura else ""
-        if _hora_ini and len(_hora_ini) >= 5:
-            _hora_ini = _hora_ini[:2] + ":00"
-        if not _hora_ini:
-            _hora_ini = f"{datetime.datetime.now().hour:02d}:00"
-        dd_hora = ft.Dropdown(
-            label="Hora",
-            bgcolor=CARD, border_color=BD2, focused_border_color=COR,
-            label_style=ft.TextStyle(color=SEC, size=11),
-            text_style=ft.TextStyle(color=TXT),
-            border_radius=8,
-            value=_hora_ini,
-            options=[ft.dropdown.Option(h) for h in _HORAS],
-        )
-        tf_obs = ft.TextField(
-            label="Observacao (opcional)",
-            value=_obs_ini,
-            bgcolor=CARD, border_color=BD2, focused_border_color=COR,
-            label_style=ft.TextStyle(color=SEC, size=11),
-            text_style=ft.TextStyle(color=TXT),
-            border_radius=8, multiline=True, min_lines=1, max_lines=2,
+            value=datetime.date.today().strftime("%d/%m/%Y"),
+            cor_acento=COR, bgcolor=CARD, border_color=BD,
         )
         txt_erro = ft.Text("", size=11, color=VERM, visible=False)
 
-        def _on_momento(e):
-            _momento_ref[0] = dd_momento.value or "Jejum"
-
-        dd_momento.on_change = _on_momento
-
-        def _fechar(e=None):
-            if ref_ov[0] in page.overlay:
-                page.overlay.remove(ref_ov[0])
-            try:
-                page.update()
-            except Exception:
-                pass
-
-        def _salvar(e):
-            val_str  = (tf_valor.value or "").strip().replace(",", ".")
-            data_str = (tf_data.value or "").strip()
-            momento  = _momento_ref[0]
-
-            if not val_str or not data_str:
-                txt_erro.value   = "Preencha valor e data."
+        def _salvar(e=None):
+            val_str = (tf_valor.value or "").strip().replace(",", ".")
+            if not val_str:
+                txt_erro.value = "Informe o valor."
                 txt_erro.visible = True
-                try:
-                    page.update()
-                except Exception:
-                    pass
+                try: page.update()
+                except Exception: pass
                 return
-
             try:
                 val_num = float(val_str)
             except ValueError:
-                txt_erro.value   = "Valor invalido."
+                txt_erro.value = "Valor invalido."
                 txt_erro.visible = True
-                try:
-                    page.update()
-                except Exception:
-                    pass
+                try: page.update()
+                except Exception: pass
                 return
 
-            ref_str = next((m[1] for m in _MOMENTOS if m[0] == momento), "70 - 99")
+            momento = dd_momento.value or "Jejum"
+            ref_str, param_nome = next(
+                ((m[1], m[2]) for m in _MOMENTOS if m[0] == momento),
+                ("70 - 99", "Glicose em Jejum"),
+            )
+            data_iso = normalizar_data(tf_data.value) or datetime.date.today().isoformat()
 
-            dados = {
-                "parametro":    "Glicose",
-                "categoria":    "Metabolico",
-                "valor":        val_num,
-                "valor_txt":    f"{val_num:.1f}",
-                "unidade":      "mg/dL",
-                "referencia":   ref_str,
-                "data_medicao": data_str,
-                "hora_medicao": dd_hora.value or None,
-                "fonte":        "manual",
-                "observacoes":  f"[{momento}] " + ((tf_obs.value or "").strip()),
-            }
-            if _edit_id:
-                dados["id"] = _edit_id
+            try:
+                conn = sqlite3.connect(DB_PATH, timeout=10)
+                # cria registro pai em exames
+                conn.execute("""
+                    INSERT INTO exames
+                        (tipo, tipo_exame, data_exame, laboratorio, status, grupo_id)
+                    VALUES ('laboratorial', 'Glicemia Caseira', ?, 'Caseiro', 'ok', 2)
+                """, (data_iso,))
+                exame_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+                # busca exame_padrao_id
+                row = conn.execute(
+                    "SELECT id FROM exames_padrao WHERE LOWER(nome_oficial) = LOWER(?)",
+                    (param_nome,)
+                ).fetchone()
+                ep_id = row[0] if row else None
+                conn.execute("""
+                    INSERT INTO exame_resultados
+                        (exame_id, parametro, valor, unidade, referencia,
+                         exame_padrao_id, grupo_id)
+                    VALUES (?, ?, ?, 'mg/dL', ?, ?, 2)
+                """, (exame_id, param_nome, str(val_num), ref_str, ep_id))
+                conn.commit()
+                conn.close()
+            except Exception as ex:
+                txt_erro.value = f"Erro: {ex}"
+                txt_erro.visible = True
+                try: page.update()
+                except Exception: pass
+                return
 
-            leitura_id = salvar_leitura_marcador(dados)
-            _status_banco[0] = "em_edicao"
             _fechar()
-            if on_salvo:
-                on_salvo()
-            else:
-                _carregar()
+            on_salvo()
 
-            def _apos_sync():
-                if not _edit_id and _fora_do_range(val_num, momento):
-                    _claudia_ctx("Glicose", val_num, "mg/dL", ref_str, leitura_id)
-
-            _sync(_apos_sync)
+        dd_momento.on_change = lambda e: None
 
         btn_cancel = ft.Container(
             content=ft.Text("Cancelar", size=13, color=SEC),
@@ -425,24 +371,18 @@ def criar_tela_glicemia(page: ft.Page, voltar_fn):
         btn_ok.on_click = _salvar
         tf_valor.on_submit = _salvar
 
-        _titulo_form = "Editar Leitura" if leitura else "Nova Leitura — Glicemia"
-
         ref_ov[0] = ft.Container(
             content=ft.Container(
                 content=ft.Column([
                     ft.Row([
                         ft.Icon("water_drop_rounded", size=16, color=COR),
-                        ft.Text(_titulo_form, size=15, color=TXT,
+                        ft.Text("Nova Medicao — Glicemia", size=15, color=TXT,
                                 weight=ft.FontWeight.W_700),
                     ], spacing=8),
                     ft.Container(height=4),
                     tf_valor,
                     dd_momento,
-                    ft.Row([
-                        ft.Container(content=row_data, expand=True),
-                        ft.Container(content=dd_hora, width=108),
-                    ], spacing=8),
-                    tf_obs,
+                    row_data,
                     txt_erro,
                     ft.Container(height=4),
                     ft.Row([btn_cancel, btn_ok], spacing=8,
@@ -455,341 +395,213 @@ def criar_tela_glicemia(page: ft.Page, voltar_fn):
         )
         ref_ov[0].on_click = _fechar
         page.overlay.append(ref_ov[0])
+        try: page.update()
+        except Exception: pass
+
+    def _renderizar_nivel2(params, g):
+        area.controls.clear()
+        n_sel = len(_selecionados)
+        subtitulo.value = f"{len(params)} parametro(s) — {n_sel} selecionado(s)"
+
+        # botao medicoes caseiras apenas no grupo Glicose Direta
+        if g["id"] == "direta":
+            btn_add = ft.Container(
+                content=ft.Row([
+                    ft.Icon("home_rounded", size=14, color=COR),
+                    ft.Text("Medicoes Caseiras", size=12, color=COR),
+                ], spacing=4, tight=True),
+                padding=ft.padding.symmetric(horizontal=10, vertical=7),
+                border_radius=8,
+                bgcolor=ft.Colors.with_opacity(0.10, COR),
+                border=ft.border.all(1, ft.Colors.with_opacity(0.3, COR)),
+                ink=True,
+            )
+            def _abrir_medicoes_caseiras(e):
+                from telas.tela_medicoes_caseiras import criar_tela_medicoes_caseiras
+
+                def _voltar_cas():
+                    page.controls.clear()
+                    page.controls.append(_tela)
+                    try: page.update()
+                    except Exception: pass
+
+                nova = criar_tela_medicoes_caseiras(page, voltar_fn=_voltar_cas)
+                page.controls.clear()
+                page.controls.append(nova)
+                try: page.update()
+                except Exception: pass
+
+            btn_add.on_click = _abrir_medicoes_caseiras
+            area.controls.append(ft.Row(
+                [ft.Container(expand=True), btn_add],
+            ))
+
+        _atualizar_grafico()
+        area.controls.append(grafico_container)
+        area.controls.append(ft.Divider(color=BD, height=1))
+        area.controls.append(ft.Text(
+            "Toque para selecionar/deselecionar — multiplos no mesmo grafico",
+            size=10, color=MUT, text_align=ft.TextAlign.CENTER,
+        ))
+
+        # batch de niveis
+        _niveis = {}
         try:
-            page.update()
+            _cn = sqlite3.connect(DB_PATH, timeout=10)
+            _nn = [p[0] for p in params]
+            _rn = _cn.execute(f"""
+                SELECT COALESCE(ep.nome_oficial, er.parametro), er.nivel_interpretacao
+                FROM exame_resultados er
+                JOIN exames e ON e.id = er.exame_id
+                LEFT JOIN exames_padrao ep ON ep.id = er.exame_padrao_id
+                WHERE UPPER(COALESCE(ep.nome_oficial, er.parametro)) IN
+                      ({",".join("UPPER(?)" for _ in _nn)})
+                  AND er.nivel_interpretacao IS NOT NULL
+                  AND (e.status IS NULL OR e.status NOT IN ('rascunho','revisao'))
+                ORDER BY e.data_exame DESC
+            """, _nn).fetchall()
+            _cn.close()
+            for _n2, _niv in _rn:
+                if _n2 not in _niveis: _niveis[_n2] = _niv
         except Exception:
             pass
 
-    # ── Sub-tela: lista editavel de medicoes domesticas ────────
+        _COR_NIVEL = {
+            "critico_baixo": "#FF4444", "baixo": "#F0883E",
+            "alto": "#F0883E", "critico_alto": "#FF4444", "otimo": "#3FB950",
+        }
 
-    def _mostrar_lista_leituras(leituras_ini):
-        area_leituras = ft.Column(spacing=6, scroll=ft.ScrollMode.AUTO, expand=True)
-        _leituras_ref = [leituras_ini]
+        for (nome,) in params:
+            sel     = nome in _selecionados
+            cor_brd = COR if sel else BD
+            cor_txt = TXT if sel else SEC
+            peso    = ft.FontWeight.W_600 if sel else ft.FontWeight.W_400
 
-        def _refresh_lista():
-            _leituras_ref[0] = listar_leituras_marcador(_TERMOS)
-            _rebuild_lista()
-            _carregar()
+            nivel_ult = _niveis.get(nome)
+            cor_nivel = _COR_NIVEL.get(nivel_ult)
+            badge_nivel = ft.Container(
+                content=ft.Icon(
+                    "warning_rounded" if nivel_ult in ("critico_alto","critico_baixo")
+                    else "arrow_upward_rounded" if nivel_ult == "alto"
+                    else "arrow_downward_rounded" if nivel_ult == "baixo"
+                    else "check_circle_outline_rounded",
+                    size=12, color=cor_nivel,
+                ),
+                tooltip=nivel_ult, visible=bool(cor_nivel),
+            )
 
-        def _rebuild_lista():
-            area_leituras.controls.clear()
-            for r in _leituras_ref[0]:
-                _data_disp = _para_display(r.get("data_medicao", ""))
-                try:
-                    val_txt = f"{float(str(r['valor']).replace(',', '.')):.1f}"
-                except Exception:
-                    val_txt = str(r.get("valor", "--"))
-                cor_v = _avaliar_cor(str(r["valor"]))
+            checkbox = ft.Checkbox(
+                value=sel,
+                fill_color=ft.Colors.with_opacity(0.8, COR),
+                check_color=BG,
+                active_color=COR,
+            )
 
-                _obs_raw      = (r.get("observacoes") or "")
-                _momento_disp = ""
-                if _obs_raw.startswith("[") and "]" in _obs_raw:
-                    _end          = _obs_raw.index("]")
-                    _momento_disp = _obs_raw[1:_end].strip()
+            btn_hist = ft.Container(
+                content=ft.Icon("arrow_forward_ios_rounded", size=13, color=COR),
+                padding=ft.padding.symmetric(horizontal=8, vertical=6),
+                border_radius=6,
+                bgcolor=ft.Colors.with_opacity(0.10, COR),
+                ink=True,
+                tooltip="Ver historico completo",
+            )
 
-                hora_txt   = (r.get("hora_medicao") or "").strip()
-                _sub_parts = [p for p in [_data_disp, hora_txt, _momento_disp] if p]
-                sub_txt    = "  •  ".join(_sub_parts)
+            card = ft.Container(
+                content=ft.Row([
+                    checkbox,
+                    ft.Icon("show_chart_rounded", size=14,
+                            color=COR if sel else MUT),
+                    ft.Text(nome, size=13, color=cor_txt,
+                            weight=peso, expand=True),
+                    badge_nivel,
+                    btn_hist,
+                ], spacing=10,
+                   vertical_alignment=ft.CrossAxisAlignment.CENTER),
+                bgcolor=ft.Colors.with_opacity(0.08, COR) if sel else CARD,
+                border_radius=8,
+                padding=ft.padding.symmetric(horizontal=10, vertical=10),
+                border=ft.Border(
+                    left=ft.BorderSide(3, cor_brd),
+                    top=ft.BorderSide(1, BD),
+                    bottom=ft.BorderSide(1, BD),
+                    right=ft.BorderSide(1, BD),
+                ),
+                ink=True,
+            )
 
-                btn_edit = ft.Container(
-                    content=ft.Icon("edit_rounded", size=16, color=SEC),
-                    padding=ft.padding.all(8),
-                    border_radius=8, ink=True,
-                )
-                _lr = dict(r)
-                btn_edit.on_click = lambda e, lr=_lr: _abrir_form(leitura=lr, on_salvo=_refresh_lista)
+            def _toggle(e, _n=nome, _params=params, _g=g):
+                if _n in _selecionados:
+                    if len(_selecionados) > 1:
+                        _selecionados.discard(_n)
+                else:
+                    _selecionados.add(_n)
+                _renderizar_nivel2(_params, _g)
 
-                card = ft.Container(
-                    content=ft.Row([
-                        ft.Container(
-                            content=ft.Text(val_txt, size=18,
-                                            weight=ft.FontWeight.W_900, color=cor_v),
-                            width=52, alignment=ft.alignment.Alignment(0, 0),
-                        ),
-                        ft.Column([
-                            ft.Text(f"{val_txt} mg/dL", size=13, color=TXT,
-                                    weight=ft.FontWeight.W_600),
-                            ft.Text(sub_txt, size=11, color=SEC),
-                            ft.Text(f"Ref: {r.get('referencia','70 - 99')}",
-                                    size=10, color=MUT),
-                        ], spacing=1, expand=True),
-                        btn_edit,
-                    ], spacing=8, vertical_alignment=ft.CrossAxisAlignment.CENTER),
-                    bgcolor=CARD, border_radius=8,
-                    padding=ft.padding.symmetric(horizontal=12, vertical=10),
-                    border=ft.Border(
-                        left=ft.BorderSide(3, cor_v),
-                        top=ft.BorderSide(1, BD), bottom=ft.BorderSide(1, BD),
-                        right=ft.BorderSide(1, BD),
-                    ),
-                )
-                area_leituras.controls.append(card)
+            def _abrir_historico(e, _n=nome):
+                from telas.tela_historico_parametro import criar_tela_historico_parametro
 
-            if not _leituras_ref[0]:
-                area_leituras.controls.append(
-                    ft.Text("Nenhuma medicao registrada.", color=MUT, size=12))
+                def _voltar_hist():
+                    page.controls.clear()
+                    page.controls.append(_tela)
+                    try: page.update()
+                    except Exception: pass
 
-            try:
-                page.update()
-            except Exception:
-                pass
+                nova = criar_tela_historico_parametro(
+                    page, param_nome=_n, voltar_fn=_voltar_hist,
+                    grupo_nome=g["nome"],
+                    param_nomes=[p[0] for p in params])
+                page.controls.clear()
+                page.controls.append(nova)
+                try: page.update()
+                except Exception: pass
 
-        _rebuild_lista()
+            card.on_click = _toggle
+            checkbox.on_change = _toggle
+            btn_hist.on_click = _abrir_historico
+            area.controls.append(card)
 
-        def _voltar_da_lista(e=None):
-            _sair(_mostrar_principal)
+        try: page.update()
+        except Exception: pass
 
-        btn_voltar = ft.Container(
-            content=ft.Icon("arrow_back_rounded", size=20, color=TXT),
-            padding=ft.padding.all(8), border_radius=8, ink=True,
-        )
-        btn_voltar.on_click = _voltar_da_lista
+    # -- carga inicial ------------------------------------------------
+    _renderizar_grupos()
 
-        btn_add = ft.Container(
-            content=ft.Row([
-                ft.Icon("add_rounded", size=16, color=COR),
-                ft.Text("Registrar", size=13, color=COR),
-            ], spacing=4, tight=True),
-            padding=ft.padding.symmetric(horizontal=10, vertical=8),
-            border_radius=8, ink=True,
-        )
-        btn_add.on_click = lambda e: _abrir_form(on_salvo=_refresh_lista)
+    # -- tela ---------------------------------------------------------
+    from shared.layout import Layout
+    lay = Layout(page)
 
-        cab_lista = ft.Container(
-            content=ft.Row([
-                btn_voltar,
-                ft.Icon("water_drop_rounded", size=14, color=COR),
-                ft.Text("Medicoes Domesticas", size=15, color=TXT,
-                        weight=ft.FontWeight.W_700, expand=True),
-                btn_add,
-            ], spacing=8, vertical_alignment=ft.CrossAxisAlignment.CENTER),
-            bgcolor=CARD,
-            padding=ft.padding.symmetric(horizontal=8, vertical=6),
-            border=ft.Border(bottom=ft.BorderSide(1, BD2)),
-        )
-
-        corpo_lista = ft.Column([
+    _tela = ft.Container(
+        bgcolor=BG, expand=True,
+        content=ft.Column([
             ft.Container(height=lay.spacer_topo, bgcolor=BG),
-            cab_lista,
+            ft.Row([
+                ft.Container(
+                    content=ft.Row([
+                        ft.Icon("arrow_back_rounded", size=14, color=SEC),
+                        ft.Text("Voltar", size=12, color=SEC),
+                    ], spacing=4, tight=True),
+                    padding=ft.padding.symmetric(horizontal=8, vertical=8),
+                    border_radius=8, ink=True,
+                    on_click=lambda e: (
+                        _voltar_grupos() if _nivel[0] == 1
+                        else (voltar_fn() if voltar_fn else None)
+                    ),
+                ),
+                ft.Container(expand=True),
+                ft.Icon("water_drop_rounded", size=16, color=COR),
+                ft.Container(width=6),
+                titulo,
+                ft.Container(expand=True),
+            ], vertical_alignment=ft.CrossAxisAlignment.CENTER),
+            ft.Divider(color=BD, height=1),
+            subtitulo,
+            ft.Container(height=4),
             ft.Container(
-                content=area_leituras,
-                padding=ft.padding.symmetric(horizontal=12, vertical=8),
+                content=area,
+                padding=ft.padding.symmetric(horizontal=12),
                 expand=True,
             ),
-        ], spacing=0, expand=True)
-
-        wrapper.controls.clear()
-        wrapper.controls.append(ft.Container(bgcolor=BG, expand=True, content=corpo_lista))
-        try:
-            page.update()
-        except Exception:
-            pass
-
-    # ── Card reutilizavel ───────────────────────────────────────
-
-    def _mk_card(cor_borda, val_txt, cor_val, titulo, subtitulo, unidade, on_click_fn):
-        card = ft.Container(
-            content=ft.Row([
-                ft.Container(
-                    content=ft.Text(val_txt, size=18,
-                                    weight=ft.FontWeight.W_900, color=cor_val),
-                    width=56, alignment=ft.alignment.Alignment(0, 0),
-                ),
-                ft.Column([
-                    ft.Text(titulo, size=12, color=TXT, weight=ft.FontWeight.W_600),
-                    ft.Text(subtitulo, size=11, color=SEC),
-                ], spacing=1, expand=True),
-                ft.Row([
-                    ft.Text(unidade, size=10, color=MUT),
-                    ft.Icon("chevron_right_rounded", size=14, color=MUT),
-                ], spacing=4, tight=True),
-            ], spacing=10, vertical_alignment=ft.CrossAxisAlignment.CENTER),
-            bgcolor=CARD, border_radius=8, ink=True,
-            padding=ft.padding.symmetric(horizontal=12, vertical=10),
-            border=ft.Border(left=ft.BorderSide(3, cor_borda),
-                             top=ft.BorderSide(1, BD), bottom=ft.BorderSide(1, BD),
-                             right=ft.BorderSide(1, BD)),
-        )
-        card.on_click = on_click_fn
-        return card
-
-    # ── Carregamento ────────────────────────────────────────────
-
-    def _carregar():
-        area_lista.controls.clear()
-
-        leituras = listar_leituras_marcador(_TERMOS)
-        exames   = listar_exames_glicemia(_TERMOS)
-
-        # ── Resumo: ultima medicao + media ─────────────────────
-        todos_vals = []
-        for r in leituras:
-            try:
-                todos_vals.append((r.get("data_medicao", ""), float(str(r["valor"]).replace(",", "."))))
-            except Exception:
-                pass
-        for r in exames:
-            try:
-                todos_vals.append((r.get("data_exame", ""), float(str(r["valor"]).replace(",", "."))))
-            except Exception:
-                pass
-
-        todos_vals.sort(key=lambda x: x[0] or "", reverse=True)
-
-        if todos_vals:
-            data_ult, val_ult = todos_vals[0]
-            media = sum(v for _, v in todos_vals) / len(todos_vals)
-            cor_ult = _avaliar_cor(str(val_ult))
-            cor_med = _avaliar_cor(str(media))
-
-            area_lista.controls.append(
-                ft.Container(
-                    content=ft.Row([
-                        ft.Column([
-                            _label_sec("ULTIMA MEDICAO"),
-                            ft.Text(f"{val_ult:.1f}", size=26,
-                                    weight=ft.FontWeight.W_900, color=cor_ult),
-                            ft.Text(f"mg/dL  •  {_dias_txt(data_ult)}",
-                                    size=11, color=SEC),
-                        ], spacing=2, expand=True),
-                        ft.Container(width=1, bgcolor=BD2),
-                        ft.Container(
-                            content=ft.Column([
-                                _label_sec("MEDIA"),
-                                ft.Text(f"{media:.1f}", size=22,
-                                        weight=ft.FontWeight.W_700, color=cor_med),
-                                ft.Text(f"{len(todos_vals)} medicoes",
-                                        size=10, color=MUT),
-                            ], spacing=2, horizontal_alignment=ft.CrossAxisAlignment.END),
-                            padding=ft.padding.only(left=14),
-                        ),
-                    ], vertical_alignment=ft.CrossAxisAlignment.CENTER, spacing=14),
-                    bgcolor=CARD, border_radius=8,
-                    padding=ft.padding.symmetric(horizontal=14, vertical=12),
-                    border=ft.Border(
-                        left=ft.BorderSide(3, cor_ult),
-                        top=ft.BorderSide(1, BD), bottom=ft.BorderSide(1, BD),
-                        right=ft.BorderSide(1, BD),
-                    ),
-                )
-            )
-            area_lista.controls.append(ft.Divider(color=BD2, height=1))
-
-        # ── Card: Medicoes Domesticas ──────────────────────────
-        if leituras:
-            ult   = leituras[0]
-            cor_v = _avaliar_cor(ult["valor"])
-            try:
-                val_txt = f"{float(str(ult['valor']).replace(',', '.')):.1f}"
-            except Exception:
-                val_txt = "--"
-            n       = len(leituras)
-            sub_dom = f"{n}x  •  {_dias_txt(ult.get('data_medicao',''))}"
-            unidade = ult.get("unidade", "mg/dL")
-
-            def _click_dom(e, _leit=leituras):
-                _mostrar_lista_leituras(_leit)
-        else:
-            cor_v   = MUT
-            val_txt = "--"
-            sub_dom = "sem registros  •  toque para registrar"
-            unidade = "mg/dL"
-            _click_dom = _abrir_form  # sem leituras: abre o form direto
-
-        area_lista.controls.append(
-            _mk_card(cor_v, val_txt, cor_v,
-                     "Medicoes Domesticas", sub_dom, unidade, _click_dom))
-
-        # ── Cards: Exames de laboratorio ───────────────────────
-
-        if not exames:
-            area_lista.controls.append(
-                ft.Text("Nenhum exame de laboratorio encontrado.", color=MUT, size=12))
-        else:
-            grupos = {}
-            for r in exames:
-                key = (r.get("parametro") or "Desconhecido").strip().lower()
-                if key not in grupos:
-                    grupos[key] = {
-                        "parametro":       (r.get("parametro") or "Desconhecido").strip(),
-                        "exame_padrao_id": r.get("exame_padrao_id"),
-                        "resultados":      [],
-                    }
-                grupos[key]["resultados"].append(r)
-
-            for grupo in grupos.values():
-                regs   = grupo["resultados"]
-                ultimo = regs[0]
-                cor_v  = _avaliar_cor(ultimo["valor"])
-                n      = len(regs)
-                try:
-                    val_txt = f"{float(str(ultimo['valor']).replace(',', '.')):.1f}"
-                except Exception:
-                    val_txt = "--"
-                sub_lab = f"{n}x  •  {_dias_txt(ultimo.get('data_exame',''))}"
-                unidade = ultimo.get("unidade", "mg/dL")
-                titulo  = grupo["parametro"].title()
-                ep_id   = grupo["exame_padrao_id"]
-
-                def _click_lab(e, _titulo=titulo, _ep_id=ep_id, _unidade=unidade):
-                    hist = buscar_historico_exame(_ep_id) if _ep_id else []
-                    _abrir_grafico(_titulo,
-                                   {"nome_oficial": _titulo,
-                                    "unidade": _unidade, "historico": hist})
-
-                area_lista.controls.append(
-                    _mk_card(cor_v + "88", val_txt, cor_v,
-                             titulo, sub_lab, unidade, _click_lab))
-
-        if _montado[0]:
-            try:
-                page.update()
-            except Exception:
-                pass
-
-    # ── Layout principal ────────────────────────────────────────
-
-    area_principal = ft.Column([
-        ft.Container(
-            content=ft.Row([
-                ft.Icon("biotech_rounded", size=12, color=AZUL),
-                _label_sec("GLICEMIA", AZUL),
-            ], spacing=6),
-        ),
-        area_lista,
-        ft.Container(height=20),
-    ], spacing=8, scroll=ft.ScrollMode.AUTO, expand=True)
-
-    btn_registrar = ft.Container(
-        content=ft.Row([
-            ft.Icon("add_rounded", size=16, color=COR),
-            ft.Text("Registrar", size=13, color=COR),
-        ], spacing=4, tight=True),
-        padding=ft.padding.symmetric(horizontal=10, vertical=8),
-        border_radius=8, ink=True,
+        ], spacing=6, expand=True),
     )
-    btn_registrar.on_click = _abrir_form
 
-    cabecalho = lay.criar_cabecalho(
-        "Glicemia", lambda e=None: _sair(voltar_fn),
-        icone_titulo="water_drop_rounded",
-        cor_titulo=COR,
-        acoes=[btn_registrar],
-    )
-    corpo = lay.criar_corpo(cabecalho, area_principal)
-
-    def _mostrar_principal():
-        wrapper.controls.clear()
-        wrapper.controls.append(ft.Container(bgcolor=BG, expand=True, content=corpo))
-        if _montado[0]:
-            try:
-                page.update()
-            except Exception:
-                pass
-
-    _carregar()
-
-    wrapper.controls.append(ft.Container(bgcolor=BG, expand=True, content=corpo))
-    _montado[0] = True
-    _registrar_voltar_hw()
-    return wrapper
+    return _tela

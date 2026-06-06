@@ -181,12 +181,54 @@ _TOOLS: list[dict[str, Any]] = [
             "required": [],
         },
     },
+    {
+        "name": "conhecimento_exame",
+        "description": (
+            "Retorna conhecimento clinico detalhado sobre um exame: o que mede, sistema/orgao avaliado, "
+            "o que significa quando alto ou baixo, faixa de alerta, quem solicita, interferentes, "
+            "preparo do paciente e curiosidade clinica. "
+            "Use SEMPRE que o usuario perguntar sobre um exame especifico ou pedir interpretacao de resultado."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "parametro": {
+                    "type": "string",
+                    "description": "Nome do exame ou parametro (ex: 'Glicemia de Jejum', 'HbA1c', 'Creatinina').",
+                },
+            },
+            "required": ["parametro"],
+        },
+    },
 ]
 
 
 # ══════════════════════════════════════════════════════════════
 # EXECUTORES DE TOOLS
 # ══════════════════════════════════════════════════════════════
+
+def _exec_conhecimento_exame(parametro: str) -> dict:
+    """Retorna conhecimento clinico do exame (exame_conhecimento) para enriquecer resposta da Claudia."""
+    try:
+        from dados.model_prontuario import DB_PATH
+        with sqlite3.connect(DB_PATH, timeout=10) as conn:
+            conn.row_factory = sqlite3.Row
+            row = conn.execute("""
+                SELECT ek.o_que_mede, ek.sistema_orgao, ek.alterado_alto, ek.alterado_baixo,
+                       ek.faixa_alerta, ek.quem_solicita, ek.interferentes,
+                       ek.preparo_paciente, ek.curiosidade_clinica, ek.fonte,
+                       ep.nome_oficial
+                FROM exame_conhecimento ek
+                JOIN exames_padrao ep ON ep.id = ek.exame_padrao_id
+                WHERE UPPER(ep.nome_oficial) LIKE UPPER(?)
+                LIMIT 1
+            """, (f"%{parametro}%",)).fetchone()
+            if row:
+                return {"encontrado": True, "dados": dict(row)}
+            return {"encontrado": False}
+    except Exception as ex:
+        return {"erro": str(ex)}
+
 
 def _exec_buscar_exames(parametro: str, data_inicio: str = "", data_fim: str = "") -> dict:
     try:
@@ -322,6 +364,7 @@ _EXEC_MAP = {
     "buscar_consultas":            lambda i: _exec_buscar_consultas(**i),
     "perfil_paciente":             lambda _: _exec_perfil_paciente(),
     "buscar_rotina_diario":        lambda i: _exec_buscar_rotina_diario(**i),
+    "conhecimento_exame":          lambda i: _exec_conhecimento_exame(**i),
 }
 
 

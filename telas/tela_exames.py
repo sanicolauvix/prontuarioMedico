@@ -481,436 +481,22 @@ def buscar_todas_categorias() -> list:
     return [{"categoria": r[0], "total": r[1], "realizados": r[2]} for r in rows]
 
 
-def _valor_float(v: str):
-    try:
-        return float(v.replace(",", ".").strip())
-    except Exception:
-        return None
+from shared.grafico import (
+    valor_float as _valor_float,
+    parse_referencia as _parse_referencia,
+    gerar_grafico_flet as _gerar_grafico_flet,
+    renderizar_grafico_combinado,
+)
 
 
 # ══════════════════════════════════════════════════════════════
 # RENDERIZADORES
+# (gráfico e helpers movidos para shared/grafico.py)
 # ══════════════════════════════════════════════════════════════
 
-def _parse_referencia(ref_str: str):
-    """Extrai (min, max) de strings como '22,0 - 280,0' ou '< 5' ou '> 10'."""
-    import re
-    if not ref_str:
-        return None, None
-    ref_str = ref_str.replace(",", ".").strip()
-    # Formato: 22.0 - 280.0  ou  22.0 a 280.0
-    m = re.search(r"([\d.]+)\s*(?:-|a)\s*([\d.]+)", ref_str)
-    if m:
-        return float(m.group(1)), float(m.group(2))
-    # Formato: < 5.0
-    m = re.search(r"<\s*([\d.]+)", ref_str)
-    if m:
-        return None, float(m.group(1))
-    # Formato: > 10.0
-    m = re.search(r">\s*([\d.]+)", ref_str)
-    if m:
-        return float(m.group(1)), None
-    return None, None
-
-
-def _gerar_grafico_flet(historicos: list) -> ft.Control:
-    """Grafico nativo Flet — sem dependencias externas, funciona no Android."""
-    from datetime import datetime
-
-    CORES_EX = ["#58A6FF", "#3FB950", "#F0883E", "#BC8CFF", "#D29922"]
-    NIVEL_COR = {
-        "critico_baixo": "#FF4444", "baixo": "#F0883E",
-        "otimo": "#3FB950",         "alto":  "#F0883E",
-        "critico_alto": "#FF4444",
-    }
-
-    def _pd(d):
-        for fmt in ("%Y-%m-%d", "%d/%m/%Y"):
-            try:
-                return datetime.strptime((d or "")[:10], fmt)
-            except Exception:
-                pass
-        return None
-
-    # Preparar series
-    series = []
-    for idx, (ex, hist) in enumerate(historicos):
-        ent = sorted(
-            [h for h in hist
-             if _valor_float(h.get("valor")) is not None
-             and h.get("data") and _pd(h["data"])],
-            key=lambda h: _pd(h["data"]),
-        )
-        if not ent:
-            continue
-        ref_min = ref_max = None
-        for h in ent:
-            rm, rx = _parse_referencia(h.get("referencia", ""))
-            if rm is not None or rx is not None:
-                ref_min, ref_max = rm, rx
-                break
-        series.append({
-            "ex": ex, "ent": ent,
-            "cor": CORES_EX[idx % len(CORES_EX)],
-            "ref_min": ref_min, "ref_max": ref_max,
-            "uni": ex.get("unidade") or (ent[0].get("unidade") if ent else "") or "",
-            "nome": ex.get("nome_oficial", ""),
-        })
-
-    if not series:
-        return ft.Text("Sem valores numericos.", size=12, color="#484F58")
-
-    # Eixo X: todas as datas ordenadas
-    todas_datas = sorted({
-        _pd(h["data"])
-        for s in series for h in s["ent"] if _pd(h["data"])
-    })
-    if not todas_datas:
-        return ft.Text("Sem datas validas.", size=12, color="#484F58")
-
-    didx = {d: i for i, d in enumerate(todas_datas)}
-
-    # Escala Y global (inclui limites de referencia)
-    todos_ys = [
-        _valor_float(h["valor"])
-        for s in series for h in s["ent"]
-        if _valor_float(h["valor"]) is not None
-    ]
-    y_min = min(todos_ys) if todos_ys else 0.0
-    y_max = max(todos_ys) if todos_ys else 100.0
-    for s in series:
-        if s["ref_min"] is not None:
-            y_min = min(y_min, s["ref_min"])
-        if s["ref_max"] is not None:
-            y_max = max(y_max, s["ref_max"])
-    y_pad = max((y_max - y_min) * 0.18, 1.0)
-
-    # Construir series do grafico
-    chart_series = []
-    for s in series:
-        points = []
-        for h in s["ent"]:
-            d = _pd(h["data"])
-            v = _valor_float(h["valor"])
-            if d is None or v is None:
-                continue
-            nivel = h.get("nivel", "")
-            cor_pt = NIVEL_COR.get(nivel, s["cor"])
-            uni_str  = h.get("unidade") or s["uni"]
-            data_fmt = d.strftime("%d/%m/%Y")
-            points.append(ft.LineChartDataPoint(
-                x=float(didx[d]),
-                y=float(v),
-                tooltip=f"{h.get('valor','')} {uni_str}\n{data_fmt}",
-                point=ft.ChartCirclePoint(radius=5, color=cor_pt,
-                                          stroke_color="#0D1117", stroke_width=1.5),
-                selected_point=ft.ChartCirclePoint(radius=7, color=cor_pt,
-                                                   stroke_color="#0D1117", stroke_width=2),
-            ))
-
-        if not points:
-            continue
-
-        chart_series.append(ft.LineChartData(
-            data_points=points,
-            color=s["cor"],
-            stroke_width=2.4,
-            curved=False,
-            stroke_cap_round=True,
-        ))
-
-        # Linhas de referencia (tracejadas) como serie separada
-        if s["ref_min"] is not None and s["ref_max"] is not None:
-            n = float(len(todas_datas) - 1)
-            for ref_y, suffix in [(s["ref_min"], "min"), (s["ref_max"], "max")]:
-                chart_series.append(ft.LineChartData(
-                    data_points=[
-                        ft.LineChartDataPoint(x=0.0, y=float(ref_y)),
-                        ft.LineChartDataPoint(x=n,   y=float(ref_y)),
-                    ],
-                    color=s["cor"] + "55",
-                    stroke_width=1.0,
-                    dash_pattern=[5, 5],
-                    curved=False,
-                ))
-
-    if not chart_series:
-        return ft.Text("Sem pontos para exibir.", size=12, color="#484F58")
-
-    # Rotulos do eixo X — filtrar para no maximo 7 labels (evita sobreposicao)
-    n_datas = len(todas_datas)
-    step    = max(1, n_datas // 7)
-    x_labels = [
-        ft.ChartAxisLabel(
-            value=float(i),
-            label=ft.Container(
-                content=ft.Column([
-                    ft.Text(d.strftime("%d/%m"), size=9,  color="#8B949E",
-                            text_align=ft.TextAlign.CENTER),
-                    ft.Text(d.strftime("%Y"),    size=8,  color="#484F58",
-                            text_align=ft.TextAlign.CENTER),
-                ], spacing=0, horizontal_alignment=ft.CrossAxisAlignment.CENTER),
-                padding=ft.padding.only(top=2),
-            ),
-        )
-        for i, d in enumerate(todas_datas)
-        if i % step == 0 or i == n_datas - 1
-    ]
-
-    chart = ft.LineChart(
-        data_series=chart_series,
-        bgcolor="#161B22",
-        tooltip_bgcolor="#161B22",
-        tooltip_rounded_radius=6,
-        tooltip_fit_inside_horizontally=True,
-        tooltip_fit_inside_vertically=True,
-        border=ft.Border(
-            bottom=ft.BorderSide(1, "#21262D"),
-            left=ft.BorderSide(1, "#21262D"),
-        ),
-        horizontal_grid_lines=ft.ChartGridLines(
-            color="#21262D", width=0.5, dash_pattern=[4, 4],
-        ),
-        vertical_grid_lines=ft.ChartGridLines(color="#00000000"),
-        left_axis=ft.ChartAxis(labels_size=44, show_labels=True),
-        bottom_axis=ft.ChartAxis(labels=x_labels, labels_size=44),
-        min_y=y_min - y_pad,
-        max_y=y_max + y_pad,
-        min_x=-0.3,
-        max_x=float(len(todas_datas) - 1) + 0.3,
-        expand=True,
-        interactive=True,
-    )
-
-    return ft.Container(
-        content=chart,
-        height=280,
-        bgcolor="#161B22",
-        border_radius=8,
-        padding=ft.padding.symmetric(horizontal=4, vertical=8),
-        border=ft.border.all(1, "#21262D"),
-    )
-
-
-def renderizar_grafico_combinado(page: ft.Page, exames_selecionados: list) -> ft.Control:
-    """
-    Gráfico único com chips de legenda clicáveis.
-    Clicar num chip → tela de detalhe com todos os resultados + PDF.
-    Tela de detalhe tem botão Voltar → volta ao gráfico.
-    """
-    import webbrowser, logging
-
-    historicos = [(ex, ex.get("historico", []))
-                  for ex in exames_selecionados if ex.get("historico")]
-    if not historicos:
-        return ft.Text("Nenhum dado para exibir.", size=12, color="#484F58")
-
-    CORES_EX = ["#58A6FF", "#3FB950", "#F0883E", "#BC8CFF", "#D29922"]
-    NIVEL_COR = {
-        "critico_baixo": "#FF4444", "baixo": "#F0883E",
-        "otimo": "#3FB950",         "alto":  "#F0883E",
-        "critico_alto": "#FF4444",  "sem_referencia": "#58A6FF",
-        "nao_identificado": "#8B949E",
-    }
-    NIVEL_LABEL = {
-        "critico_baixo": "Critico v", "baixo": "Baixo v",
-        "otimo": "Otimo ok",          "alto":  "Alto ^",
-        "critico_alto": "Critico ^",  "sem_referencia": "—",
-        "nao_identificado": "?",
-    }
-
-    grafico_ctrl = _gerar_grafico_flet(historicos)
-
-    # Chips de legenda clicáveis (um por exame)
-    def _fazer_chip(idx, ex, hist):
-        cor  = CORES_EX[idx % len(CORES_EX)]
-        nome = ex.get("nome_oficial", "")
-        uni  = ex.get("unidade", "")
-
-        def _abrir(e, _ex=ex, _hist=hist, _cor=cor):
-            _mostrar_detalhe(_ex, _hist, _cor)
-
-        return ft.Container(
-            content=ft.Row([
-                ft.Container(width=10, height=10, bgcolor=cor,
-                             border_radius=2),
-                ft.Text(nome, size=11, color="#E6EDF3",
-                        weight=ft.FontWeight.W_500),
-                ft.Text(f"[{uni}]" if uni else "", size=9, color="#484F58"),
-                ft.Icon("chevron_right_rounded", size=12, color=cor),
-            ], spacing=5, tight=True),
-            bgcolor="#161B22", border_radius=16,
-            padding=ft.padding.symmetric(horizontal=10, vertical=5),
-            border=ft.Border(
-                top=ft.BorderSide(1, cor + "66"),
-                bottom=ft.BorderSide(1, cor + "66"),
-                left=ft.BorderSide(2, cor),
-                right=ft.BorderSide(1, cor + "66"),
-            ),
-            on_click=_abrir, ink=True,
-        )
-
-    chips_legenda = ft.Row(
-        controls=[_fazer_chip(i, ex, hist)
-                  for i, (ex, hist) in enumerate(historicos)],
-        spacing=8, wrap=True,
-    )
-
-    vista_grafico = ft.Column([
-        grafico_ctrl,
-        ft.Container(
-            content=ft.Column([
-                ft.Text("Clique num exame para ver os detalhes:",
-                        size=10, color="#484F58"),
-                chips_legenda,
-            ], spacing=6),
-            padding=ft.padding.symmetric(horizontal=4, vertical=6),
-        ),
-    ], spacing=6, visible=True)
-
-    # ── Vista B: Detalhe de um exame ──────────────────────────────────────────
-    detalhe_col = ft.Column(spacing=10, visible=False)
-
-    def _mostrar_detalhe(ex, hist, cor):
-        nome    = ex.get("nome_oficial", "")
-        unidade = ex.get("unidade", "")
-
-        # Filtrar entradas válidas, ordenar por data
-        from datetime import datetime
-        def _pd(d):
-            for fmt in ("%Y-%m-%d", "%d/%m/%Y"):
-                try: return datetime.strptime((d or "")[:10], fmt)
-                except: pass
-            return datetime.min
-
-        entradas = sorted(
-            [h for h in hist if h.get("valor") and h.get("data")],
-            key=lambda h: _pd(h["data"]),
-            reverse=True,  # mais recente primeiro
-        )
-
-        detalhe_col.controls.clear()
-
-        # Cabeçalho com voltar
-        btn_voltar = ft.Container(
-            content=ft.Row([
-                ft.Icon("arrow_back_rounded", size=14, color="#8B949E"),
-                ft.Text("Voltar ao gráfico", size=12, color="#8B949E"),
-            ], spacing=6, tight=True),
-            on_click=lambda e: _voltar_grafico(),
-            ink=True, border_radius=6,
-            padding=ft.padding.symmetric(horizontal=8, vertical=6),
-        )
-
-        detalhe_col.controls.append(ft.Row([
-            btn_voltar,
-            ft.Row([
-                ft.Container(width=3, height=16, bgcolor=cor, border_radius=2),
-                ft.Container(width=6),
-                ft.Text(nome, size=14, color="#E6EDF3",
-                        weight=ft.FontWeight.W_700),
-                ft.Text(f"[{unidade}]" if unidade else "",
-                        size=11, color="#484F58"),
-            ], spacing=0, vertical_alignment=ft.CrossAxisAlignment.CENTER),
-        ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN))
-
-        detalhe_col.controls.append(
-            ft.Text(f"{len(entradas)} resultado(s) — mais recente primeiro",
-                    size=10, color="#484F58"))
-
-        # Card por resultado
-        for h in entradas:
-            nivel  = h.get("nivel", "sem_referencia")
-            cor_n  = NIVEL_COR.get(nivel, "#58A6FF")
-            label  = NIVEL_LABEL.get(nivel, "?")
-            uni    = h.get("unidade") or unidade
-            ref    = h.get("referencia") or "—"
-            lab    = h.get("laboratorio") or ""
-            _data_raw = (h.get("data") or "")[:10]
-            if len(_data_raw) == 10 and _data_raw[4] == "-":
-                try:
-                    from datetime import datetime as _ddt
-                    _data_raw = _ddt.strptime(_data_raw, "%Y-%m-%d").strftime("%d/%m/%Y")
-                except Exception:
-                    pass
-            data   = _data_raw
-            valor  = h.get("valor") or ""
-            did    = h.get("drive_id") or ""
-
-            btn_pdf = ft.Container(
-                content=ft.Row([
-                    ft.Icon("picture_as_pdf_rounded", size=13, color="#FF4444"),
-                    ft.Text("Ver PDF", size=11, color="#58A6FF"),
-                ], spacing=4, tight=True),
-                bgcolor="#0D1117", border_radius=6,
-                padding=ft.padding.symmetric(horizontal=8, vertical=5),
-                border=ft.Border(
-                    top=ft.BorderSide(1, "#30363D"),
-                    bottom=ft.BorderSide(1, "#30363D"),
-                    left=ft.BorderSide(1, "#30363D"),
-                    right=ft.BorderSide(1, "#30363D"),
-                ),
-                ink=True, visible=bool(did),
-            )
-            if did:
-                btn_pdf.on_click = lambda e, d=did: webbrowser.open(
-                    f"https://drive.google.com/file/d/{d}/view")
-
-            detalhe_col.controls.append(ft.Container(
-                content=ft.Column([
-                    ft.Row([
-                        ft.Text(data, size=11, color="#8B949E"),
-                        ft.Container(expand=True),
-                        btn_pdf,
-                    ]),
-                    ft.Container(height=6),
-                    ft.Row([
-                        ft.Column([
-                            ft.Text("Valor", size=9, color="#484F58"),
-                            ft.Row([
-                                ft.Text(str(valor), size=22, color=cor_n,
-                                        weight=ft.FontWeight.W_700),
-                                ft.Text(uni, size=11, color="#484F58"),
-                            ], spacing=4,
-                               vertical_alignment=ft.CrossAxisAlignment.END),
-                        ], spacing=1),
-                        ft.VerticalDivider(color="#21262D", width=24),
-                        ft.Column([
-                            ft.Text("Referência", size=9, color="#484F58"),
-                            ft.Text(ref, size=11, color="#8B949E"),
-                        ], spacing=1),
-                        ft.VerticalDivider(color="#21262D", width=24),
-                        ft.Column([
-                            ft.Text("Nível", size=9, color="#484F58"),
-                            ft.Text(label, size=12, color=cor_n,
-                                    weight=ft.FontWeight.W_600),
-                        ], spacing=1),
-                    ], spacing=0, vertical_alignment=ft.CrossAxisAlignment.CENTER),
-                    ft.Container(height=4),
-                    ft.Text(lab, size=9, color="#58A6FF"),
-                ], spacing=0),
-                bgcolor="#161B22", border_radius=8,
-                padding=ft.padding.all(14),
-                border=ft.Border(
-                    left=ft.BorderSide(3, cor_n),
-                    top=ft.BorderSide(1, "#21262D"),
-                    bottom=ft.BorderSide(1, "#21262D"),
-                    right=ft.BorderSide(1, "#21262D"),
-                ),
-            ))
-
-        vista_grafico.visible = False
-        detalhe_col.visible   = True
-        try: page.update()
-        except Exception: pass
-
-    def _voltar_grafico():
-        detalhe_col.visible   = False
-        vista_grafico.visible = True
-        try: page.update()
-        except Exception: pass
-
-    return ft.Column([vista_grafico, detalhe_col], spacing=0)
+# _gerar_grafico_flet e renderizar_grafico_combinado agora em shared/grafico.py
+# Os imports já foram feitos acima via:
+#   from shared.grafico import gerar_grafico_flet as _gerar_grafico_flet, renderizar_grafico_combinado
 
 
 def renderizar_tabela_exame(page: ft.Page, exame: dict) -> ft.Control:
@@ -1371,8 +957,36 @@ def _conteudo_buscar(page, fn_adicionar, chips_row, txt_info, col_resultado, sel
     )
     lista = ft.Column(spacing=4)
 
-    # Container do modo busca
-    area_busca = ft.Column([txt_busca, lista, txt_info], spacing=6, visible=True)
+    _busca_aberta = [False]
+    _ico_busca = ft.Icon("expand_more_rounded", size=14, color=AZUL)
+
+    corpo_busca = ft.Column([txt_busca, lista, txt_info], spacing=6, visible=False)
+
+    def _toggle_busca(e=None):
+        _busca_aberta[0] = not _busca_aberta[0]
+        corpo_busca.visible = _busca_aberta[0]
+        _ico_busca.name = ("expand_less_rounded" if _busca_aberta[0]
+                           else "expand_more_rounded")
+        if _busca_aberta[0]:
+            txt_busca.value = ""
+            lista.controls.clear()
+            _filtrar()
+        try: page.update()
+        except Exception: pass
+
+    header_busca = ft.Container(
+        content=ft.Row([
+            ft.Icon("search_rounded", size=12, color=AZUL),
+            ft.Text("BUSCAR EXAME", size=10, weight=ft.FontWeight.W_700, color=AZUL),
+            ft.Container(expand=True),
+            _ico_busca,
+        ], spacing=6),
+        padding=ft.padding.symmetric(horizontal=4, vertical=6),
+        border_radius=8, ink=True,
+    )
+    header_busca.on_click = _toggle_busca
+
+    area_busca = ft.Column([header_busca, corpo_busca], spacing=4)
 
     # Botão para abrir busca novamente no modo resultado
     btn_add_mais = ft.Container(
@@ -1383,18 +997,13 @@ def _conteudo_buscar(page, fn_adicionar, chips_row, txt_info, col_resultado, sel
         visible=False,
         padding=ft.padding.symmetric(horizontal=8, vertical=8),
         ink=True,
-        on_click=lambda e: _entrar_modo_busca(),
     )
-
-    def _entrar_modo_busca():
-        txt_busca.value = ""
-        lista.controls.clear()
-        area_busca.visible = True
-        btn_add_mais.visible = False
-        _filtrar()
+    btn_add_mais.on_click = lambda e: _toggle_busca()
 
     def _entrar_modo_resultado():
-        area_busca.visible = False
+        _busca_aberta[0] = False
+        corpo_busca.visible = False
+        _ico_busca.name = "expand_more_rounded"
         btn_add_mais.visible = True
         try: page.update()
         except Exception: pass
@@ -1445,7 +1054,6 @@ def _conteudo_buscar(page, fn_adicionar, chips_row, txt_info, col_resultado, sel
         except Exception: pass
 
     txt_busca.on_change = _filtrar
-    _filtrar()
     return [area_busca, chips_row, btn_add_mais, col_resultado]
 
 
@@ -2167,227 +1775,629 @@ def _conteudo_classificacao(page):
 # ══════════════════════════════════════════════════════════════
 
 def _conteudo_exames(page):
-    import webbrowser
+    import sqlite3 as _sq3
+
     exames = buscar_todos_exames_fisicos()
 
-    labs_disponiveis = sorted({ex.get("laboratorio") or "" for ex in exames} - {""})
+    # ── agrupa por (lab, data) ─────────────────────────────────────────────────
+    def _agrupar(lista_ex):
+        grupos = {}
+        for ex in lista_ex:
+            lab  = (ex.get("laboratorio") or "").strip()
+            data = (ex.get("data") or "")[:10]
+            # chave = drive_id se tiver, senao nome do arquivo, senao id unico
+            did      = (ex.get("drive_id") or "").strip()
+            arquivo  = os.path.basename(ex.get("arquivo") or "").strip()
+            key = did if did else (arquivo if arquivo else f"__id_{ex['id']}")
+            if key not in grupos:
+                grupos[key] = {"lab": lab, "data": data, "itens": []}
+            grupos[key]["itens"].append(ex)
+        return sorted(grupos.values(),
+                      key=lambda g: g["data"], reverse=True)
+
+    labs_disponiveis = sorted({(ex.get("laboratorio") or "").strip()
+                               for ex in exames} - {""})
+
+    # ── filtros ────────────────────────────────────────────────────────────────
+    _lab_sel  = [None]
+    _aberto   = [False]
+
+    _ico_fil  = ft.Icon("expand_more_rounded", size=13, color=LAR)
+    _txt_fil  = ft.Text("FILTROS", size=10, weight=ft.FontWeight.W_700, color=LAR)
 
     txt_busca = ft.TextField(
-        hint_text="Buscar por nome...",
-        bgcolor=CARD, border_color=BD2,
-        focused_border_color=LAR,
-        hint_style=ft.TextStyle(color=MUT),
-        text_style=ft.TextStyle(color=TXT),
-        border_radius=8, height=44,
-        prefix_icon="search_rounded",
-    )
-
-    txt_data = ft.TextField(
-        hint_text="Data  (ex: 2024  ou  2024-03)",
-        bgcolor=CARD, border_color=BD2,
-        focused_border_color=LAR,
+        hint_text="Laboratorio ou ano (ex: 2024)...",
+        bgcolor=CARD, border_color=BD2, focused_border_color=LAR,
         hint_style=ft.TextStyle(color=MUT),
         text_style=ft.TextStyle(color=TXT),
         border_radius=8, height=40,
-        prefix_icon="calendar_today_rounded",
-        expand=True,
+        prefix_icon="search_rounded",
     )
 
-    _lab_sel = [None]
     chips_lab = ft.Row(spacing=6, scroll=ft.ScrollMode.AUTO)
-    lista = ft.Column(spacing=4)
 
-    def _rebuild_chips_lab():
+    corpo_filtros = ft.Column([txt_busca, chips_lab], spacing=8, visible=False)
+
+    def _toggle_filtros(e=None):
+        _aberto[0] = not _aberto[0]
+        corpo_filtros.visible = _aberto[0]
+        _ico_fil.name = ("expand_less_rounded" if _aberto[0]
+                         else "expand_more_rounded")
+        try: page.update()
+        except Exception: pass
+
+    header_filtros = ft.Container(
+        content=ft.Row([
+            ft.Icon("tune_rounded", size=12, color=LAR),
+            _txt_fil,
+            ft.Container(expand=True),
+            _ico_fil,
+        ], spacing=6),
+        padding=ft.padding.symmetric(horizontal=4, vertical=6),
+        border_radius=8, ink=True,
+    )
+    header_filtros.on_click = _toggle_filtros
+
+    def _rebuild_chips():
         chips_lab.controls.clear()
         for lab in [None] + labs_disponiveis:
-            ativo = _lab_sel[0] == lab
-            rotulo = "Todos" if lab is None else lab
-            cor_chip = AZUL if lab is None else LAR
+            ativo   = _lab_sel[0] == lab
+            rotulo  = "Todos" if lab is None else lab
+            cor_c   = AZUL if lab is None else LAR
             chip = ft.Container(
                 content=ft.Text(rotulo, size=11,
-                                color=cor_chip if ativo else SEC,
-                                weight=ft.FontWeight.W_600 if ativo else ft.FontWeight.NORMAL),
+                                color=cor_c if ativo else SEC,
+                                weight=ft.FontWeight.W_600 if ativo
+                                       else ft.FontWeight.NORMAL),
                 padding=ft.padding.symmetric(horizontal=10, vertical=5),
                 border_radius=12,
-                border=ft.border.all(1, cor_chip if ativo else BD2),
-                bgcolor=f"{cor_chip}22" if ativo else "transparent",
+                border=ft.border.all(1, cor_c if ativo else BD2),
+                bgcolor=f"{cor_c}22" if ativo else "transparent",
                 ink=True,
             )
             def _sel(e, l=lab):
                 _lab_sel[0] = l
-                _rebuild_chips_lab()
+                _rebuild_chips()
                 _filtrar()
             chip.on_click = _sel
             chips_lab.controls.append(chip)
         try: page.update()
         except Exception: pass
 
-    def _construir_card(ex):
-        _eh_laudo = ex.get("tipo") in ("laudo", "imagem", "mapa")
-        _revisao  = ex.get("status") == "revisao"
-        cor   = AMAR if _revisao else (ROXO if _eh_laudo else AZUL)
+    # ── exclusão ───────────────────────────────────────────────────────────────
+    def _overlay_excluir(ex, on_ok):
         label = ex.get("tipo_exame") or ex.get("tipo", "")
-        data  = ex["data"][:10] if ex.get("data") else "—"
-        lab   = ex.get("laboratorio") or ""
-        medico = ex.get("medico") or ""
+        data  = (ex.get("data") or "")[:10]
+        ref   = [None]
 
-        def _ver(e, exame=ex):
-            if exame.get("drive_id"):
-                webbrowser.open("https://drive.google.com/file/d/" + exame["drive_id"] + "/view")
-            elif exame.get("arquivo"):
-                webbrowser.open("file:///" + exame["arquivo"])
-
-        def _del(e, exame=ex, lbl=label, dt=data):
-            overlay_ref = [None]
-
-            def _fechar():
-                if overlay_ref[0] and overlay_ref[0] in page.overlay:
-                    page.overlay.remove(overlay_ref[0])
-                try: page.update()
-                except Exception: pass
-
-            def _confirmar(e2):
-                _fechar()
-                arquivo = excluir_exame_fisico(exame["id"])
-                if arquivo and os.path.isfile(arquivo):
-                    try: os.remove(arquivo)
-                    except Exception: pass
-                exames[:] = buscar_todos_exames_fisicos()
-                _filtrar()
-
-            def _cancelar(e2):
-                _fechar()
-
-            _btn_cancelar_exc = ft.Container(
-                content=ft.Text("Cancelar", size=13, color=SEC),
-                padding=ft.padding.symmetric(horizontal=14, vertical=9),
-                border_radius=8, bgcolor=f"{SEC}22", ink=True,
-            )
-            _btn_cancelar_exc.on_click = _cancelar
-
-            _btn_excluir_ok = ft.Container(
-                content=ft.Text("Excluir", size=13, color=VERM,
-                                weight=ft.FontWeight.W_600),
-                padding=ft.padding.symmetric(horizontal=14, vertical=9),
-                border_radius=8, bgcolor=f"{VERM}22", ink=True,
-            )
-            _btn_excluir_ok.on_click = _confirmar
-
-            overlay_ref[0] = ft.Container(
-                content=ft.Container(
-                    content=ft.Column([
-                        ft.Text("Confirmar exclusao", size=16, color=TXT,
-                                weight=ft.FontWeight.W_600),
-                        ft.Container(height=8),
-                        ft.Text("Excluir '" + lbl + "' de " + dt + "?\nEsta acao nao pode ser desfeita.",
-                                color=SEC, size=13),
-                        ft.Container(height=16),
-                        ft.Row([
-                            _btn_cancelar_exc,
-                            _btn_excluir_ok,
-                        ], alignment=ft.MainAxisAlignment.END, spacing=8),
-                    ], tight=True),
-                    bgcolor=CARD, border_radius=12, padding=ft.padding.all(24), width=320,
-                    border=ft.Border(
-                        top=ft.BorderSide(1, BD2), bottom=ft.BorderSide(1, BD2),
-                        left=ft.BorderSide(1, BD2), right=ft.BorderSide(1, BD2),
-                    ),
-                ),
-                bgcolor="#00000088", expand=True,
-                alignment=ft.alignment.Alignment(0, 0),
-            )
-            page.overlay.append(overlay_ref[0])
+        def _fechar():
+            if ref[0] in page.overlay:
+                page.overlay.remove(ref[0])
             try: page.update()
             except Exception: pass
 
-        linha_meta = ft.Row([
-            ft.Icon("calendar_today_rounded", size=11, color=MUT),
-            ft.Text(data, size=12, color=SEC),
-        ], spacing=4, tight=True)
-
-        linha_lab = ft.Row([
-            ft.Icon("science_rounded", size=11, color=LAR),
-            ft.Text(lab or "Lab nao informado", size=12,
-                    color=LAR if lab else MUT,
-                    italic=not lab),
-        ], spacing=4, tight=True) if True else None
-
-        col_info_items = [
-            ft.Text(label, size=13, color=TXT, weight=ft.FontWeight.W_600),
-            ft.Row([linha_meta, ft.Container(width=10), linha_lab], spacing=0, wrap=False),
-        ]
-        if _revisao:
-            col_info_items.append(
-                ft.Row([
-                    ft.Icon("warning_amber_rounded", size=11, color=AMAR),
-                    ft.Text("Data ausente — revisar", size=11, color=AMAR, italic=True),
-                ], spacing=4, tight=True)
-            )
-        if medico:
-            col_info_items.append(
-                ft.Text(medico, size=11, color=MUT)
-            )
-
-        return ft.Container(
-            content=ft.Row([
-                ft.Icon("description_rounded" if _eh_laudo
-                        else "show_chart_rounded", size=16, color=cor),
-                ft.Column(col_info_items, spacing=3, expand=True),
-                ft.IconButton("visibility_rounded",
-                              icon_color=AZUL, icon_size=16, on_click=_ver),
-                ft.IconButton("delete_rounded",
-                              icon_color=VERM, icon_size=16, on_click=_del),
-            ], spacing=8, vertical_alignment=ft.CrossAxisAlignment.CENTER),
-            padding=ft.padding.symmetric(horizontal=10, vertical=10),
-            border_radius=6, bgcolor=CARD,
-            border=ft.Border(
-                top=ft.BorderSide(1, BD), bottom=ft.BorderSide(1, BD),
-                left=ft.BorderSide(2, cor), right=ft.BorderSide(1, BD),
-            ),
+        btn_cancel = ft.Container(
+            content=ft.Text("Cancelar", size=13, color=SEC),
+            padding=ft.padding.symmetric(horizontal=14, vertical=9),
+            border_radius=8, bgcolor=f"{SEC}22", ink=True,
         )
+        btn_cancel.on_click = lambda e: _fechar()
+
+        btn_ok = ft.Container(
+            content=ft.Text("Excluir", size=13, color=VERM,
+                            weight=ft.FontWeight.W_600),
+            padding=ft.padding.symmetric(horizontal=14, vertical=9),
+            border_radius=8, bgcolor=f"{VERM}22", ink=True,
+        )
+        def _confirm(e):
+            _fechar()
+            on_ok()
+        btn_ok.on_click = _confirm
+
+        ref[0] = ft.Container(
+            content=ft.Container(
+                content=ft.Column([
+                    ft.Text("Confirmar exclusao", size=15, color=TXT,
+                            weight=ft.FontWeight.W_600),
+                    ft.Container(height=8),
+                    ft.Text(f"Excluir '{label}' de {data}?\n"
+                            "Esta acao nao pode ser desfeita.",
+                            color=SEC, size=13),
+                    ft.Container(height=16),
+                    ft.Row([btn_cancel, btn_ok],
+                           alignment=ft.MainAxisAlignment.END, spacing=8),
+                ], tight=True),
+                bgcolor=CARD, border_radius=12,
+                padding=ft.padding.all(24), width=320,
+                border=ft.border.all(1, BD2),
+            ),
+            bgcolor="#00000088", expand=True,
+            alignment=ft.alignment.Alignment(0, 0),
+        )
+        page.overlay.append(ref[0])
+        try: page.update()
+        except Exception: pass
+
+    # ── resultados de um exame (lazy) ──────────────────────────────────────────
+    def _buscar_resultados(exame_id):
+        try:
+            conn = _sq3.connect(DB_PATH, timeout=30)
+            rows = conn.execute("""
+                SELECT COALESCE(ep.nome_oficial, r.parametro),
+                       r.valor, r.unidade, r.referencia, r.nivel_interpretacao
+                FROM exame_resultados r
+                LEFT JOIN exames_padrao ep ON ep.id = r.exame_padrao_id
+                WHERE r.exame_id = ?
+                  AND r.valor IS NOT NULL AND r.valor != ''
+                ORDER BY COALESCE(ep.nome_oficial, r.parametro)
+            """, (exame_id,)).fetchall()
+            conn.close()
+            return [{"param": r[0] or "", "valor": r[1], "unidade": r[2] or "",
+                     "referencia": r[3] or "", "nivel": r[4] or ""} for r in rows]
+        except Exception:
+            return []
+
+    # ── card de item dentro do grupo ───────────────────────────────────────────
+    def _card_item(ex, cor_grupo):
+        _eh_laudo = ex.get("tipo") in ("laudo", "imagem", "mapa")
+        _revisao  = ex.get("status") == "revisao"
+        cor_item  = AMAR if _revisao else (ROXO if _eh_laudo else cor_grupo)
+        label     = ex.get("tipo_exame") or ex.get("tipo", "")
+        medico    = ex.get("medico") or ""
+        try:
+            import datetime as _dt
+            _d = ex.get("data") or ""
+            data_item = _dt.datetime.strptime(_d[:10], "%Y-%m-%d").strftime("%d/%m/%Y") if _d else ""
+        except Exception:
+            data_item = ex.get("data", "")[:10]
+
+        _exp     = [False]
+        _ico_i   = ft.Icon("expand_more_rounded", size=13, color=MUT)
+        _corpo_i = ft.Column(spacing=0, visible=False)
+
+        def _toggle_item(e=None):
+            _exp[0] = not _exp[0]
+            _ico_i.name = ("expand_less_rounded" if _exp[0]
+                           else "expand_more_rounded")
+            if _exp[0]:
+                _corpo_i.controls.clear()
+            if _exp[0]:
+                # ── resultados numéricos (não para mapa/laudo/imagem) ─
+                _eh_mapa = ex.get("tipo") == "mapa"
+                if not _eh_laudo and not _eh_mapa:
+                    res = _buscar_resultados(ex["id"])
+                    if not res:
+                        _corpo_i.controls.append(ft.Container(
+                            content=ft.Text("Sem resultados numericos.",
+                                            size=11, color=MUT, italic=True),
+                            padding=ft.padding.symmetric(horizontal=14, vertical=8),
+                        ))
+                    else:
+                        for r in res:
+                            nv = r.get("nivel", "")
+                            cv = (VERD if nv == "otimo"
+                                  else AMAR if nv in ("bom", "atencao")
+                                  else VERM if ("critico" in nv or nv == "alto")
+                                  else SEC)
+                            _corpo_i.controls.append(ft.Container(
+                                content=ft.Row([
+                                    ft.Text(r["param"], size=12, color=TXT,
+                                            expand=True),
+                                    ft.Text(f"{r['valor']} {r['unidade']}",
+                                            size=12, color=cv,
+                                            weight=ft.FontWeight.W_700),
+                                    ft.Text(f"ref: {r['referencia']}"
+                                            if r["referencia"] else "",
+                                            size=10, color=MUT),
+                                ], spacing=8,
+                                   vertical_alignment=ft.CrossAxisAlignment.CENTER),
+                                border=ft.Border(
+                                    bottom=ft.BorderSide(1, BD),
+                                    left=ft.BorderSide(2, cor_item),
+                                ),
+                                padding=ft.padding.symmetric(
+                                    horizontal=14, vertical=7),
+                            ))
+
+                # ── anexos (laudos, imagens e mapas) ─────────
+                if _eh_laudo or _eh_mapa:
+                    try:
+                        from dados.model_prontuario import listar_anexos_exame
+                        anexos = listar_anexos_exame(ex["id"])
+                    except Exception:
+                        anexos = []
+
+                    _corpo_i.controls.append(ft.Container(
+                        content=ft.Row([
+                            ft.Icon("attach_file_rounded", size=11, color=AZUL),
+                            ft.Text(f"ANEXOS ({len(anexos)})" if anexos
+                                    else "Sem anexos de imagem",
+                                    size=10,
+                                    color=AZUL if anexos else MUT,
+                                    weight=ft.FontWeight.W_700 if anexos
+                                           else ft.FontWeight.NORMAL,
+                                    italic=not bool(anexos)),
+                        ], spacing=4),
+                        padding=ft.padding.only(left=14, top=8, bottom=4),
+                    ))
+                    for anx in anexos:
+                        nome = anx.get("nome_arquivo", "")
+                        ext  = os.path.splitext(nome)[-1].lower()
+                        _eh_vid = ext in (".mp4", ".avi", ".mov", ".mkv")
+                        ico_anx = "videocam_rounded" if _eh_vid else "image_rounded"
+                        did_anx = anx.get("drive_file_id")
+                        loc_anx = anx.get("arquivo_local", "")
+
+                        def _ver_anx(e, _did=did_anx, _loc=loc_anx):
+                            import webbrowser
+                            if _did:
+                                webbrowser.open(
+                                    f"https://drive.google.com/file/d/{_did}/view")
+                            elif _loc and os.path.isfile(_loc):
+                                webbrowser.open(
+                                    "file:///" + _loc.replace("\\", "/"))
+
+                        btn_anx = ft.Container(
+                            content=ft.Icon("open_in_new_rounded",
+                                            size=13, color=AZUL),
+                            padding=ft.padding.all(4),
+                            border_radius=6, ink=True,
+                        )
+                        btn_anx.on_click = _ver_anx
+
+                        _corpo_i.controls.append(ft.Container(
+                            content=ft.Row([
+                                ft.Icon(ico_anx, size=12, color=AZUL),
+                                ft.Text(nome, size=11, color=TXT, expand=True),
+                                ft.Icon("cloud_done_rounded" if did_anx
+                                        else "cloud_off_rounded",
+                                        size=11,
+                                        color=VERD if did_anx else AMAR),
+                                btn_anx,
+                            ], spacing=6,
+                               vertical_alignment=ft.CrossAxisAlignment.CENTER),
+                            border=ft.Border(
+                                bottom=ft.BorderSide(1, BD),
+                                left=ft.BorderSide(2, AZUL),
+                            ),
+                            padding=ft.padding.symmetric(horizontal=14, vertical=6),
+                        ))
+
+            _corpo_i.visible = _exp[0]
+            try: page.update()
+            except Exception: pass
+
+        header_item = ft.Container(
+            content=ft.Row([
+                ft.Icon("description_rounded" if _eh_laudo else "biotech_rounded",
+                        size=13, color=cor_item),
+                ft.Column([
+                    ft.Text(label or "Exame", size=12, color=TXT,
+                            weight=ft.FontWeight.W_600),
+                    ft.Row([
+                        ft.Icon("calendar_today_rounded", size=9, color=MUT),
+                        ft.Text(data_item, size=10, color=SEC),
+                        ft.Text(f"  •  {medico}", size=10, color=MUT) if medico
+                        else ft.Container(),
+                    ], spacing=3, tight=True) if data_item else
+                    ft.Text(medico, size=10, color=MUT) if medico
+                    else ft.Container(),
+                ], spacing=1, expand=True, tight=True),
+                _ico_i,
+            ], spacing=6, vertical_alignment=ft.CrossAxisAlignment.CENTER),
+            bgcolor=CARD,
+            border=ft.Border(
+                bottom=ft.BorderSide(1, BD),
+                left=ft.BorderSide(2, ft.Colors.with_opacity(0.40, cor_item)),
+            ),
+            padding=ft.padding.symmetric(horizontal=10, vertical=8),
+            ink=True,
+        )
+        header_item.on_click = _toggle_item
+
+        return ft.Column([header_item, _corpo_i], spacing=0)
+
+    # ── card de grupo (lab + data) ─────────────────────────────────────────────
+    def _card_grupo(grupo):
+        lab   = grupo["lab"]
+        data  = grupo["data"]
+        itens = grupo["itens"]
+        n     = len(itens)
+
+        # cor baseada no tipo predominante
+        tem_laudo = any(i.get("tipo") in ("laudo", "imagem", "mapa") for i in itens)
+        cor_g     = ROXO if tem_laudo else LAR
+
+        _exp_g   = [False]
+        _ico_g   = ft.Icon("expand_more_rounded", size=14, color=cor_g)
+        _corpo_g = ft.Column(spacing=0, visible=False)
+        _loaded  = [False]
+
+        def _toggle_grupo(e=None):
+            _exp_g[0] = not _exp_g[0]
+            _ico_g.name = ("expand_less_rounded" if _exp_g[0]
+                           else "expand_more_rounded")
+            if _exp_g[0] and not _loaded[0]:
+                _loaded[0] = True
+                for item in itens:
+                    _corpo_g.controls.append(_card_item(item, cor_g))
+            _corpo_g.visible = _exp_g[0]
+            try: page.update()
+            except Exception: pass
+
+        def _excluir_grupo():
+            for item in itens:
+                arquivo = excluir_exame_fisico(item["id"])
+                if arquivo and os.path.isfile(arquivo):
+                    try: os.remove(arquivo)
+                    except Exception: pass
+            exames[:] = buscar_todos_exames_fisicos()
+            _filtrar()
+
+        PASTA_EXAMES = "G:/Meu Drive/Eco_Koios/Prontuario/exames_laboratorio"
+        id_cabecalho = min(i["id"] for i in itens)
+
+        def _nome_padrao():
+            return f"{id_cabecalho}.pdf"
+
+        def _path_local():
+            return os.path.join(PASTA_EXAMES, _nome_padrao())
+
+        def _tem_pdf_local():
+            return os.path.isfile(_path_local())
+
+        def _drive_id_grupo():
+            for item in itens:
+                if item.get("drive_id"):
+                    return item["drive_id"]
+            return None
+
+        def _atualizar_arquivo_banco(novo_path):
+            try:
+                conn_u = _sq3.connect(DB_PATH, timeout=30)
+                ids = tuple(i["id"] for i in itens)
+                ph  = ",".join("?" * len(ids))
+                conn_u.execute(
+                    f"UPDATE exames SET arquivo_origem=? WHERE id IN ({ph})",
+                    (novo_path,) + ids,
+                )
+                conn_u.commit()
+                conn_u.close()
+            except Exception as ex:
+                print(f"[EXAMES] atualizar arquivo: {ex}")
+
+        def _resolver_url():
+            """Retorna (url, descricao) ou None se nao achar."""
+            did = _drive_id_grupo()
+            if did:
+                return f"https://drive.google.com/file/d/{did}/view"
+            # tenta path local padronizado
+            if _tem_pdf_local():
+                return "file:///" + _path_local().replace("\\", "/")
+            # tenta localizar pelo arquivo_origem na pasta de exames
+            arq_orig = (itens[0].get("arquivo") or "").strip()
+            if arq_orig:
+                # path absoluto salvo direto
+                if os.path.isfile(arq_orig):
+                    return "file:///" + arq_orig.replace("\\", "/")
+                # so o nome — tenta na pasta de exames
+                nome = os.path.basename(arq_orig)
+                candidato = os.path.join(PASTA_EXAMES, nome)
+                if os.path.isfile(candidato):
+                    return "file:///" + candidato.replace("\\", "/")
+            return None
+
+        def _ver_pdf(e):
+            import webbrowser
+            url = _resolver_url()
+            if not url:
+                _indicar_pdf()
+                return
+            webbrowser.open(url)
+
+        def _indicar_pdf(e=None):
+            # file picker para o usuario indicar o PDF
+            ref_ov = [None]
+
+            def _fechar_ov(ev=None):
+                if ref_ov[0] in page.overlay:
+                    page.overlay.remove(ref_ov[0])
+                try: page.update()
+                except Exception: pass
+
+            def _on_pick(result: ft.FilePickerResultEvent):
+                _fechar_ov()
+                if not result.files:
+                    return
+                src = result.files[0].path
+                if not src or not os.path.isfile(src):
+                    return
+                dst = _path_local()
+                try:
+                    os.makedirs(PASTA_EXAMES, exist_ok=True)
+                    import shutil
+                    shutil.copy2(src, dst)
+                    _atualizar_arquivo_banco(dst)
+                    # atualiza itens em memoria
+                    for item in itens:
+                        item["arquivo"] = dst
+                    btn_ver_grupo.icon  = "visibility_rounded"
+                    btn_ver_grupo.icon_color = AZUL
+                    btn_ver_grupo.tooltip = "Ver PDF"
+                    btn_ind_grupo.visible = False
+                    try: page.update()
+                    except Exception: pass
+                except Exception as ex:
+                    print(f"[EXAMES] copiar pdf: {ex}")
+
+            picker = ft.FilePicker(on_result=_on_pick)
+            page.overlay.append(picker)
+            try: page.update()
+            except Exception: pass
+            picker.pick_files(
+                dialog_title="Selecione o PDF deste exame",
+                allowed_extensions=["pdf"],
+                allow_multiple=False,
+            )
+
+        # formata data para exibicao
+        try:
+            import datetime as _dt
+            data_fmt = _dt.datetime.strptime(data, "%Y-%m-%d").strftime("%d/%m/%Y")
+        except Exception:
+            data_fmt = data
+
+        _tem_pdf = bool(_drive_id_grupo()) or _tem_pdf_local()
+
+        btn_ver_grupo = ft.IconButton(
+            "visibility_rounded",
+            icon_color=AZUL if _tem_pdf else MUT,
+            icon_size=15,
+            tooltip="Ver PDF" if _tem_pdf else "PDF nao localizado",
+        )
+        btn_ver_grupo.on_click = _ver_pdf
+
+        btn_ind_grupo = ft.IconButton(
+            "attach_file_rounded",
+            icon_color=AMAR,
+            icon_size=15,
+            tooltip="Indicar PDF",
+            visible=not _tem_pdf,
+        )
+        btn_ind_grupo.on_click = _indicar_pdf
+
+        def _adicionar_imagens(e=None):
+            def _on_pick_imgs(result: ft.FilePickerResultEvent):
+                if not result.files:
+                    return
+                import shutil as _sh4, sqlite3 as _sq4
+                from dados.model_prontuario import DB_PATH as _DB4
+                eid_grupo = id_cabecalho
+
+                def _run():
+                    try:
+                        conn_a = _sq4.connect(_DB4, timeout=30)
+                        n_exist = conn_a.execute(
+                            "SELECT COUNT(*) FROM exame_anexos WHERE exame_id=?",
+                            (eid_grupo,)).fetchone()[0]
+                        os.makedirs(PASTA_EXAMES, exist_ok=True)
+                        for i, f in enumerate(result.files):
+                            src = f.path
+                            if not src or not os.path.isfile(src): continue
+                            ext      = os.path.splitext(src)[-1].lower() or ".png"
+                            cont     = n_exist + i + 1
+                            nome_pad = f"{eid_grupo}_{cont}{ext}"
+                            dest     = os.path.join(PASTA_EXAMES, nome_pad)
+                            try: _sh4.copy2(src, dest)
+                            except Exception: dest = src
+                            conn_a.execute("""
+                                INSERT INTO exame_anexos
+                                    (exame_id, drive_file_id, nome_arquivo,
+                                     ordem, arquivo_local, pendente_sync)
+                                VALUES (?,?,?,?,?,1)
+                            """, (eid_grupo, None, nome_pad, n_exist+i, dest))
+                        conn_a.commit(); conn_a.close()
+                        exames[:] = buscar_todos_exames_fisicos()
+                        _filtrar()
+                    except Exception as _ex:
+                        print(f"[IMGS] {_ex}")
+
+                import threading as _thr2
+                _thr2.Thread(target=_run, daemon=True).start()
+
+            picker_img = ft.FilePicker(on_result=_on_pick_imgs)
+            page.overlay.append(picker_img)
+            try: page.update()
+            except Exception: pass
+            picker_img.pick_files(
+                dialog_title="Selecione imagens ou videos do exame",
+                allowed_extensions=["png","jpg","jpeg","bmp","webp",
+                                    "pdf","mp4","avi","mov","mkv"],
+                allow_multiple=True,
+            )
+
+        btn_img_grupo = ft.IconButton(
+            "add_photo_alternate_rounded",
+            icon_color=AZUL, icon_size=15,
+            tooltip="Adicionar imagens",
+            visible=tem_laudo,
+        )
+        btn_img_grupo.on_click = _adicionar_imagens
+
+        btn_del_grupo = ft.IconButton(
+            "delete_rounded", icon_color=VERM, icon_size=15,
+            tooltip="Excluir este exame",
+        )
+        btn_del_grupo.on_click = lambda e: _overlay_excluir(
+            {"tipo_exame": lab, "data": data}, _excluir_grupo)
+
+        header_grupo = ft.Container(
+            content=ft.Row([
+                ft.Icon("science_rounded", size=15, color=cor_g),
+                ft.Column([
+                    ft.Text(lab or "Lab nao informado", size=13, color=TXT,
+                            weight=ft.FontWeight.W_700),
+                    ft.Row([
+                        ft.Icon("calendar_today_rounded", size=10, color=MUT),
+                        ft.Text(data_fmt, size=11, color=SEC),
+                        ft.Container(width=8),
+                        ft.Text(f"{n} exame{'s' if n > 1 else ''}",
+                                size=11, color=MUT),
+                    ], spacing=4, tight=True),
+                ], spacing=2, expand=True, tight=True),
+                btn_ver_grupo,
+                btn_ind_grupo,
+                btn_img_grupo,
+                btn_del_grupo,
+                _ico_g,
+            ], spacing=4, vertical_alignment=ft.CrossAxisAlignment.CENTER),
+            bgcolor=CARD,
+            border=ft.border.all(1, ft.Colors.with_opacity(0.35, cor_g)),
+            border_radius=10,
+            padding=ft.padding.symmetric(horizontal=12, vertical=10),
+            ink=True,
+        )
+        header_grupo.on_click = _toggle_grupo
+
+        return ft.Column([header_grupo, _corpo_g], spacing=0)
+
+    # ── lista principal ────────────────────────────────────────────────────────
+    lista = ft.Column(spacing=6)
 
     def _filtrar(e=None):
         lista.controls.clear()
         q     = (txt_busca.value or "").strip().upper()
-        data_q = (txt_data.value or "").strip()
-        lab_q  = _lab_sel[0]
+        lab_q = _lab_sel[0]
 
-        encontrados = []
+        filtrados = []
         for ex in exames:
+            lab  = (ex.get("laboratorio") or "").strip()
+            data = (ex.get("data") or "")[:10]
+            if lab_q and lab.upper() != lab_q.upper():
+                continue
             if q:
-                nome = (ex.get("tipo_exame") or ex.get("tipo", "")).upper()
-                med  = (ex.get("medico") or "").upper()
-                lab  = (ex.get("laboratorio") or "").upper()
-                if not (q in nome or q in med or q in lab):
+                if not (q in lab.upper() or q in data):
                     continue
-            if lab_q is not None:
-                if (ex.get("laboratorio") or "") != lab_q:
-                    continue
-            if data_q:
-                if not (ex.get("data") or "").startswith(data_q):
-                    continue
-            encontrados.append(ex)
+            filtrados.append(ex)
 
-        if not encontrados:
+        grupos = _agrupar(filtrados)
+        if not grupos:
             lista.controls.append(
                 ft.Text("Nenhum exame encontrado.", size=12, color=MUT))
         else:
-            for ex in encontrados:
-                lista.controls.append(_construir_card(ex))
+            for g in grupos:
+                lista.controls.append(_card_grupo(g))
         try: page.update()
         except Exception: pass
 
     txt_busca.on_change = _filtrar
-    txt_data.on_change  = _filtrar
-    _rebuild_chips_lab()
+    _rebuild_chips()
     _filtrar()
 
-    filtros_row = ft.Row([
-        ft.Icon("calendar_today_rounded", size=14, color=MUT),
-        txt_data,
-    ], spacing=6)
-
-    return [txt_busca, filtros_row, chips_lab, lista]
+    return [
+        ft.Column([header_filtros, corpo_filtros], spacing=4),
+        lista,
+    ]
 
 
 # ══════════════════════════════════════════════════════════════

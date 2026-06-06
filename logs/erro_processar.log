@@ -1,2 +1,22 @@
-2026-03-22 14:19:22.298067 PACIENTE INVALIDO: PDF não contém nome do paciente
-NoneType: None
+2026-05-31 09:33:14.365147 REBUILD CONFERENCIA ERROR: 'NoneType' object has no attribute 'strip'
+Traceback (most recent call last):
+  File "C:\San\python\Koios\prontuario\telas\tela_incluir_exame.py", line 1471, in _processar
+    _rebuild()
+  File "C:\San\python\Koios\prontuario\telas\tela_incluir_exame.py", line 152, in _rebuild
+    {
+  File "C:\San\python\Koios\prontuario\telas\tela_incluir_exame.py", line 156, in <lambda>
+    "conferencia":    lambda: area.controls.extend(_tela_conferencia()),
+                                                   ^^^^^^^^^^^^^^^^^^^
+  File "C:\San\python\Koios\prontuario\telas\tela_incluir_exame.py", line 917, in _tela_conferencia
+    return construir_painel_conferencia(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\San\python\Koios\prontuario\extratores\processador_exame.py", line 785, in construir_painel_conferencia
+    lista_pend_col.controls.append(_card_pendencia(r))
+                                   ^^^^^^^^^^^^^^^^^^
+  File "C:\San\python\Koios\prontuario\extratores\processador_exame.py", line 433, in _card_pendencia
+    ref_min_auto, ref_max_auto = _parsear_referencia(ref_raw)
+                                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\San\python\Koios\prontuario\extratores\processador_exame.py", line 406, in _parsear_referencia
+    s = ref_str.strip()
+        ^^^^^^^^^^^^^
+AttributeError: 'NoneType' object has no attribute 'strip'

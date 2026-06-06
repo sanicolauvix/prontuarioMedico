@@ -28,6 +28,7 @@ _CREDS_PATH  = os.path.join(_PRONTUARIO, "mycreds.json")
 
 _PASTA_KOIOS      = "Eco_Koios"
 _PASTA_PRONTUARIO = "Prontuario"
+_PASTA_RAIZ       = "Prontuario"   # alias padrao Koios — usado por foto_picker e upload_receita
 _PASTA_DB         = "prontuario_db"
 _NOME_DB          = "app.db"
 

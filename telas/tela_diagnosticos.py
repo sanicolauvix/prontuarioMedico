@@ -1,430 +1,396 @@
 # -*- coding: utf-8 -*-
 # Prontuario | telas/tela_diagnosticos.py
+# Lista, inclusao e edicao de diagnosticos medicos
 import flet as ft
 import logging
 from shared.layout import Layout
-
-BG    = "#0D1117"; CARD  = "#161B22"; BD  = "#21262D"; BD2 = "#30363D"
-TXT   = "#E6EDF3"; SEC   = "#8B949E"; MUT = "#484F58"; DIS = "#484F58"
-AZUL  = "#58A6FF"; VERD  = "#3FB950"; LRNJ = "#F0883E"; VERM = "#FF4444"
-ROXO  = "#BC8CFF"; AMAR  = "#D29922"
+from shared.date_field import campo_data
+from dados.model_prontuario import (
+    normalizar_data,
+    listar_diagnosticos, salvar_diagnostico, excluir_diagnostico,
+)
 
 log = logging.getLogger(__name__)
 
-_COR_TIPO_DIAG = {
-    "entrada":    AZUL,
-    "saida":      VERD,
-    "secundario": SEC,
+BG   = "#0D1117"; CARD = "#161B22"; BD  = "#21262D"; BD2 = "#30363D"
+TXT  = "#E6EDF3"; SEC  = "#8B949E"; MUT = "#484F58"
+AZUL = "#58A6FF"; VERD = "#3FB950"; AMAR = "#D29922"
+VERM = "#F85149"; ROXO = "#BC8CFF"; LAR  = "#F0883E"
+
+_STATUS_COR = {
+    "ativo":    LAR,
+    "cronico":  VERM,
+    "resolvido":VERD,
+    "suspeito": AMAR,
 }
-_COR_CERTEZA = {
-    "confirmado": VERD,
-    "suspeita":   LRNJ,
-    "descartado": VERM,
-}
-_COR_HIST = {
-    "diagnostico":      AMAR,
-    "condicao_cronica": LRNJ,
-    "cirurgia":         VERM,
-    "procedimento":     AZUL,
-    "internacao":       ROXO,
-    "infancia":         VERD,
-    "alergia":          VERM,
-}
-_ICON_HIST = {
-    "diagnostico":      "analytics_rounded",
-    "condicao_cronica": "monitor_heart_rounded",
-    "cirurgia":         "medical_services_rounded",
-    "procedimento":     "healing_rounded",
-    "internacao":       "local_hospital_rounded",
-    "infancia":         "child_care_rounded",
-    "alergia":          "warning_rounded",
-}
+_STATUS_OPTS  = ["ativo", "cronico", "resolvido", "suspeito"]
+_CERTEZA_OPTS = ["confirmado", "provavel", "suspeito", "descartado"]
+_SISTEMAS = [
+    "Cardiaco", "Visceral", "Sangue", "Ortopedia",
+    "Psiquiatria", "Visao & Audicao", "Outros",
+]
 
 
-def criar_tela_diagnosticos(page: ft.Page, voltar_fn, navegar_fn=None) -> ft.Container:
+def _para_display(s):
+    if s and len(s) >= 10 and s[4:5] == "-":
+        try:
+            from datetime import datetime
+            return datetime.strptime(s[:10], "%Y-%m-%d").strftime("%d/%m/%Y")
+        except Exception:
+            pass
+    return s or ""
+
+
+def criar_tela_diagnosticos(page: ft.Page, voltar_fn=None,
+                             sistema_filtro: str = None):
     lay      = Layout(page)
     area     = ft.Column(spacing=8, scroll=ft.ScrollMode.AUTO, expand=True)
     _montado = [False]
 
-    # filtros
-    _busca    = [""]
-    _filtro_certeza = [None]   # para diagnosticos_internacao
-    _aba      = ["historico"]  # "historico" | "internacao"
+    def _snack(msg, cor=VERD):
+        s = ft.SnackBar(content=ft.Text(msg, color=TXT), bgcolor=CARD)
+        page.overlay.append(s)
+        s.open = True
+        try: page.update()
+        except Exception: pass
 
-    # ── carrega historico_medico ─────────────────────────────────────────────
+    # -- Overlay confirmacao exclusao --------------------------------
+    def _confirmar_excluir(did, titulo):
+        ref_ov = [None]
 
-    def _carregar_historico() -> list[dict]:
-        try:
-            from dados.model_prontuario import DB_PATH
-            import sqlite3
-            with sqlite3.connect(DB_PATH, timeout=10) as conn:
-                rows = conn.execute("""
-                    SELECT id, data_aprox, tipo, titulo, descricao, sequela, alerta
-                    FROM historico_medico
-                    ORDER BY
-                        CASE tipo
-                            WHEN 'alergia'          THEN 1
-                            WHEN 'condicao_cronica' THEN 2
-                            WHEN 'diagnostico'      THEN 3
-                            WHEN 'cirurgia'         THEN 4
-                            WHEN 'procedimento'     THEN 5
-                            WHEN 'internacao'       THEN 6
-                            WHEN 'infancia'         THEN 7
-                            ELSE 8
-                        END,
-                        data_aprox DESC NULLS LAST
-                """).fetchall()
-            cols = ["id","data_aprox","tipo","titulo","descricao","sequela","alerta"]
-            return [dict(zip(cols, r)) for r in rows]
-        except Exception as ex:
-            log.exception("carregar historico_medico: %s", ex)
-            return []
+        def _fechar(e=None):
+            if ref_ov[0] in page.overlay:
+                page.overlay.remove(ref_ov[0])
+            try: page.update()
+            except Exception: pass
 
-    # ── carrega diagnosticos_internacao ──────────────────────────────────────
+        def _excluir(e):
+            excluir_diagnostico(did)
+            _fechar()
+            _carregar()
+            _snack("Diagnóstico removido.")
 
-    def _carregar_internacao() -> list[dict]:
-        try:
-            from dados.model_prontuario import DB_PATH
-            import sqlite3
-            with sqlite3.connect(DB_PATH, timeout=10) as conn:
-                rows = conn.execute("""
-                    SELECT d.id, d.internacao_id, d.cid, d.descricao,
-                           d.tipo, d.certeza, d.fonte, d.criado_em,
-                           i.hospital, i.data_entrada, i.data_saida,
-                           d.especialidade, d.refinado
-                    FROM diagnosticos_internacao d
-                    JOIN internacoes i ON i.id = d.internacao_id
-                    WHERE d.fonte != 'importado' OR d.refinado = 0
-                    ORDER BY i.data_entrada DESC, d.tipo DESC, d.criado_em ASC
-                """).fetchall()
-            cols = [
-                "id","internacao_id","cid","descricao","tipo","certeza","fonte","criado_em",
-                "hospital","data_entrada","data_saida","especialidade","refinado",
-            ]
-            return [dict(zip(cols, r)) for r in rows]
-        except Exception as ex:
-            log.exception("carregar diagnosticos_internacao: %s", ex)
-            return []
-
-    # ── helpers ──────────────────────────────────────────────────────────────
-
-    def _fmt(s: str) -> str:
-        if s and len(s) >= 10 and s[4] == "-":
-            try:
-                from datetime import datetime
-                return datetime.strptime(s[:10], "%Y-%m-%d").strftime("%d/%m/%Y")
-            except Exception:
-                pass
-        return s or ""
-
-    def _badge(label: str, cor: str) -> ft.Container:
-        return ft.Container(
-            content=ft.Text(label, size=9, color=cor, weight=ft.FontWeight.W_600),
-            bgcolor=ft.Colors.with_opacity(0.13, cor),
-            border=ft.border.all(1, ft.Colors.with_opacity(0.4, cor)),
-            border_radius=4,
-            padding=ft.padding.symmetric(horizontal=6, vertical=2),
+        btn_cancel = ft.Container(
+            content=ft.Text("Cancelar", size=13, color=SEC),
+            padding=ft.padding.symmetric(horizontal=16, vertical=10),
+            border_radius=8, bgcolor=f"{SEC}22", ink=True,
         )
-
-    # ── card historico_medico ────────────────────────────────────────────────
-
-    def _card_hist(d: dict) -> ft.Container:
-        tipo   = d.get("tipo") or "diagnostico"
-        titulo = (d.get("titulo") or "").strip()
-        desc   = (d.get("descricao") or "").strip()
-        seq    = (d.get("sequela") or "").strip()
-        data   = (d.get("data_aprox") or "").strip()
-        alerta = d.get("alerta")
-        cor    = _COR_HIST.get(tipo, MUT)
-        icone  = _ICON_HIST.get(tipo, "info_rounded")
-
-        label_tipo = tipo.replace("_", " ").capitalize()
-
-        return ft.Container(
-            content=ft.Column([
-                ft.Row([
-                    ft.Container(
-                        content=ft.Icon(icone, size=13, color=cor),
-                        bgcolor=ft.Colors.with_opacity(0.12, cor),
-                        border_radius=6, width=26, height=26,
-                        alignment=ft.alignment.Alignment(0, 0),
-                    ),
-                    ft.Column([
-                        ft.Row([
-                            _badge(label_tipo, cor),
-                            ft.Container(expand=True),
-                            ft.Text(data, size=9, color=MUT) if data else ft.Container(),
-                        ], spacing=6),
-                        ft.Text(titulo, size=12, color=TXT, weight=ft.FontWeight.W_600),
-                    ], spacing=3, tight=True, expand=True),
-                ], spacing=8, vertical_alignment=ft.CrossAxisAlignment.START),
-                ft.Text(desc, size=10, color=SEC, max_lines=3) if desc else ft.Container(),
-                ft.Container(
-                    content=ft.Row([
-                        ft.Icon("warning_amber_rounded", size=11, color=AMAR),
-                        ft.Text(seq, size=9, color=AMAR, italic=True, expand=True),
-                    ], spacing=4),
-                    visible=bool(seq),
-                ),
-                ft.Container(
-                    content=ft.Row([
-                        ft.Icon("priority_high_rounded", size=11, color=VERM),
-                        ft.Text("ALERTA", size=9, color=VERM,
-                                weight=ft.FontWeight.W_700),
-                    ], spacing=4),
-                    visible=bool(alerta) and not seq,
-                ),
-            ], spacing=5, tight=True),
-            bgcolor=CARD,
-            border=ft.border.all(1, ft.Colors.with_opacity(0.3, cor) if alerta else BD2),
-            border_radius=10,
-            padding=ft.padding.all(12),
+        btn_cancel.on_click = _fechar
+        btn_ok = ft.Container(
+            content=ft.Text("Remover", size=13, color=VERM,
+                            weight=ft.FontWeight.W_600),
+            padding=ft.padding.symmetric(horizontal=16, vertical=10),
+            border_radius=8, bgcolor=f"{VERM}22", ink=True,
         )
+        btn_ok.on_click = _excluir
 
-    # ── card diagnosticos_internacao ─────────────────────────────────────────
-
-    def _card_diag_int(d: dict) -> ft.Container:
-        tipo    = d.get("tipo") or "saida"
-        certeza = d.get("certeza") or "confirmado"
-        cid     = (d.get("cid") or "").strip()
-        desc    = (d.get("descricao") or "").strip()
-        esp     = (d.get("especialidade") or "").strip()
-        cor_t   = _COR_TIPO_DIAG.get(tipo, SEC)
-        lbl_t   = {"entrada": "Entrada", "saida": "Alta", "secundario": "Secund."}.get(tipo, tipo.capitalize())
-        cor_c   = _COR_CERTEZA.get(certeza, SEC)
-
-        badges = [_badge(lbl_t, cor_t), _badge(certeza.capitalize(), cor_c)]
-        if esp:
-            badges.append(_badge(esp, ROXO))
-
-        if cid:
-            linha_nome = ft.Row([
-                ft.Container(
-                    content=ft.Text(f"CID {cid}", size=11, color=AMAR, weight=ft.FontWeight.W_700),
-                    bgcolor=ft.Colors.with_opacity(0.13, AMAR),
-                    border=ft.border.all(1, ft.Colors.with_opacity(0.4, AMAR)),
-                    border_radius=6,
-                    padding=ft.padding.symmetric(horizontal=8, vertical=3),
-                ),
-                ft.Text(desc, size=12, color=TXT, expand=True),
-            ], spacing=8, wrap=True)
-        else:
-            linha_nome = ft.Text(
-                desc[:80] + ("..." if len(desc) > 80 else "") if desc else "Sem descricao",
-                size=12, color=SEC,
-            )
-
-        return ft.Container(
-            content=ft.Column([
-                ft.Row(badges, spacing=6, wrap=True),
-                linha_nome,
-            ], spacing=6, tight=True),
-            bgcolor=CARD,
-            border=ft.border.all(1, BD2),
-            border_radius=10,
-            padding=ft.padding.all(12),
+        ref_ov[0] = ft.Container(
+            content=ft.Container(
+                content=ft.Column([
+                    ft.Icon("delete_outline_rounded", size=32, color=VERM),
+                    ft.Text("Remover diagnóstico?", size=14, color=TXT,
+                            weight=ft.FontWeight.W_700, text_align="center"),
+                    ft.Text(titulo[:50], size=12, color=SEC,
+                            text_align="center"),
+                    ft.Container(height=8),
+                    ft.Row([btn_cancel, btn_ok], spacing=8,
+                           alignment=ft.MainAxisAlignment.CENTER),
+                ], spacing=8, tight=True,
+                   horizontal_alignment=ft.CrossAxisAlignment.CENTER),
+                bgcolor=CARD, border_radius=14,
+                padding=ft.padding.all(24), width=300,
+            ),
+            bgcolor="#CC000000", expand=True, alignment=ft.Alignment(0, 0),
         )
+        ref_ov[0].on_click = _fechar
+        page.overlay.append(ref_ov[0])
+        try: page.update()
+        except Exception: pass
 
-    # ── tabs ─────────────────────────────────────────────────────────────────
+    # -- Form overlay ------------------------------------------------
+    def _abrir_form(diag=None):
+        ref_ov = [None]
+        _id = diag.get("id") if diag else None
 
-    def _tab_btn(label, aba_val, cor):
-        ativo = _aba[0] == aba_val
-        def _click(e):
-            _aba[0] = aba_val
-            _rebuild()
-        return ft.Container(
-            content=ft.Text(label, size=12, color=cor if ativo else MUT,
-                            weight=ft.FontWeight.W_600 if ativo else ft.FontWeight.NORMAL),
-            bgcolor=ft.Colors.with_opacity(0.12, cor) if ativo else ft.Colors.with_opacity(0.04, MUT),
-            border=ft.border.all(1, ft.Colors.with_opacity(0.5, cor) if ativo else BD),
-            border_radius=20,
-            padding=ft.padding.symmetric(horizontal=14, vertical=6),
-            ink=True,
-            on_click=_click,
-            expand=True,
+        def _fechar(e=None):
+            if ref_ov[0] in page.overlay:
+                page.overlay.remove(ref_ov[0])
+            try: page.update()
+            except Exception: pass
+
+        tf_titulo = ft.TextField(
+            label="Título / Nome do diagnóstico *",
+            value=diag.get("titulo","") if diag else "",
+            bgcolor=CARD, border_color=BD2, focused_border_color=AZUL,
+            label_style=ft.TextStyle(color=SEC, size=11),
+            text_style=ft.TextStyle(color=TXT),
+            border_radius=8, autofocus=not bool(diag),
         )
-
-    # ── filtro certeza (só na aba internacao) ────────────────────────────────
-
-    _row_filtros = ft.Row(spacing=6, wrap=True)
-
-    def _chip_certeza(label, cor, val):
-        ativo = _filtro_certeza[0] == val
-        def _toggle(e):
-            _filtro_certeza[0] = None if ativo else val
-            _rebuild()
-        return ft.Container(
-            content=ft.Text(label, size=11,
-                            color=cor if ativo else SEC,
-                            weight=ft.FontWeight.W_600 if ativo else ft.FontWeight.NORMAL),
-            bgcolor=ft.Colors.with_opacity(0.13, cor) if ativo else CARD,
-            border=ft.border.all(1, ft.Colors.with_opacity(0.5, cor) if ativo else BD2),
-            border_radius=16,
-            padding=ft.padding.symmetric(horizontal=10, vertical=5),
-            ink=True,
-            on_click=_toggle,
-        )
-
-    # ── rebuild ───────────────────────────────────────────────────────────────
-
-    _txt_busca = ft.TextField(
-        hint_text="Buscar diagnostico, CID, titulo...",
-        hint_style=ft.TextStyle(color=DIS, size=12),
-        text_style=ft.TextStyle(color=TXT, size=12),
-        bgcolor=CARD, border_color=BD2, focused_border_color=AZUL,
-        border_radius=8, height=36,
-        content_padding=ft.padding.symmetric(horizontal=10, vertical=4),
-        expand=True,
-    )
-    def _on_busca(e):
-        _busca[0] = (_txt_busca.value or "").strip().lower()
-        _rebuild()
-    _txt_busca.on_change = _on_busca
-
-    def _rebuild():
-        busca = _busca[0]
-        area.controls.clear()
-
-        # tabs
-        area.controls.append(ft.Container(
-            content=ft.Row([
-                _tab_btn("Histórico Clínico", "historico", AMAR),
-                _tab_btn("Por Internação",    "internacao", AZUL),
-            ], spacing=8),
-            padding=ft.padding.only(bottom=4),
-        ))
-
-        # busca
-        area.controls.append(ft.Container(
-            content=ft.Row([
-                ft.Icon("search_rounded", size=15, color=SEC),
-                _txt_busca,
-            ], spacing=6),
-            bgcolor=CARD,
-            border=ft.border.all(1, BD2),
+        tf_cid = ft.TextField(
+            label="CID (opcional)",
+            value=diag.get("cid","") if diag else "",
+            bgcolor=CARD, border_color=BD2, focused_border_color=AZUL,
+            label_style=ft.TextStyle(color=SEC, size=11),
+            text_style=ft.TextStyle(color=TXT),
             border_radius=8,
-            padding=ft.padding.symmetric(horizontal=8, vertical=4),
-        ))
+            hint_text="Ex: I25.1, E11, F41.1",
+            hint_style=ft.TextStyle(color=MUT, size=11),
+        )
+        tf_descricao = ft.TextField(
+            label="Descrição / O que foi dito",
+            value=diag.get("descricao","") if diag else "",
+            bgcolor=CARD, border_color=BD2, focused_border_color=AZUL,
+            label_style=ft.TextStyle(color=SEC, size=11),
+            text_style=ft.TextStyle(color=TXT),
+            border_radius=8, multiline=True, min_lines=2, max_lines=4,
+            hint_text="Ex: Verrucosidades nas veias coronárias com risco de obstrução...",
+            hint_style=ft.TextStyle(color=MUT, size=10),
+        )
+        dd_sistema = ft.Dropdown(
+            label="Sistema corporal",
+            bgcolor=CARD, border_color=BD2, focused_border_color=AZUL,
+            label_style=ft.TextStyle(color=SEC),
+            text_style=ft.TextStyle(color=TXT),
+            border_radius=8,
+            value=diag.get("sistema") if diag else sistema_filtro,
+            options=[ft.dropdown.Option(s) for s in _SISTEMAS],
+        )
+        dd_status = ft.Dropdown(
+            label="Status",
+            bgcolor=CARD, border_color=BD2, focused_border_color=AZUL,
+            label_style=ft.TextStyle(color=SEC),
+            text_style=ft.TextStyle(color=TXT),
+            border_radius=8,
+            value=diag.get("status","ativo") if diag else "ativo",
+            options=[ft.dropdown.Option(s) for s in _STATUS_OPTS],
+        )
+        dd_certeza = ft.Dropdown(
+            label="Certeza diagnóstica",
+            bgcolor=CARD, border_color=BD2, focused_border_color=AZUL,
+            label_style=ft.TextStyle(color=SEC),
+            text_style=ft.TextStyle(color=TXT),
+            border_radius=8,
+            value=diag.get("certeza","confirmado") if diag else "confirmado",
+            options=[ft.dropdown.Option(s) for s in _CERTEZA_OPTS],
+        )
+        row_data_diag, tf_data_diag = campo_data(
+            page, "Data do diagnóstico",
+            value=_para_display(diag.get("data_diagnostico","")) if diag else "",
+            cor_acento=AZUL, bgcolor=CARD, border_color=BD2,
+        )
+        tf_obs = ft.TextField(
+            label="Observações",
+            value=diag.get("observacoes","") if diag else "",
+            bgcolor=CARD, border_color=BD2, focused_border_color=AZUL,
+            label_style=ft.TextStyle(color=SEC, size=11),
+            text_style=ft.TextStyle(color=TXT),
+            border_radius=8, multiline=True, min_lines=1, max_lines=3,
+        )
+        txt_erro = ft.Text("", size=11, color=VERM, visible=False)
 
-        # ── aba HISTÓRICO CLÍNICO ────────────────────────────────────────────
-        if _aba[0] == "historico":
-            todos = _carregar_historico()
+        dd_sistema.on_change = lambda e: None
+        dd_status.on_change  = lambda e: None
+        dd_certeza.on_change = lambda e: None
 
-            def _passa_h(d):
-                if not busca:
-                    return True
-                return (busca in (d.get("titulo") or "").lower()
-                     or busca in (d.get("descricao") or "").lower()
-                     or busca in (d.get("tipo") or "").lower()
-                     or busca in (d.get("sequela") or "").lower())
+        def _salvar(e=None):
+            titulo = (tf_titulo.value or "").strip()
+            if not titulo:
+                txt_erro.value = "Informe o título do diagnóstico."
+                txt_erro.visible = True
+                try: page.update()
+                except Exception: pass
+                return
+            dados = {
+                "titulo":           titulo,
+                "cid":              (tf_cid.value or "").strip() or None,
+                "descricao":        (tf_descricao.value or "").strip() or None,
+                "sistema":          dd_sistema.value,
+                "status":           dd_status.value or "ativo",
+                "certeza":          dd_certeza.value or "confirmado",
+                "data_diagnostico": normalizar_data(tf_data_diag.value)
+                                    if tf_data_diag.value else None,
+                "observacoes":      (tf_obs.value or "").strip() or None,
+            }
+            if _id:
+                dados["id"] = _id
+            salvar_diagnostico(dados)
+            _fechar()
+            _carregar()
+            _snack("Salvo com sucesso.")
 
-            filtrados = [d for d in todos if _passa_h(d)]
+        btn_cancel = ft.Container(
+            content=ft.Text("Cancelar", size=13, color=SEC),
+            padding=ft.padding.symmetric(horizontal=16, vertical=10),
+            border_radius=8, bgcolor=f"{SEC}22", ink=True,
+        )
+        btn_cancel.on_click = _fechar
+        btn_ok = ft.Container(
+            content=ft.Text("Salvar", size=13, color=VERD,
+                            weight=ft.FontWeight.W_600),
+            padding=ft.padding.symmetric(horizontal=16, vertical=10),
+            border_radius=8, bgcolor=f"{VERD}22", ink=True,
+        )
+        btn_ok.on_click = _salvar
+        tf_titulo.on_submit = _salvar
 
-            # agrupar por tipo
-            tipo_atual = [None]
-            for d in filtrados:
-                tipo = d.get("tipo") or "diagnostico"
-                if tipo != tipo_atual[0]:
-                    tipo_atual[0] = tipo
-                    cor_g = _COR_HIST.get(tipo, MUT)
-                    label_g = tipo.replace("_", " ").upper()
-                    area.controls.append(ft.Container(
-                        content=ft.Row([
-                            ft.Container(width=3, height=14, bgcolor=cor_g, border_radius=2),
-                            ft.Text(label_g, size=10, color=cor_g, weight=ft.FontWeight.W_700),
-                        ], spacing=6),
-                        padding=ft.padding.only(left=2, top=10, bottom=2),
-                    ))
-                area.controls.append(_card_hist(d))
+        ref_ov[0] = ft.Container(
+            content=ft.Container(
+                content=ft.Column([
+                    ft.Row([
+                        ft.Icon("diagnosis_rounded", size=16, color=AZUL),
+                        ft.Text("Editar Diagnóstico" if _id else "Novo Diagnóstico",
+                                size=15, color=TXT, weight=ft.FontWeight.W_700,
+                                expand=True),
+                    ], spacing=8),
+                    ft.Divider(color=BD, height=1),
+                    tf_titulo,
+                    tf_cid,
+                    tf_descricao,
+                    ft.Row([dd_sistema, dd_status], spacing=8),
+                    dd_certeza,
+                    row_data_diag,
+                    tf_obs,
+                    txt_erro,
+                    ft.Container(height=4),
+                    ft.Row([btn_cancel, btn_ok], spacing=8,
+                           alignment=ft.MainAxisAlignment.END),
+                ], spacing=10, tight=True, scroll=ft.ScrollMode.AUTO),
+                bgcolor=CARD, border_radius=14,
+                padding=ft.padding.all(20), width=360, height=520,
+            ),
+            bgcolor="#CC000000", expand=True, alignment=ft.Alignment(0, 0),
+        )
+        ref_ov[0].on_click = _fechar
+        page.overlay.append(ref_ov[0])
+        try: page.update()
+        except Exception: pass
 
-            if not filtrados:
-                area.controls.append(ft.Container(
-                    content=ft.Text(
-                        "Nenhum registro encontrado" if busca else "Nenhum historico registrado",
-                        size=13, color=DIS, text_align="center"),
-                    alignment=ft.alignment.center,
-                    padding=ft.padding.only(top=40),
-                ))
+    # -- Lista -------------------------------------------------------
+    def _carregar():
+        area.controls.clear()
+        diags = listar_diagnosticos(sistema=sistema_filtro)
 
-        # ── aba POR INTERNAÇÃO ───────────────────────────────────────────────
+        if not diags:
+            area.controls.append(ft.Container(
+                content=ft.Column([
+                    ft.Icon("diagnosis_rounded", size=48, color=MUT),
+                    ft.Text("Nenhum diagnóstico registrado.", size=14, color=SEC),
+                    ft.Text("Toque em + Novo para adicionar.", size=12, color=MUT),
+                ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=8),
+                alignment=ft.alignment.Alignment(0, 0), padding=50,
+            ))
         else:
-            # chips certeza
-            _row_filtros.controls.clear()
-            for label, cor, val in [
-                ("Confirmado", VERD, "confirmado"),
-                ("Suspeita",   LRNJ, "suspeita"),
-                ("Descartado", VERM, "descartado"),
-            ]:
-                _row_filtros.controls.append(_chip_certeza(label, cor, val))
-            area.controls.append(ft.Container(
-                content=_row_filtros,
-                padding=ft.padding.only(top=4, bottom=2),
-            ))
+            _ORDEM = ["ativo", "cronico", "suspeito", "resolvido"]
+            grupos = {}
+            for d in diags:
+                grupos.setdefault(d.get("status","ativo"), []).append(d)
 
-            todos = _carregar_internacao()
-
-            def _passa_i(d):
-                if _filtro_certeza[0] and d.get("certeza") != _filtro_certeza[0]:
-                    return False
-                if busca:
-                    return (busca in (d.get("cid") or "").lower()
-                         or busca in (d.get("descricao") or "").lower()
-                         or busca in (d.get("hospital") or "").lower()
-                         or busca in (d.get("especialidade") or "").lower())
-                return True
-
-            filtrados = [d for d in todos if _passa_i(d)]
-
-            area.controls.append(ft.Container(
-                content=ft.Text(f"{len(filtrados)} de {len(todos)} diagnóstico(s)",
-                                size=11, color=SEC),
-                padding=ft.padding.only(left=2, bottom=4),
-            ))
-
-            if not filtrados:
-                msg = ("Nenhum resultado" if busca or _filtro_certeza[0]
-                       else "Nenhum diagnostico por internacao registrado")
+            for status in _ORDEM:
+                lista = grupos.get(status, [])
+                if not lista: continue
+                cor_s = _STATUS_COR.get(status, SEC)
                 area.controls.append(ft.Container(
-                    content=ft.Text(msg, size=13, color=DIS, text_align="center"),
-                    alignment=ft.alignment.center,
-                    padding=ft.padding.only(top=40),
+                    content=ft.Row([
+                        ft.Container(width=8, height=8, bgcolor=cor_s,
+                                     border_radius=4),
+                        ft.Text(status.upper(), size=10, color=cor_s,
+                                weight=ft.FontWeight.W_700),
+                        ft.Text(f"({len(lista)})", size=10, color=MUT),
+                    ], spacing=6),
+                    padding=ft.padding.only(top=8, bottom=4),
                 ))
-            else:
-                internacao_atual = [None]
-                for d in filtrados:
-                    iid  = d.get("internacao_id")
-                    hosp = (d.get("hospital") or "?").strip()
-                    periodo = _fmt(d.get("data_entrada") or "")
-                    d_sai = _fmt(d.get("data_saida") or "")
-                    if d_sai:
-                        periodo += f" → {d_sai}"
+                for d in lista:
+                    cor_d  = _STATUS_COR.get(d.get("status",""), MUT)
+                    certeza = d.get("certeza","")
+                    data_txt = _para_display(d.get("data_diagnostico",""))
+                    sis_txt  = d.get("sistema") or ""
+                    desc     = (d.get("descricao") or "")[:100]
 
-                    if iid != internacao_atual[0]:
-                        internacao_atual[0] = iid
-                        area.controls.append(ft.Container(
-                            content=ft.Row([
-                                ft.Icon("local_hospital_rounded", size=13, color=AZUL),
-                                ft.Text(hosp, size=12, color=AZUL,
-                                        weight=ft.FontWeight.W_600, expand=True),
-                                ft.Text(periodo, size=10, color=SEC, no_wrap=True),
-                            ], spacing=6),
-                            padding=ft.padding.only(left=2, top=8, bottom=2),
-                        ))
+                    btn_edit = ft.Container(
+                        content=ft.Icon("edit_rounded", size=15, color=SEC),
+                        padding=ft.padding.all(8), border_radius=8, ink=True,
+                    )
+                    btn_del = ft.Container(
+                        content=ft.Icon("delete_outline_rounded", size=15,
+                                        color=VERM),
+                        padding=ft.padding.all(8), border_radius=8, ink=True,
+                    )
+                    _d = dict(d)
+                    btn_edit.on_click = lambda e, x=_d: _abrir_form(x)
+                    btn_del.on_click  = lambda e, x=_d: _confirmar_excluir(
+                        x["id"], x["titulo"])
 
-                    area.controls.append(_card_diag_int(d))
+                    area.controls.append(ft.Container(
+                        content=ft.Column([
+                            ft.Row([
+                                ft.Column([
+                                    ft.Row([
+                                        ft.Text(d.get("titulo",""), size=14,
+                                                color=TXT,
+                                                weight=ft.FontWeight.W_700,
+                                                expand=True),
+                                        ft.Container(
+                                            content=ft.Text(
+                                                certeza, size=9, color=cor_d,
+                                                weight=ft.FontWeight.W_600),
+                                            bgcolor=ft.Colors.with_opacity(
+                                                0.12, cor_d),
+                                            border_radius=6,
+                                            padding=ft.padding.symmetric(
+                                                horizontal=6, vertical=2),
+                                        ),
+                                    ], spacing=6),
+                                    ft.Row([
+                                        ft.Text(f"CID {d.get('cid','')}",
+                                                size=10, color=AZUL,
+                                                visible=bool(d.get("cid"))),
+                                        ft.Text(sis_txt, size=10, color=SEC,
+                                                visible=bool(sis_txt)),
+                                        ft.Text(data_txt, size=10, color=MUT,
+                                                visible=bool(data_txt)),
+                                    ], spacing=8),
+                                    ft.Text(desc, size=11, color=SEC,
+                                            visible=bool(desc)),
+                                ], spacing=3, expand=True),
+                                ft.Row([btn_edit, btn_del], spacing=0),
+                            ], spacing=8,
+                               vertical_alignment=ft.CrossAxisAlignment.START),
+                        ], spacing=4),
+                        bgcolor=CARD, border_radius=10,
+                        padding=ft.padding.symmetric(horizontal=14, vertical=12),
+                        border=ft.Border(
+                            left=ft.BorderSide(3, cor_d),
+                            top=ft.BorderSide(1, BD),
+                            bottom=ft.BorderSide(1, BD),
+                            right=ft.BorderSide(1, BD),
+                        ),
+                    ))
 
         if _montado[0]:
-            try:
-                page.update()
-            except Exception:
-                pass
+            try: page.update()
+            except Exception: pass
 
-    _rebuild()
+    _carregar()
+
+    btn_novo = ft.Container(
+        content=ft.Row([
+            ft.Icon("add_rounded", size=16, color=AZUL),
+            ft.Text("Novo", size=13, color=AZUL),
+        ], spacing=4, tight=True),
+        padding=ft.padding.symmetric(horizontal=10, vertical=8),
+        border_radius=8, ink=True,
+    )
+    btn_novo.on_click = lambda e: _abrir_form()
+
+    titulo_tela = f"Diagnósticos — {sistema_filtro}" if sistema_filtro \
+                  else "Diagnósticos"
 
     cabecalho = lay.criar_cabecalho(
-        "Diagnosticos", voltar_fn,
-        icone_titulo="analytics_rounded",
-        cor_titulo=AMAR,
+        titulo_tela,
+        lambda e=None: voltar_fn() if voltar_fn else None,
+        icone_titulo="diagnosis_rounded",
+        cor_titulo=AZUL,
+        acoes=[btn_novo],
     )
     corpo = lay.criar_corpo(cabecalho, area)
     _montado[0] = True

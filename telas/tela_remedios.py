@@ -1111,24 +1111,26 @@ def _build_ficha_remedio(page, remedio, voltar_fn):
         visible=not is_novo,
     )
 
+    btn_salvar_cab = ft.Container(
+        content=ft.Row([
+            ft.Icon("check_rounded", size=14, color=VERD),
+            ft.Text("Salvar", size=13, color=VERD, weight=ft.FontWeight.W_600),
+        ], spacing=4, tight=True),
+        padding=ft.padding.symmetric(horizontal=10, vertical=6),
+        border_radius=8, ink=True,
+        visible=_modo_edicao[0],
+    )
+    btn_salvar_cab.on_click = _salvar
+
     cabecalho = lay.criar_cabecalho(
         titulo, lambda e=None: _sair(voltar_fn),
         icone_titulo="medication_rounded",
         cor_titulo=AMAR,
-        acoes=[btn_editar],
+        acoes=[btn_editar, btn_salvar_cab],
     )
 
-    btn_salvar_fundo = ft.Container(
-        content=ft.Row([
-            ft.Icon("save_rounded", size=16, color=BG),
-            ft.Text("Salvar", size=14, color=BG, weight=ft.FontWeight.W_600),
-        ], spacing=6, tight=True, alignment=ft.MainAxisAlignment.CENTER),
-        bgcolor=VERD, border_radius=10, ink=True,
-        padding=ft.padding.symmetric(vertical=14),
-        alignment=ft.alignment.Alignment(0, 0),
-        visible=_modo_edicao[0],
-    )
-    btn_salvar_fundo.on_click = _salvar
+    # botão de fundo removido — salvar fica só no cabeçalho
+    btn_salvar_fundo = ft.Container(visible=False)
 
     def _ativar_edicao(e=None):
         _modo_edicao[0] = True
@@ -1141,78 +1143,668 @@ def _build_ficha_remedio(page, remedio, voltar_fn):
         _btn_est_mais.disabled = False
         btn_add_foto.visible = True
         btn_add_receita.visible = True
-        btn_editar.visible = False
-        btn_salvar_fundo.visible = True
+        btn_editar.visible    = False
+        btn_salvar_cab.visible = True
         try: page.update()
         except Exception: pass
 
     btn_editar.on_click = _ativar_edicao
 
-    campos_col = ft.Column([
-        # ── NOME + PRINCIPIO ATIVO ────────────────────────
-        _label_sec("IDENTIFICACAO"),
-        f_nome,
-        f_pa,
-        ft.Row([sw_tipo], spacing=8),
-        ft.Row([sw_prescrito], spacing=8),
+    # ── Abas ─────────────────────────────────────────────
+    ABAS_FICHA = [
+        (0, "medication_rounded",   "Geral",        AMAR),
+        (1, "person_rounded",       "Medicos",      ROXO),
+        (2, "swap_vert_rounded",    "Movimentacao", AZUL),
+    ]
+    aba_ativa  = [0]
+    barra_abas = ft.Row(spacing=0)
+    area_abas  = ft.Column(spacing=6, scroll=ft.ScrollMode.AUTO, expand=True)
 
-        # ── DOSAGEM ───────────────────────────────────────
-        ft.Container(height=4),
-        _label_sec("DOSAGEM"),
-        ft.Column([f_dos, sug_dos], spacing=0),
+    # ── Bloco Tabela Nutricional do Rótulo ───────────────
+    _rid_atual    = remedio["id"] if remedio and remedio.get("id") else None
+    _calculando_r = [False]
+    nutr_col_rem  = ft.Column(spacing=3, tight=True)
+    lbl_claudia_r = ft.Text("Extrair tabela do rótulo com Claudia", size=12, color=ROXO)
+    _foto_rotulo  = [None]   # path absoluto da foto do rótulo
 
-        # ── FREQUÊNCIA + HORÁRIOS (integrados) ───────────
-        ft.Container(height=4),
-        _label_sec("FREQUÊNCIA DE USO"),
-        ft.Column([f_freq, sug_freq], spacing=0),
-        bloco_horarios,
+    def _refresh_nutr_rem():
+        nutr_col_rem.controls.clear()
+        if not _rid_atual:
+            return
+        from dados.model_prontuario import carregar_nutricao as _cn
+        n = _cn("remedio", _rid_atual)
+        if not n:
+            return
+        import json as _json
 
-        # ── MÉDICO (visivel so se prescrito) ──────────────
-        bloco_medico,
+        def _row(lbl, val, unid, cor=TXT, bold=False):
+            return ft.Row([
+                ft.Text(lbl, size=11, color=SEC, expand=True),
+                ft.Text(f"{val:.1f}" if val is not None else "—",
+                        size=11, color=cor,
+                        weight=ft.FontWeight.W_700 if bold else ft.FontWeight.NORMAL),
+                ft.Text(f" {unid}", size=10, color=MUT),
+            ], spacing=2)
 
-        # ── PERÍODO ───────────────────────────────────────
-        ft.Container(height=4),
-        _label_sec("PERIODO DE USO"),
-        ft.Row([sw_continuo], spacing=8),
-        row_ini,
-        row_data_fim,
+        # monta título com porção real do rótulo
+        por_g = n.get("por_100g") or 100.0
+        vits_pre = {}
+        try:
+            import json as _json2
+            vits_pre = _json2.loads(n.get("vitaminas_json") or "{}")
+        except Exception:
+            pass
+        porcao_info = vits_pre.pop("_porcao", None)  # ex: "2g = 4 unid x 0.5g"
 
-        # ── ESTOQUE ───────────────────────────────────────
-        ft.Container(height=4),
-        _label_sec("ESTOQUE ATUAL  ·  ALERTA MÍNIMO"),
-        ctrl_est,
+        if por_g and float(por_g) != 100.0:
+            titulo_tab = f"TABELA NUTRICIONAL / PORÇÃO ({float(por_g):.1f}g)"
+        else:
+            titulo_tab = "TABELA NUTRICIONAL / PORÇÃO"
 
-        # ── FOTOS DO REMEDIO/CAIXA ────────────────────────
-        ft.Container(height=4),
-        _label_sec("FOTO DO REMEDIO / CAIXA"),
-        btn_add_foto,
-        galeria_rem,
+        linhas = [
+            ft.Text(titulo_tab, size=9, color=ROXO, weight=ft.FontWeight.W_700),
+            ft.Divider(height=1, color=ROXO),
+            _row("Valor Energético", n.get("kcal"),          "kcal", LAR, True),
+            _row("Carboidratos",     n.get("carboidratos"),  "g"),
+            _row("Proteínas",        n.get("proteinas"),     "g",  VERD, True),
+            _row("Gorduras Totais",  n.get("gorduras"),      "g"),
+            _row("Fibra Alimentar",  n.get("fibras"),        "g"),
+            _row("Sódio",            n.get("sodio"),         "mg"),
+        ]
+        # info de unidade (ex: "2g = 4 unid x 0.5g")
+        if porcao_info:
+            linhas.append(ft.Container(
+                content=ft.Row([
+                    ft.Icon("medication_rounded", size=11, color=ROXO),
+                    ft.Text(porcao_info, size=10, color=ROXO),
+                ], spacing=4),
+                padding=ft.padding.only(top=4),
+            ))
 
-        # ── RECEITAS/PRESCRICOES ──────────────────────────
-        ft.Container(height=4),
-        _label_sec("RECEITAS / PRESCRICOES"),
-        _label_sec("VALIDADE DA RECEITA", SEC),
-        chips_validade,
-        txt_data_validade,
-        btn_add_receita,
-        galeria_rec,
+        if vits_pre:
+            linhas.append(ft.Divider(height=1, color=BD2))
+            linhas.append(ft.Text("Ativos / Vitaminas / Minerais", size=9,
+                                  color=SEC, weight=ft.FontWeight.W_600))
+            for kv, vv in list(vits_pre.items())[:10]:
+                linhas.append(ft.Row([
+                    ft.Text(kv.replace("_", " ").title(), size=10,
+                            color=MUT, expand=True),
+                    ft.Text(str(vv), size=10, color=SEC),
+                ], spacing=4))
 
-        # ── ADESÃO / COMPRAS / OBSERVAÇÕES ───────────────
-        ft.Container(height=4), widget_adesao,
-        ft.Container(height=4), widget_compras,
-        ft.Container(height=4), btn_registrar_compra,
-        ft.Container(height=4),
-        _label_sec("OBSERVAÇÕES"), f_obs,
-        ft.Container(height=8), sw_ativo, txt_erro,
-        ft.Container(height=16),
-        btn_salvar_fundo,
-        ft.Container(height=16),
-    ], spacing=6, scroll=ft.ScrollMode.AUTO)
+        nutr_col_rem.controls.append(ft.Container(
+            content=ft.Column(linhas, spacing=3, tight=True),
+            bgcolor=CARD, border_radius=10, padding=ft.padding.all(12),
+            border=ft.Border(
+                top=ft.BorderSide(1, BD), bottom=ft.BorderSide(1, BD),
+                left=ft.BorderSide(3, ROXO), right=ft.BorderSide(1, BD)),
+        ))
+        try: page.update()
+        except Exception: pass
 
-    corpo_ficha = lay.criar_corpo(
-        cabecalho, campos_col,
-        padding_area=ft.padding.all(16),
+    def _calcular_nutr_rotulo(e=None):
+        if _calculando_r[0]: return
+        if not _foto_rotulo[0] and not _rid_atual:
+            page.snack_bar = ft.SnackBar(
+                ft.Text("Tire uma foto do rótulo primeiro.", color=AMAR), open=True)
+            try: page.update()
+            except Exception: pass
+            return
+        _calculando_r[0] = True
+        lbl_claudia_r.value = "Extraindo..."
+        try: page.update()
+        except Exception: pass
+
+        def _run():
+            try:
+                import base64, json as _json
+                from utils.claudia_engine import get_client, _MODELO
+                client = get_client()
+
+                # monta mensagem com imagem se disponível
+                if _foto_rotulo[0]:
+                    with open(_foto_rotulo[0], "rb") as f:
+                        img_b64 = base64.b64encode(f.read()).decode()
+                    ext = _foto_rotulo[0].rsplit(".", 1)[-1].lower()
+                    media_type = f"image/{'jpeg' if ext in ('jpg','jpeg') else ext}"
+                    content = [
+                        {
+                            "type": "image",
+                            "source": {"type": "base64",
+                                       "media_type": media_type,
+                                       "data": img_b64},
+                        },
+                        {
+                            "type": "text",
+                            "text": (
+                                "Extraia TODOS os dados nutricionais deste rotulo "
+                                "de suplemento ou medicamento. "
+                                "Se houver multiplas faixas etarias, use SEMPRE os valores "
+                                "de Adultos (>=19 anos). "
+                                "Se o rotulo indicar 'nao contem quantidades significativas' "
+                                "de algum nutriente, coloque 0 para esse campo. "
+                                "Coloque vitaminas, minerais e ativos especificos do produto "
+                                "(ex: Colageno, Curcumina, Vitamina D, Calcio, Omega 3, etc.) "
+                                "no campo 'vitaminas' com nome_unidade e valor numerico exato. "
+                                "Inclua tambem 'unidades_por_porcao' (ex: 4 capsulas = 4, "
+                                "1 pastilha = 1, 1 comprimido = 1) e "
+                                "'peso_por_unidade_g' (peso de cada capsula/comprimido/unidade em gramas). "
+                                "Retorne SOMENTE JSON valido:\n"
+                                '{"por_porcao_g":6.5,"unidades_por_porcao":1,"peso_por_unidade_g":6.5,'
+                                '"kcal":0,"kj":0,"carboidratos":0,'
+                                '"acucares":0,"proteinas":0,"gorduras":0,"saturadas":0,'
+                                '"trans":0,"fibras":0,"sodio":0,'
+                                '"vitaminas":{"Vitamina_D_mcg":0,"Calcio_mg":0}}'
+                                "\nUse os valores exatos do rotulo, nao estime."
+                            ),
+                        },
+                    ]
+                else:
+                    nome_rem = remedio.get("nome","") if remedio else ""
+                    content = (
+                        f"Tabela nutricional do suplemento '{nome_rem}' "
+                        "conforme rotulo tipico. "
+                        "Retorne SOMENTE JSON valido:\n"
+                        '{"por_porcao_g":30,"kcal":0,"kj":0,"carboidratos":0,'
+                        '"acucares":0,"proteinas":0,"gorduras":0,"saturadas":0,'
+                        '"trans":0,"fibras":0,"sodio":0,'
+                        '"vitaminas":{}}'
+                    )
+
+                resp = client.messages.create(
+                    model=_MODELO, max_tokens=1024,
+                    system="Voce e um nutricionista. Retorne SOMENTE JSON valido.",
+                    messages=[{"role": "user", "content": content}],
+                )
+                raw = "".join(b.text for b in resp.content
+                              if hasattr(b, "text")).strip()
+                if raw.startswith("```"):
+                    raw = raw.split("```")[1]
+                    if raw.startswith("json"): raw = raw[4:]
+                dados = _json.loads(raw)
+                vits              = dados.pop("vitaminas", {})
+                por_g             = dados.pop("por_porcao_g", 100)
+                unid_por_porcao   = dados.pop("unidades_por_porcao", 1)
+                peso_por_unid     = dados.pop("peso_por_unidade_g", None)
+
+                # adiciona info de unidade nas vitaminas para exibição
+                if unid_por_porcao and peso_por_unid:
+                    vits["_porcao"] = f"{por_g}g = {int(unid_por_porcao)} unid x {peso_por_unid}g"
+
+                rid = _rid_atual
+                if not rid and remedio:
+                    rid = remedio.get("id")
+
+                if rid:
+                    from dados.model_prontuario import salvar_nutricao as _sn
+                    _sn({
+                        "entidade_tipo": "remedio",
+                        "entidade_id":   rid,
+                        "por_100g":      por_g,
+                        **{k: dados.get(k) for k in
+                           ["kcal","kj","carboidratos","acucares","proteinas",
+                            "gorduras","saturadas","trans","fibras","sodio"]},
+                        "vitaminas_json": _json.dumps(vits, ensure_ascii=False)
+                                          if vits else None,
+                    })
+                    from backup.drive_backup import fazer_backup
+                    fazer_backup(forcar=True)
+            except Exception as ex:
+                logger.warning("[REMEDIO] nutr rotulo: %s", ex)
+                page.snack_bar = ft.SnackBar(
+                    ft.Text(f"Erro: {str(ex)[:80]}", color=VERM), open=True)
+            finally:
+                _calculando_r[0] = False
+                lbl_claudia_r.value = "Recalcular tabela do rótulo"
+                _refresh_nutr_rem()
+                try: page.update()
+                except Exception: pass
+
+        threading.Thread(target=_run, daemon=True, name="NutrRotulo").start()
+
+    def _on_foto_rotulo(path_abs):
+        _foto_rotulo[0] = path_abs
+        lbl_claudia_r.value = "Extrair tabela do rótulo com Claudia"
+        try: page.update()
+        except Exception: pass
+        # dispara extração automaticamente
+        _calcular_nutr_rotulo()
+
+    btn_foto_rotulo = criar_btn_seletor_foto(
+        page=page,
+        on_arquivo=_on_foto_rotulo,
+        titulo_menu="Foto do rótulo nutricional",
+        label_btn="Foto do rótulo",
     )
+
+    btn_claudia_rot = ft.Container(
+        content=ft.Row([
+            ft.Container(
+                content=ft.Text("C", size=10, color=BG, weight=ft.FontWeight.W_700),
+                width=20, height=20, border_radius=10, bgcolor=ROXO,
+                alignment=ft.Alignment(0, 0)),
+            lbl_claudia_r,
+        ], spacing=8, tight=True),
+        padding=ft.padding.symmetric(horizontal=12, vertical=10),
+        border_radius=10, ink=True,
+        border=ft.Border(
+            top=ft.BorderSide(1, ft.Colors.with_opacity(0.4, ROXO)),
+            bottom=ft.BorderSide(1, ft.Colors.with_opacity(0.4, ROXO)),
+            left=ft.BorderSide(1, ft.Colors.with_opacity(0.4, ROXO)),
+            right=ft.BorderSide(1, ft.Colors.with_opacity(0.4, ROXO))),
+    )
+    btn_claudia_rot.on_click = _calcular_nutr_rotulo
+
+    # carrega tabela existente se remedio ja tem
+    if _rid_atual:
+        _refresh_nutr_rem()
+
+    # ── Conteúdo Aba 0 — Geral ────────────────────────────
+    def _conteudo_geral():
+        return [
+            _label_sec("IDENTIFICACAO"),
+            f_nome,
+            f_pa,
+            ft.Row([sw_tipo], spacing=8),
+            ft.Container(height=4),
+            _label_sec("DOSAGEM"),
+            ft.Column([f_dos, sug_dos], spacing=0),
+            ft.Container(height=4),
+            _label_sec("FREQUENCIA DE USO"),
+            ft.Column([f_freq, sug_freq], spacing=0),
+            bloco_horarios,
+            ft.Container(height=4),
+            _label_sec("PERIODO DE USO"),
+            ft.Row([sw_continuo], spacing=8),
+            row_ini,
+            row_data_fim,
+            ft.Container(height=4),
+            _label_sec("VALIDADE DA ULTIMA RECEITA"),
+            chips_validade,
+            txt_data_validade,
+            ft.Container(height=4),
+            _label_sec("FOTO DO REMEDIO / CAIXA"),
+            btn_add_foto,
+            galeria_rem,
+            ft.Container(height=4),
+            _label_sec("TABELA NUTRICIONAL DO ROTULO", ROXO),
+            btn_foto_rotulo,
+            btn_claudia_rot,
+            nutr_col_rem,
+            ft.Container(height=4),
+            _label_sec("OBSERVACOES"),
+            f_obs,
+            ft.Container(height=8),
+            sw_ativo,
+            txt_erro,
+            ft.Container(height=16),
+        ]
+
+    # ── Conteúdo Aba 2 — Movimentação ────────────────────
+    def _conteudo_movimentacao():
+        from dados.model_prontuario import listar_mov_remedio, listar_itens_compra
+        items = [_label_sec("MOVIMENTAÇÃO DE ESTOQUE", AZUL)]
+
+        if not remedio or not remedio.get("id"):
+            items.append(ft.Text("Salve o remédio primeiro.", size=12, color=MUT))
+            return items
+
+        movs = listar_mov_remedio(remedio["id"], limit=50)
+        if not movs:
+            items.append(ft.Container(
+                content=ft.Column([
+                    ft.Icon("swap_vert_rounded", size=32, color=MUT),
+                    ft.Text("Nenhuma movimentação registrada.", size=12, color=SEC),
+                ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=6),
+                padding=ft.padding.symmetric(vertical=24),
+                alignment=ft.alignment.center,
+            ))
+            return items
+
+        # Cores e ícones por tipo
+        _TIPO = {
+            "compra":      (VERD,  "shopping_cart_rounded",       "Compra"),
+            "inicio_uso":  (AZUL,  "play_circle_outline_rounded", "Início uso"),
+            "tomada":      (ROXO,  "medication_rounded",          "Tomada"),
+            "estorno":     (AMAR,  "undo_rounded",                "Estorno"),
+            "vencimento":  (VERM,  "event_busy_rounded",          "Vencimento"),
+            "ajuste":      (MUT,   "tune_rounded",                "Ajuste"),
+        }
+
+        def _abrir_detalhe_mov(m):
+            """Overlay com detalhes completos da movimentação."""
+            tipo     = m.get("tipo", "ajuste")
+            cor, icone, label = _TIPO.get(tipo, (MUT, "swap_vert_rounded", tipo.title()))
+            qtd      = m.get("quantidade", 0)
+            sinal    = "+" if qtd > 0 else ""
+            est_apos = m.get("estoque_apos")
+            farm     = m.get("farmacia_nome") or ""
+            obs      = m.get("observacoes") or ""
+            data     = m.get("data") or ""
+            origem   = m.get("origem") or ""
+            preco_u  = m.get("preco_unitario")
+            preco_t  = m.get("preco_total")
+
+            linhas = [
+                ft.Row([
+                    ft.Container(
+                        content=ft.Icon(icone, size=18, color=cor),
+                        bgcolor=ft.Colors.with_opacity(0.12, cor),
+                        border_radius=8, width=36, height=36,
+                        alignment=ft.alignment.center,
+                    ),
+                    ft.Column([
+                        ft.Text(label, size=15, color=cor, weight=ft.FontWeight.W_700),
+                        ft.Text(data, size=11, color=MUT),
+                    ], spacing=2, tight=True, expand=True),
+                    ft.Text(f"{sinal}{qtd} cpr", size=16, color=cor,
+                            weight=ft.FontWeight.W_700),
+                ], spacing=10, vertical_alignment=ft.CrossAxisAlignment.CENTER),
+                ft.Container(height=1, bgcolor=BD),
+            ]
+
+            def _linha_det(titulo, valor, cor_val=SEC):
+                return ft.Row([
+                    ft.Text(titulo, size=11, color=MUT, expand=True),
+                    ft.Text(str(valor), size=12, color=cor_val,
+                            weight=ft.FontWeight.W_600),
+                ], spacing=8)
+
+            if est_apos is not None:
+                linhas.append(_linha_det("Estoque após", f"{est_apos} cpr", AZUL))
+            if farm:
+                linhas.append(_linha_det("Fornecedor", farm, ROXO))
+            if preco_u:
+                linhas.append(_linha_det("Preço unitário", f"R$ {preco_u:.2f}"))
+            if preco_t:
+                linhas.append(_linha_det("Preço total", f"R$ {preco_t:.2f}", VERD))
+
+            # Detalhe NF
+            if origem == "nota_fiscal" and tipo == "compra":
+                try:
+                    import sqlite3 as _sql
+                    from dados.model_prontuario import DB_PATH as _DB
+                    with _sql.connect(_DB, timeout=5) as _c:
+                        row = _c.execute("""
+                            SELECT c.id, c.total,
+                                   COALESCE(NULLIF(f.nome,''), f.razao_social) as farm_nome,
+                                   ci.comprimidos_emb, ci.preco_total as item_total
+                            FROM compras c
+                            LEFT JOIN farmacias f ON f.id = c.farmacia_id
+                            JOIN compra_itens ci ON ci.compra_id = c.id
+                            WHERE ci.remedio_id = ? AND c.data = ?
+                            LIMIT 1
+                        """, (remedio["id"], data)).fetchone()
+                    if row:
+                        linhas.append(ft.Container(height=1, bgcolor=BD))
+                        linhas.append(_linha_det("Nota fiscal", f"NF #{row[0]}"))
+                        if row[2]:
+                            linhas.append(_linha_det("Farmácia NF", row[2], ROXO))
+                        if row[3]:
+                            linhas.append(_linha_det("Comprimidos/emb", f"{row[3]} cpr"))
+                        if row[4]:
+                            linhas.append(_linha_det("Valor item", f"R$ {row[4]:.2f}", VERD))
+                        linhas.append(_linha_det("Total nota", f"R$ {row[1]:.2f}", VERD))
+                except Exception:
+                    pass
+
+            if obs:
+                linhas.append(ft.Container(height=1, bgcolor=BD))
+                linhas.append(ft.Text(obs, size=10, color=MUT, max_lines=3))
+
+            ov = [None]
+            def _fechar(e=None):
+                if ov[0] in page.overlay: page.overlay.remove(ov[0])
+                try: page.update()
+                except Exception: pass
+
+            ov[0] = ft.Container(
+                content=ft.Container(
+                    content=ft.Column([
+                        ft.Row([
+                            ft.Text("Detalhes", size=14, color=TXT,
+                                    weight=ft.FontWeight.W_700, expand=True),
+                            ft.Container(
+                                content=ft.Icon("close_rounded", size=16, color=SEC),
+                                width=28, height=28, border_radius=6,
+                                alignment=ft.alignment.center, ink=True,
+                                on_click=_fechar,
+                            ),
+                        ]),
+                        ft.Container(height=4),
+                        *linhas,
+                    ], spacing=8, tight=True),
+                    bgcolor=CARD, border_radius=14,
+                    padding=ft.padding.all(20), width=340,
+                    border=ft.border.all(1, BD2),
+                ),
+                bgcolor="#CC000000", expand=True,
+                alignment=ft.Alignment(0, 0), on_click=_fechar,
+            )
+            page.overlay.append(ov[0])
+            try: page.update()
+            except Exception: pass
+
+        for m in movs:
+            tipo     = m.get("tipo", "ajuste")
+            cor, icone, label = _TIPO.get(tipo, (MUT, "swap_vert_rounded", tipo.title()))
+            qtd      = m.get("quantidade", 0)
+            sinal    = "+" if qtd > 0 else ""
+            est_apos = m.get("estoque_apos")
+            farm     = m.get("farmacia_nome") or ""
+            data     = m.get("data") or ""
+
+            # Comprimidos/embalagem para compras via NF
+            cpr_txt = ""
+            if m.get("origem") == "nota_fiscal" and tipo == "compra":
+                try:
+                    import sqlite3 as _sql
+                    from dados.model_prontuario import DB_PATH as _DB
+                    with _sql.connect(_DB, timeout=5) as _c:
+                        row = _c.execute("""
+                            SELECT ci.comprimidos_emb, ci.quantidade_emb
+                            FROM compra_itens ci
+                            JOIN compras c ON c.id = ci.compra_id
+                            WHERE ci.remedio_id = ? AND c.data = ?
+                            LIMIT 1
+                        """, (remedio["id"], data)).fetchone()
+                    if row and row[0]:
+                        cpr_txt = f"{row[0]} cpr/emb"
+                    elif row and row[1]:
+                        cpr_txt = f"{row[1]} emb"
+                except Exception:
+                    pass
+
+            card = ft.Container(
+                content=ft.Row([
+                    ft.Container(
+                        content=ft.Icon(icone, size=13, color=cor),
+                        bgcolor=ft.Colors.with_opacity(0.12, cor),
+                        border_radius=5, width=24, height=24,
+                        alignment=ft.alignment.center,
+                    ),
+                    ft.Text(label, size=12, color=cor,
+                            weight=ft.FontWeight.W_600),
+                    ft.Text(farm, size=11, color=ROXO, max_lines=1)
+                        if farm else ft.Container(),
+                    ft.Text(cpr_txt, size=11, color=MUT)
+                        if cpr_txt else ft.Container(),
+                    ft.Container(expand=True),
+                    ft.Text(data, size=10, color=MUT),
+                    ft.Text(f"{sinal}{qtd}", size=12, color=cor,
+                            weight=ft.FontWeight.W_700),
+                    ft.Text(
+                        f"| {est_apos} cpr" if est_apos is not None else "",
+                        size=10, color=SEC,
+                    ),
+                    ft.Icon("chevron_right_rounded", size=14, color=MUT),
+                ], spacing=6, vertical_alignment=ft.CrossAxisAlignment.CENTER),
+                bgcolor=CARD, border_radius=8,
+                padding=ft.padding.symmetric(horizontal=10, vertical=8),
+                border=ft.Border(
+                    left=ft.BorderSide(2, cor),
+                    top=ft.BorderSide(1, BD),
+                    bottom=ft.BorderSide(1, BD),
+                    right=ft.BorderSide(1, BD),
+                ),
+                ink=True,
+                on_click=lambda e, mov=m: _abrir_detalhe_mov(mov),
+            )
+            items.append(card)
+
+        return items
+
+    # ── Conteúdo Aba 1 — Médicos ──────────────────────────
+    def _conteudo_medicos():
+        items = [
+            _label_sec("HISTORICO DE PRESCRICOES", ROXO),
+            ft.Text("Medicos que prescreveram este remedio via consultas.",
+                    size=11, color=MUT),
+            ft.Container(height=8),
+        ]
+        if not remedio or not remedio.get("id"):
+            items.append(ft.Text("Salve o remedio primeiro para ver o historico.",
+                                 size=12, color=MUT))
+            return items
+
+        try:
+            from dados.model_prontuario import listar_mov_remedio
+            movs = [m for m in listar_mov_remedio(remedio["id"], limit=50)
+                    if m.get("tipo") == "inicio_uso" and m.get("consulta_id")]
+        except Exception:
+            movs = []
+
+        if not movs:
+            items.append(ft.Container(
+                content=ft.Column([
+                    ft.Icon("person_off_rounded", size=36, color=MUT),
+                    ft.Text("Nenhuma prescricao registrada ainda.",
+                            size=13, color=MUT, text_align=ft.TextAlign.CENTER),
+                    ft.Text("Prescricoes aparecem ao importar receitas nas consultas.",
+                            size=11, color=MUT, text_align=ft.TextAlign.CENTER),
+                ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=6),
+                padding=ft.padding.symmetric(vertical=32),
+                alignment=ft.Alignment(0, 0),
+            ))
+            return items
+
+        for m in movs:
+            data_str = m.get("data", "")
+            obs      = m.get("observacoes", "") or ""
+            # Tenta extrair medico da consulta vinculada
+            medico_nome = ""
+            try:
+                from dados.model_prontuario import get_config
+                import sqlite3 as _sql
+                from dados.model_prontuario import DB_PATH as _DB
+                with _sql.connect(_DB, timeout=5) as _c:
+                    row = _c.execute("""
+                        SELECT m.nome FROM consultas c
+                        LEFT JOIN medicos m ON m.id = c.medico_id
+                        WHERE c.id = ?
+                    """, (m["consulta_id"],)).fetchone()
+                    if row and row[0]:
+                        medico_nome = row[0]
+            except Exception:
+                pass
+
+            # Status: nova = primeira vez, continuada = já existia antes
+            status     = "Nova"
+            cor_status = VERD
+            try:
+                movs_ant = [x for x in listar_mov_remedio(remedio["id"], limit=50)
+                            if x.get("tipo") == "inicio_uso"
+                            and x.get("id", 0) < m.get("id", 0)]
+                if movs_ant:
+                    status     = "Continuada"
+                    cor_status = AZUL
+            except Exception:
+                pass
+
+            items.append(ft.Container(
+                content=ft.Column([
+                    ft.Row([
+                        ft.Icon("person_rounded", size=14, color=ROXO),
+                        ft.Text(medico_nome or "Medico nao identificado",
+                                size=13, color=TXT, weight=ft.FontWeight.W_600,
+                                expand=True),
+                        ft.Container(
+                            content=ft.Text(status, size=10, color=cor_status,
+                                            weight=ft.FontWeight.W_700),
+                            bgcolor=ft.Colors.with_opacity(0.12, cor_status),
+                            border_radius=4,
+                            padding=ft.padding.symmetric(horizontal=8, vertical=3),
+                        ),
+                    ], spacing=8),
+                    ft.Row([
+                        ft.Icon("calendar_today_rounded", size=11, color=MUT),
+                        ft.Text(_para_display(data_str), size=11, color=MUT),
+                    ], spacing=4) if data_str else ft.Container(),
+                    ft.Text(obs, size=11, color=SEC) if obs else ft.Container(),
+                ], spacing=4),
+                bgcolor=CARD, border_radius=8,
+                padding=ft.padding.symmetric(horizontal=14, vertical=10),
+                border=ft.Border(
+                    top=ft.BorderSide(1, BD), bottom=ft.BorderSide(1, BD),
+                    left=ft.BorderSide(3, ROXO), right=ft.BorderSide(1, BD),
+                ),
+            ))
+
+        return items
+
+    # ── Rebuild abas ──────────────────────────────────────
+    def _rebuild_abas():
+        barra_abas.controls.clear()
+        for idx, icone, label, cor in ABAS_FICHA:
+            ativo = idx == aba_ativa[0]
+            def _click(e, i=idx):
+                aba_ativa[0] = i
+                _rebuild_abas()
+                _rebuild_conteudo()
+            barra_abas.controls.append(ft.Container(
+                content=ft.Column([
+                    ft.Icon(icone, size=15, color=cor if ativo else SEC),
+                    ft.Text(label, size=9,
+                            color=cor if ativo else SEC,
+                            weight=ft.FontWeight.W_600 if ativo else ft.FontWeight.W_400),
+                ], horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+                   spacing=2, tight=True),
+                expand=True,
+                padding=ft.padding.symmetric(vertical=8),
+                border=ft.Border(bottom=ft.BorderSide(2, cor if ativo else "#00000000")),
+                on_click=_click, ink=True,
+            ))
+        try: page.update()
+        except Exception: pass
+
+    def _rebuild_conteudo():
+        area_abas.controls.clear()
+        if aba_ativa[0] == 0:
+            area_abas.controls.extend(_conteudo_geral())
+        elif aba_ativa[0] == 1:
+            area_abas.controls.extend(_conteudo_medicos())
+        else:
+            area_abas.controls.extend(_conteudo_movimentacao())
+        try: page.update()
+        except Exception: pass
+
+    _rebuild_abas()
+    _rebuild_conteudo()
+
+    corpo_ficha = ft.Column([
+        ft.Container(height=lay.spacer_topo, bgcolor=BG),
+        cabecalho,
+        ft.Container(
+            content=barra_abas,
+            border=ft.Border(bottom=ft.BorderSide(1, BD)),
+        ),
+        ft.Container(
+            content=area_abas,
+            padding=ft.padding.all(16),
+            expand=True,
+        ),
+    ], expand=True, spacing=0)
+
     _registrar_voltar_hw()
     return lay.wrap(ft.Container(bgcolor=BG, expand=True, content=corpo_ficha))
 
@@ -1455,6 +2047,42 @@ def _lista_remedios(page, abrir_ficha_fn, readonly=False):
         )
         btn_fechar.on_click = _fechar
 
+        # chips de filtro + switch dentro do overlay
+        chips_ov = ft.Row(spacing=6, wrap=False)
+        def _rebuild_chips_ov():
+            chips_ov.controls.clear()
+            for tp, label in _TIPOS:
+                ativo = tipo_sel[0] == tp
+                cor   = AZUL if ativo else MUT
+                def _sel_tp(e, t=tp):
+                    tipo_sel[0] = t
+                    _rebuild_chips_ov()
+                    _rebuild_chips()
+                    _carregar()
+                    try: page.update()
+                    except Exception: pass
+                chips_ov.controls.append(ft.Container(
+                    content=ft.Text(label, size=11, color=cor,
+                                    weight=ft.FontWeight.W_600),
+                    bgcolor=f"{AZUL}22" if ativo else BD,
+                    border_radius=12,
+                    padding=ft.padding.symmetric(horizontal=10, vertical=5),
+                    border=ft.Border(
+                        top=ft.BorderSide(1, cor), bottom=ft.BorderSide(1, cor),
+                        left=ft.BorderSide(1, cor), right=ft.BorderSide(1, cor)),
+                    ink=True, on_click=_sel_tp,
+                ))
+        _rebuild_chips_ov()
+
+        sw_ov = ft.Switch(label="So ativos", value=so_ativos[0],
+                          active_color=VERD,
+                          label_style=ft.TextStyle(color=SEC, size=12))
+        def _toggle_ov(e):
+            so_ativos[0] = sw_ov.value
+            sw.value = sw_ov.value
+            _carregar()
+        sw_ov.on_change = _toggle_ov
+
         ref_ov[0] = ft.Container(
             content=ft.Column([
                 ft.Container(
@@ -1468,10 +2096,12 @@ def _lista_remedios(page, abrir_ficha_fn, readonly=False):
                 ),
                 ft.Container(
                     content=ft.Column([
+                        ft.Row([chips_ov, ft.Container(expand=True), sw_ov],
+                               vertical_alignment=ft.CrossAxisAlignment.CENTER),
                         f_search,
                         ft.Container(height=8),
                         resultado,
-                    ], spacing=6, expand=True),
+                    ], spacing=8, expand=True),
                     padding=ft.padding.all(16),
                     expand=True,
                 ),
@@ -1506,23 +2136,1703 @@ def _lista_remedios(page, abrir_ficha_fn, readonly=False):
 
     return [
         ft.Container(
-            content=ft.Column([
-                ft.Row([
-                    chips_row,
-                    ft.Container(expand=True),
-                    _btn_busca,
-                    ft.Container(width=6),
-                    _btn_novo_rem,
-                ], vertical_alignment=ft.CrossAxisAlignment.CENTER),
-                ft.Row([sw], vertical_alignment=ft.CrossAxisAlignment.CENTER),
-            ], spacing=4),
+            content=ft.Row([
+                ft.Container(expand=True),
+                _btn_busca,
+                ft.Container(width=6),
+                _btn_novo_rem,
+            ], vertical_alignment=ft.CrossAxisAlignment.CENTER),
             padding=ft.padding.only(bottom=8)),
         lista,
     ]
 
 
 # ══════════════════════════════════════════════════════════════
-# ABA 3 — FARMÁCIAS + ORÇAMENTO WHATSAPP
+# ABA 3 — COMPRAS (nota fiscal → IA → registra compra)
+# ══════════════════════════════════════════════════════════════
+
+def _form_edicao_compra(page, nota: dict, on_voltar):
+    """Tela de edição de compra — fornecedor, data, obs e devoluções por item."""
+    from dados.model_prontuario import (
+        listar_farmacias, atualizar_compra_nf,
+        listar_itens_compra, devolver_item_compra, salvar_farmacia,
+    )
+
+    BG   = "#0D1117"; CARD = "#161B22"; BD  = "#21262D"; BD2 = "#30363D"
+    TXT  = "#E6EDF3"; SEC  = "#8B949E"; MUT = "#484F58"
+    AZUL = "#58A6FF"; VERD = "#3FB950"; AMAR = "#D29922"; VERM = "#DA3633"
+
+    area_ref = [None]  # referência ao Column pai — preenchida no retorno
+
+    def _label_sec(texto, cor=MUT):
+        return ft.Text(texto, size=10, color=cor, weight=ft.FontWeight.W_700)
+
+    def _tf(label, valor, **kw):
+        return ft.TextField(
+            label=label, value=valor or "",
+            bgcolor=CARD, border_color=BD2, focused_border_color=AZUL,
+            label_style=ft.TextStyle(color=SEC, size=10),
+            text_style=ft.TextStyle(color=TXT, size=12),
+            border_radius=6, expand=True, **kw,
+        )
+
+    farmas     = listar_farmacias(so_ativas=False)
+    farm_id    = [nota.get("farmacia_id")]
+
+    # ── Picker fornecedor ────────────────────────────
+    # Painel info fornecedor selecionado
+    farm_info_col = ft.Column(spacing=2, visible=False)
+
+    def _atualizar_info_farm():
+        """Mostra nome fantasia + razão social do fornecedor selecionado."""
+        farm_info_col.controls.clear()
+        fid = farm_id[0]
+        if not fid:
+            farm_info_col.visible = False
+            return
+        farm_data = next((f for f in farmas if f["id"] == fid), None)
+        if not farm_data:
+            farm_info_col.visible = False
+            return
+        nome_f  = farm_data.get("nome") or ""
+        razao   = farm_data.get("razao_social") or ""
+        # Principal: fantasia se preenchido, senão razão
+        nome_principal  = nome_f or razao
+        nome_secundario = razao if nome_f and razao and razao != nome_f else ""
+
+        def _abrir_ficha_farm(e):
+            from telas.tela_fornecedores import abrir_ficha_fornecedor
+
+            def _voltar_para_edicao():
+                farmas.clear()
+                farmas.extend(listar_farmacias(so_ativas=False))
+                from dados.model_prontuario import listar_compras_nf as _lcnf
+                nota_atualizada = next(
+                    (n for n in _lcnf(incluir_canceladas=True)
+                     if n["id"] == nota["id"]), nota
+                )
+                area_ref[0].controls.clear()
+                area_ref[0].controls.extend(
+                    _form_edicao_compra(page, nota_atualizada, on_voltar)
+                )
+                try: page.update()
+                except Exception: pass
+
+            fid = farm_id[0]
+            if not fid:
+                return
+            ficha = abrir_ficha_fornecedor(page, fid, _voltar_para_edicao)
+            area_ref[0].controls.clear()
+            area_ref[0].controls.append(ficha)
+            try: page.update()
+            except Exception: pass
+
+        farm_info_col.controls.extend([
+            ft.Row([
+                ft.Icon("storefront_rounded", size=13, color=AZUL),
+                ft.Column([
+                    ft.Text(nome_principal, size=13, color=TXT,
+                            weight=ft.FontWeight.W_600),
+                    ft.Text(razao if nome_secundario else "", size=10, color=MUT)
+                        if nome_secundario else ft.Container(),
+                ], spacing=1, expand=True, tight=True),
+                ft.Container(
+                    content=ft.Row([
+                        ft.Icon("open_in_new_rounded", size=12, color=AZUL),
+                        ft.Text("Ver ficha", size=11, color=AZUL),
+                    ], spacing=4, tight=True),
+                    bgcolor=ft.Colors.with_opacity(0.10, AZUL),
+                    border=ft.border.all(1, ft.Colors.with_opacity(0.3, AZUL)),
+                    border_radius=6, ink=True,
+                    padding=ft.padding.symmetric(horizontal=8, vertical=5),
+                    on_click=_abrir_ficha_farm,
+                ),
+            ], spacing=8, vertical_alignment=ft.CrossAxisAlignment.CENTER),
+        ])
+        farm_info_col.visible = True
+
+    farm_chip = ft.Container(
+        content=ft.Row([
+            ft.Icon("storefront_rounded", size=12, color=AZUL),
+            ft.Text(nota.get("farmacia_nome") or "", size=12, color=AZUL,
+                    weight=ft.FontWeight.W_600),
+            ft.Icon("close_rounded", size=11, color=AZUL),
+        ], spacing=4, tight=True),
+        bgcolor=ft.Colors.with_opacity(0.12, AZUL), border_radius=12,
+        padding=ft.padding.symmetric(horizontal=8, vertical=4),
+        visible=bool(nota.get("farmacia_nome")),
+    )
+    tf_farm = ft.TextField(
+        hint_text="Razão social ou nome fantasia...",
+        prefix_icon="search_rounded",
+        bgcolor=CARD, border_color=BD2, focused_border_color=AZUL,
+        hint_style=ft.TextStyle(color=MUT, size=11),
+        text_style=ft.TextStyle(color=TXT, size=12),
+        border_radius=6, expand=True, height=40,
+        visible=not bool(nota.get("farmacia_nome")),
+    )
+    farm_sugs = ft.Column(spacing=2, visible=False)
+
+    def _mostrar_chip(nome):
+        farm_chip.content.controls[1].value = nome
+        farm_chip.visible = True
+        tf_farm.visible   = False
+        farm_sugs.controls.clear(); farm_sugs.visible = False
+        _atualizar_info_farm()
+        try: page.update()
+        except Exception: pass
+
+    def _limpar_farm(e=None):
+        farm_id[0] = None
+        farm_chip.visible = False
+        tf_farm.value = ""; tf_farm.visible = True
+        farm_sugs.controls.clear(); farm_sugs.visible = False
+        farm_info_col.controls.clear(); farm_info_col.visible = False
+        try: page.update()
+        except Exception: pass
+
+    farm_chip.on_click = _limpar_farm
+
+    def _filtrar_farm(e):
+        termo = (tf_farm.value or "").strip().upper()
+        farm_sugs.controls.clear()
+        if not termo:
+            farm_sugs.visible = False
+            try: page.update()
+            except Exception: pass
+            return
+        matches = [f for f in farmas
+                   if termo in (f.get("nome_exibicao") or f["nome"]).upper()
+                   or termo in (f.get("razao_social") or "").upper()][:6]
+        for f in matches:
+            nome_exib = f.get("nome_exibicao") or f["nome"]
+            razao     = f.get("razao_social") or ""
+            def _sel(e, ff=f, ne=nome_exib):
+                farm_id[0] = ff["id"]
+                _mostrar_chip(ne)
+            farm_sugs.controls.append(ft.Container(
+                content=ft.Column([
+                    ft.Text(nome_exib, size=12, color=TXT, weight=ft.FontWeight.W_600),
+                    ft.Text(razao, size=10, color=MUT)
+                        if razao and razao != nome_exib else ft.Container(),
+                ], spacing=1, tight=True),
+                bgcolor=CARD, border_radius=6,
+                padding=ft.padding.symmetric(horizontal=8, vertical=6),
+                border=ft.border.all(1, BD), on_click=_sel, ink=True,
+            ))
+        if not matches:
+            def _cad(e, nome=termo.title()):
+                nid = salvar_farmacia({"id": None, "nome": nome, "ativo": 1})
+                farmas.append({"id": nid, "nome": nome, "nome_exibicao": nome})
+                farm_id[0] = nid
+                _mostrar_chip(nome)
+            farm_sugs.controls.append(ft.Container(
+                content=ft.Row([
+                    ft.Icon("add_circle_outline_rounded", size=12, color=VERD),
+                    ft.Text(f'Cadastrar "{termo.title()}"', size=12, color=VERD),
+                ], spacing=4),
+                bgcolor=ft.Colors.with_opacity(0.08, VERD), border_radius=6,
+                padding=ft.padding.symmetric(horizontal=8, vertical=6),
+                border=ft.border.all(1, ft.Colors.with_opacity(0.3, VERD)),
+                on_click=_cad, ink=True,
+            ))
+        farm_sugs.visible = True
+        try: page.update()
+        except Exception: pass
+
+    tf_farm.on_change = _filtrar_farm
+
+    from shared.date_field import campo_data as _campo_data
+    row_data, f_data = _campo_data(
+        page, label="Data",
+        value=nota.get("data") or "",
+        obrigatorio=False, cor_acento=AZUL, largura=None,
+    )
+    f_obs  = _tf("Observações", nota.get("observacoes") or "",
+                 multiline=True, min_lines=2)
+
+    # ── Itens com devolução ──────────────────────────
+    itens_col = ft.Column(spacing=6)
+
+    def _rebuild_itens():
+        itens_col.controls.clear()
+        itens = listar_itens_compra(nota["id"])
+        if not itens:
+            itens_col.controls.append(ft.Text("Nenhum item.", size=12, color=MUT))
+            try: page.update()
+            except Exception: pass
+            return
+        for it in itens:
+            iid      = it["id"]
+            qtd_orig = it.get("quantidade_emb") or 1
+            qtd_dev  = it.get("quantidade_devolvida") or 0
+            qtd_disp = qtd_orig - qtd_dev
+            nome_r   = it.get("remedio_nome") or it.get("nome_nf") or ""
+            nome_nf  = it.get("nome_nf") or ""
+            preco    = it.get("preco_total") or 0.0
+            cor      = MUT if qtd_disp == 0 else TXT
+
+            status_txt = ""
+            status_cor = MUT
+            if qtd_dev > 0 and qtd_disp > 0:
+                status_txt = f"Dev parcial: {qtd_dev}"
+                status_cor = AMAR
+            elif qtd_disp == 0:
+                status_txt = "Devolvido"
+                status_cor = VERM
+
+            f_dev = ft.TextField(
+                value="", label="Qtd devolver",
+                bgcolor=CARD, border_color=BD2, focused_border_color=VERM,
+                label_style=ft.TextStyle(color=SEC, size=9),
+                text_style=ft.TextStyle(color=TXT, size=12),
+                border_radius=6, width=110,
+                keyboard_type=ft.KeyboardType.NUMBER,
+            )
+
+            def _dev(e, ii=iid, fd=f_dev):
+                try: qtd_d = int(fd.value or 0)
+                except Exception: qtd_d = 0
+                if qtd_d > 0:
+                    devolver_item_compra(ii, qtd_d)
+                    _rebuild_itens()
+
+            btn_dev = ft.Container(
+                content=ft.Row([
+                    ft.Icon("undo_rounded", size=13, color=VERM),
+                    ft.Text("Devolver", size=11, color=VERM),
+                ], spacing=4, tight=True),
+                bgcolor=ft.Colors.with_opacity(0.08, VERM),
+                border=ft.border.all(1, ft.Colors.with_opacity(0.3, VERM)),
+                border_radius=6, ink=True,
+                padding=ft.padding.symmetric(horizontal=8, vertical=6),
+                on_click=_dev, visible=qtd_disp > 0,
+            )
+
+            itens_col.controls.append(ft.Container(
+                content=ft.Column([
+                    ft.Text(nome_r, size=13, color=cor, weight=ft.FontWeight.W_600),
+                    ft.Text(f"NF: {nome_nf}", size=10, color=MUT)
+                        if nome_nf != nome_r else ft.Container(),
+                    ft.Row([
+                        ft.Text(f"Qtd: {qtd_orig}", size=10, color=SEC),
+                        ft.Text(f"R$ {preco:.2f}", size=10, color=SEC),
+                        ft.Text(status_txt, size=10, color=status_cor,
+                                weight=ft.FontWeight.W_600)
+                            if status_txt else ft.Container(),
+                    ], spacing=8),
+                    ft.Row([f_dev, btn_dev], spacing=8,
+                           vertical_alignment=ft.CrossAxisAlignment.CENTER)
+                        if qtd_disp > 0 else ft.Container(),
+                ], spacing=4),
+                bgcolor=CARD, border_radius=8,
+                padding=ft.padding.symmetric(horizontal=10, vertical=8),
+                border=ft.Border(
+                    left=ft.BorderSide(2, VERM if qtd_disp == 0 else VERD),
+                    top=ft.BorderSide(1, BD), bottom=ft.BorderSide(1, BD),
+                    right=ft.BorderSide(1, BD),
+                ),
+            ))
+        try: page.update()
+        except Exception: pass
+
+    _rebuild_itens()
+
+    # ── Salvar ───────────────────────────────────────
+    def _salvar(e):
+        atualizar_compra_nf(nota["id"], {
+            "farmacia_id": farm_id[0],
+            "data":        f_data.value.strip() or nota.get("data"),
+            "observacoes": f_obs.value.strip() or None,
+        })
+        import threading as _thr
+        def _sync():
+            try:
+                from backup.drive_backup import fazer_backup
+                fazer_backup(forcar=True)
+            except Exception as ex:
+                import logging; logging.getLogger(__name__).warning("[COMPRAS] sync: %s", ex)
+        _thr.Thread(target=_sync, daemon=True).start()
+        on_voltar()
+
+    btn_salvar = ft.Container(
+        content=ft.Row([
+            ft.Icon("save_rounded", size=14, color=BG),
+            ft.Text("Salvar", size=13, color=BG, weight=ft.FontWeight.W_600),
+        ], spacing=6, tight=True),
+        bgcolor=AZUL, border_radius=8, ink=True,
+        padding=ft.padding.symmetric(horizontal=16, vertical=10),
+        on_click=_salvar,
+    )
+
+    lay = Layout(page)
+    cab = lay.criar_cabecalho(
+        "Editar Compra", on_voltar,
+        icone_titulo="edit_rounded", cor_titulo=AZUL,
+    )
+    conteudo = ft.Column([
+        _label_sec("FORNECEDOR"),
+        ft.Text("Vincule a razão social da NF-e ao fornecedor cadastrado (nome fantasia)",
+                size=10, color=MUT),
+        farm_info_col,
+        farm_chip, tf_farm, farm_sugs,
+        ft.Container(height=2),
+        row_data, f_obs,
+        ft.Container(height=4),
+        _label_sec("ITENS DA COMPRA", VERD),
+        ft.Text("Registre devoluções parciais por item", size=10, color=MUT),
+        itens_col,
+        ft.Container(height=12),
+        btn_salvar,
+        ft.Container(height=20),
+    ], spacing=8, scroll=ft.ScrollMode.AUTO, expand=True)
+
+    wrapper = ft.Container(
+        bgcolor=BG, expand=True,
+        content=ft.Column([
+            ft.Container(height=lay.spacer_topo, bgcolor=BG),
+            cab,
+            ft.Container(content=conteudo, padding=ft.padding.all(16), expand=True),
+        ], expand=True, spacing=0),
+    )
+    area_ref[0] = ft.Column([wrapper], expand=True, spacing=0)
+
+    # Atualiza info do fornecedor inicial
+    _atualizar_info_farm()
+
+    return [area_ref[0]]
+
+
+def _lista_notas_fiscais(page, on_nova, on_editar=None):
+    """View de lista de notas fiscais registradas."""
+    from dados.model_prontuario import listar_compras_nf as _listar_nf
+    from utils.foto_picker import criar_thumb_drive
+
+    notas = _listar_nf(limit=50)
+    col   = ft.Column(spacing=8)
+
+    btn_nova = ft.Container(
+        content=ft.Row([
+            ft.Icon("add_rounded", size=16, color=BG),
+            ft.Text("Nova nota fiscal", size=13, color=BG, weight=ft.FontWeight.W_600),
+        ], spacing=6, tight=True),
+        bgcolor=VERD, border_radius=10, ink=True,
+        padding=ft.padding.symmetric(horizontal=16, vertical=12),
+    )
+    btn_nova.on_click = lambda e: on_nova()
+
+    col.controls.append(ft.Row([
+        ft.Text("COMPRAS", size=10, color=MUT, weight=ft.FontWeight.W_700, expand=True),
+        btn_nova,
+    ]))
+
+    if not notas:
+        col.controls.append(ft.Container(
+            content=ft.Column([
+                ft.Icon("receipt_long_rounded", size=40, color=MUT),
+                ft.Text("Nenhuma compra registrada.", size=13, color=SEC),
+            ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=8),
+            padding=ft.padding.symmetric(vertical=40),
+            alignment=ft.alignment.center,
+        ))
+        return col.controls
+
+    for n in notas:
+        farm   = n.get("farmacia_nome") or "Fornecedor não informado"
+        data   = n.get("data") or ""
+        total  = n.get("total") or 0.0
+        itens  = n.get("nomes_itens") or ""
+        num    = n.get("num_itens") or 0
+        foto   = n.get("foto_path") or ""
+        did    = n.get("foto_drive_id") or ""
+        qr     = n.get("qr_nfe") or ""
+
+        thumb = criar_thumb_drive(
+            page, foto, did,
+            largura=52, altura=68, border_radius=6,
+            icone_vazio="receipt_long_rounded", cor_vazio=VERD,
+        )
+
+        itens_txt = itens[:60] + ("..." if len(itens) > 60 else "") if itens else ""
+
+        def _editar(e, nota=n):
+            if on_editar:
+                on_editar(nota)
+
+        def _cancelar(e, cid=n["id"], farm_nome=farm):
+            ov = [None]
+            def _fechar(e=None):
+                if ov[0] in page.overlay: page.overlay.remove(ov[0])
+                try: page.update()
+                except Exception: pass
+
+            def _confirmar_cancel(e):
+                from dados.model_prontuario import cancelar_compra_nf
+                _fechar()
+                ok = cancelar_compra_nf(cid)
+                if ok:
+                    col.controls.clear()
+                    col.controls.extend(
+                        _lista_notas_fiscais(page, on_nova=on_nova))
+                    import threading as _thr_can
+                    def _sync_can():
+                        try:
+                            from backup.drive_backup import fazer_backup
+                            fazer_backup(forcar=True)
+                        except Exception as ex:
+                            logger.warning("[COMPRAS] sync cancel: %s", ex)
+                    _thr_can.Thread(target=_sync_can, daemon=True).start()
+                try: page.update()
+                except Exception: pass
+
+            btn_sim = ft.Container(
+                content=ft.Text("Cancelar compra", size=13, color=VERM,
+                                weight=ft.FontWeight.W_600),
+                bgcolor=ft.Colors.with_opacity(0.10, VERM), border_radius=8,
+                padding=ft.padding.symmetric(horizontal=20, vertical=10),
+                ink=True, on_click=_confirmar_cancel,
+                border=ft.border.all(1, ft.Colors.with_opacity(0.4, VERM)),
+            )
+            btn_nao = ft.Container(
+                content=ft.Text("Manter", size=13, color=SEC),
+                bgcolor=BD, border_radius=8,
+                padding=ft.padding.symmetric(horizontal=20, vertical=10),
+                ink=True, on_click=_fechar,
+            )
+            ov[0] = ft.Container(
+                content=ft.Container(
+                    content=ft.Column([
+                        ft.Icon("cancel_outlined_rounded", size=32, color=VERM),
+                        ft.Container(height=8),
+                        ft.Text("Cancelar compra?", size=15, color=TXT,
+                                weight=ft.FontWeight.W_700,
+                                text_align=ft.TextAlign.CENTER),
+                        ft.Text(f"{farm_nome}\nR$ {total:.2f}",
+                                size=12, color=SEC,
+                                text_align=ft.TextAlign.CENTER),
+                        ft.Text("O estoque será revertido.",
+                                size=11, color=MUT,
+                                text_align=ft.TextAlign.CENTER),
+                        ft.Container(height=16),
+                        ft.Row([btn_nao, btn_sim], spacing=8,
+                               alignment=ft.MainAxisAlignment.CENTER),
+                    ], horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+                       tight=True, spacing=4),
+                    bgcolor=CARD, border_radius=14,
+                    padding=ft.padding.all(24), width=300,
+                    border=ft.border.all(1, BD2),
+                ),
+                bgcolor="#CC000000", expand=True,
+                alignment=ft.Alignment(0, 0), on_click=_fechar,
+            )
+            page.overlay.append(ov[0])
+            try: page.update()
+            except Exception: pass
+
+        btn_menu = ft.PopupMenuButton(
+            icon="more_vert_rounded", icon_color=MUT, icon_size=18,
+            items=[
+                ft.PopupMenuItem(text="Editar", on_click=_editar),
+                ft.PopupMenuItem(text="Cancelar compra", on_click=_cancelar),
+            ],
+        )
+
+        card = ft.Container(
+            content=ft.Row([
+                thumb,
+                ft.Column([
+                    ft.Row([
+                        ft.Text(farm, size=13, color=TXT,
+                                weight=ft.FontWeight.W_600, expand=True),
+                        ft.Text(f"R$ {total:.2f}", size=13, color=VERD,
+                                weight=ft.FontWeight.W_700),
+                        btn_menu,
+                    ]),
+                    ft.Row([
+                        ft.Icon("calendar_today_rounded", size=11, color=MUT),
+                        ft.Text(data, size=11, color=SEC),
+                        ft.Container(width=8),
+                        ft.Icon("medication_rounded", size=11, color=MUT),
+                        ft.Text(f"{num} item(s)", size=11, color=SEC),
+                    ], spacing=4),
+                    ft.Text(itens_txt, size=10, color=MUT, max_lines=1),
+                    *([ ft.Row([
+                        ft.Icon("qr_code_rounded", size=10, color=AZUL),
+                        ft.Text("NF-e vinculada", size=10, color=AZUL),
+                    ], spacing=4) ] if qr else []),
+                ], spacing=3, expand=True, tight=True),
+            ], spacing=10, vertical_alignment=ft.CrossAxisAlignment.CENTER),
+            bgcolor=CARD, border_radius=10,
+            padding=ft.padding.symmetric(horizontal=12, vertical=10),
+            border=ft.Border(
+                left=ft.BorderSide(2, VERD),
+                top=ft.BorderSide(1, BD),
+                bottom=ft.BorderSide(1, BD),
+                right=ft.BorderSide(1, BD),
+            ),
+        )
+        col.controls.append(card)
+
+    return col.controls
+
+
+def _conteudo_compras(page, on_concluido=None):
+    """Aba Compras: importa nota fiscal via foto, IA interpreta, registra compra."""
+    import os as _os
+    area = ft.Column(spacing=10, scroll=ft.ScrollMode.AUTO, expand=True)
+
+    _modo = ["lista"]  # "lista" ou "nova"
+
+    def _mostrar_lista():
+        _modo[0] = "lista"
+        area.controls.clear()
+        area.controls.extend(
+            _lista_notas_fiscais(page, on_nova=_mostrar_nova, on_editar=_mostrar_edicao)
+        )
+        try: page.update()
+        except Exception: pass
+
+    def _mostrar_nova():
+        _modo[0] = "nova"
+        area.controls.clear()
+        area.controls.extend(_form_nova_nota(page, on_concluido=_mostrar_lista))
+        try: page.update()
+        except Exception: pass
+
+    def _mostrar_edicao(nota):
+        _modo[0] = "edicao"
+        area.controls.clear()
+        area.controls.extend(_form_edicao_compra(page, nota, on_voltar=_mostrar_lista))
+        try: page.update()
+        except Exception: pass
+
+    _mostrar_lista()
+    return [area]
+
+
+def _form_nova_nota(page, on_concluido=None):
+    """Formulário de nova nota fiscal. Retorna lista de controles."""
+    import os as _os
+    area = ft.Column(spacing=10)
+    _foto_nf          = [""]   # path local da nota fiscal processada
+    _drive_id         = [""]   # drive_file_id após upload
+    _remedios_extraidos = [[]] # lista de dicts extraídos pela IA
+    _farmacia_id_sel  = [None] # farmacia selecionada
+
+    from dados.model_prontuario import listar_farmacias as _listar_farm
+    _farmacias = _listar_farm(so_ativas=False)
+
+    txt_status = ft.Text("", size=12, color=VERD)
+    progress   = ft.ProgressBar(visible=False, color=VERD, bgcolor=BD, height=3)
+
+    # ── Picker de farmácia ───────────────────────────────
+    farm_chip = ft.Container(
+        content=ft.Row([
+            ft.Icon("local_pharmacy_rounded", size=13, color=AZUL),
+            ft.Text("", size=12, color=AZUL, weight=ft.FontWeight.W_600),
+            ft.Icon("close_rounded", size=12, color=AZUL),
+        ], spacing=5, tight=True),
+        bgcolor=ft.Colors.with_opacity(0.12, AZUL), border_radius=14,
+        padding=ft.padding.symmetric(horizontal=8, vertical=4),
+        visible=False,
+    )
+    tf_farm = ft.TextField(
+        hint_text="Buscar farmácia / fornecedor...",
+        prefix_icon="search_rounded",
+        bgcolor=CARD, border_color=BD2, focused_border_color=AZUL,
+        hint_style=ft.TextStyle(color=MUT, size=11),
+        text_style=ft.TextStyle(color=TXT, size=12),
+        border_radius=6, expand=True, height=42,
+    )
+    farm_sugs = ft.Column(spacing=2, visible=False)
+
+    def _mostrar_farm_chip(nome):
+        farm_chip.content.controls[1].value = nome
+        farm_chip.visible = True
+        tf_farm.visible   = False
+        farm_sugs.controls.clear(); farm_sugs.visible = False
+        try: page.update()
+        except Exception: pass
+
+    def _limpar_farm(e=None):
+        _farmacia_id_sel[0] = None
+        farm_chip.visible = False
+        tf_farm.value = ""; tf_farm.visible = True
+        farm_sugs.controls.clear(); farm_sugs.visible = False
+        try: page.update()
+        except Exception: pass
+
+    farm_chip.on_click = _limpar_farm
+
+    def _filtrar_farm(e):
+        termo = (tf_farm.value or "").strip().upper()
+        farm_sugs.controls.clear()
+        if not termo:
+            farm_sugs.visible = False
+            try: page.update()
+            except Exception: pass
+            return
+        matches = [f for f in _farmacias
+                   if termo in (f.get("nome_exibicao") or f["nome"]).upper()
+                   or termo in (f.get("razao_social") or "").upper()
+                   or termo in (f.get("endereco") or "").upper()][:6]
+        for f in matches:
+            nome_exib = f.get("nome_exibicao") or f["nome"]
+            razao_    = f.get("razao_social") or ""
+            def _sel(e, farm=f, ne=nome_exib):
+                _farmacia_id_sel[0] = farm["id"]
+                _mostrar_farm_chip(ne)
+            farm_sugs.controls.append(ft.Container(
+                content=ft.Row([
+                    ft.Icon("storefront_rounded", size=13, color=AZUL),
+                    ft.Column([
+                        ft.Text(nome_exib, size=12, color=TXT,
+                                weight=ft.FontWeight.W_600),
+                        ft.Text(razao_, size=10, color=MUT)
+                            if razao_ and razao_ != nome_exib else ft.Container(),
+                    ], spacing=1, expand=True, tight=True),
+                ], spacing=6),
+                bgcolor=CARD, border_radius=6,
+                padding=ft.padding.symmetric(horizontal=8, vertical=6),
+                border=ft.border.all(1, BD), on_click=_sel, ink=True,
+            ))
+        if matches:
+            farm_sugs.visible = True
+        else:
+            # Nenhum resultado — oferece cadastrar com o nome digitado
+            def _cadastrar_novo(e, nome=termo.title()):
+                from dados.model_prontuario import salvar_farmacia
+                novo_id = salvar_farmacia({
+                    "id": None, "nome": nome, "ativo": 1,
+                })
+                _farmacias.append({"id": novo_id, "nome": nome, "endereco": ""})
+                _farmacia_id_sel[0] = novo_id
+                _mostrar_farm_chip(nome)
+
+            farm_sugs.controls.append(ft.Container(
+                content=ft.Row([
+                    ft.Icon("add_circle_outline_rounded", size=13, color=VERD),
+                    ft.Text(f'Cadastrar "{termo.title()}"', size=12, color=VERD),
+                ], spacing=6),
+                bgcolor=ft.Colors.with_opacity(0.08, VERD), border_radius=6,
+                padding=ft.padding.symmetric(horizontal=8, vertical=6),
+                border=ft.border.all(1, ft.Colors.with_opacity(0.3, VERD)),
+                on_click=_cadastrar_novo, ink=True,
+            ))
+            farm_sugs.visible = True
+        try: page.update()
+        except Exception: pass
+
+    tf_farm.on_change = _filtrar_farm
+
+    secao_farmacia = ft.Column([
+        ft.Text("FARMÁCIA / FORNECEDOR", size=10, color=MUT,
+                weight=ft.FontWeight.W_700),
+        farm_chip, tf_farm, farm_sugs,
+    ], spacing=4)
+
+    # ── Preview da nota ──────────────────────────────────
+    preview_box = ft.Container(
+        width=320, height=220, border_radius=10,
+        bgcolor=BD,
+        border=ft.border.all(1, BD2),
+        alignment=ft.Alignment(0, 0),
+        content=ft.Column([
+            ft.Icon("receipt_long_rounded", size=40, color=MUT),
+            ft.Text("Nenhuma nota selecionada", size=12, color=MUT),
+        ], horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+           alignment=ft.MainAxisAlignment.CENTER, spacing=8),
+    )
+
+    # ── Chave / URL NF-e ─────────────────────────────────
+    _qr_nfe = [""]
+
+    tf_chave = ft.TextField(
+        hint_text="Chave NF-e ou URL SEFAZ (preenchido automaticamente ou edite)",
+        bgcolor=CARD, border_color=BD2, focused_border_color=AZUL,
+        hint_style=ft.TextStyle(color=MUT, size=10),
+        text_style=ft.TextStyle(color=TXT, size=11),
+        border_radius=6, expand=True,
+        prefix_icon="qr_code_rounded",
+    )
+
+    btn_consultar_nfe = ft.Container(
+        content=ft.Row([
+            ft.Icon("travel_explore_rounded", size=14, color=AZUL),
+            ft.Text("Consultar SEFAZ", size=12, color=AZUL, weight=ft.FontWeight.W_600),
+        ], spacing=6, tight=True),
+        bgcolor=ft.Colors.with_opacity(0.12, AZUL),
+        border=ft.border.all(1, ft.Colors.with_opacity(0.4, AZUL)),
+        border_radius=8, ink=True, visible=False,
+        padding=ft.padding.symmetric(horizontal=12, vertical=8),
+    )
+
+    secao_qr = ft.Column([
+        ft.Text("CHAVE / URL NF-e", size=9, color=MUT, weight=ft.FontWeight.W_700),
+        tf_chave,
+        btn_consultar_nfe,
+    ], spacing=6, visible=False)
+
+    def _set_chave(url: str, readonly: bool = False):
+        """Atualiza campo de chave. Formata em blocos se forem dígitos puros."""
+        _qr_nfe[0] = url
+        # Formata se forem só dígitos (chave extraída pela IA)
+        if url and not url.startswith("http"):
+            import re as _re
+            digitos = _re.sub(r'\D', '', url)[:44]
+            display = ' '.join(digitos[i:i+4] for i in range(0, len(digitos), 4))
+        else:
+            display = url
+        tf_chave.value = display
+        tf_chave.read_only = readonly
+        tf_chave.border_color = VERD if readonly else BD2
+        btn_consultar_nfe.visible = bool(url)
+        secao_qr.visible = True
+        if url:
+            btn_extrair.visible = False
+        try: page.update()
+        except Exception: pass
+
+    def _formatar_chave(valor: str) -> str:
+        """Formata chave em blocos de 4 dígitos: XXXX XXXX XXXX ..."""
+        import re as _re
+        digitos = _re.sub(r'\D', '', valor)[:44]
+        return ' '.join(digitos[i:i+4] for i in range(0, len(digitos), 4))
+
+    def tf_chave_on_change(e):
+        raw = tf_chave.value or ""
+        # Só formata se não for URL
+        if not raw.strip().startswith("http"):
+            import re as _re
+            digitos = _re.sub(r'\D', '', raw)[:44]
+            formatado = ' '.join(digitos[i:i+4] for i in range(0, len(digitos), 4))
+            if formatado != raw:
+                tf_chave.value = formatado
+        _qr_nfe[0] = tf_chave.value or ""
+        btn_consultar_nfe.visible = bool(_qr_nfe[0].strip())
+        if not _qr_nfe[0].strip() and _foto_nf[0]:
+            btn_extrair.visible = True
+        try: page.update()
+        except Exception: pass
+
+    tf_chave.on_change = tf_chave_on_change
+
+    def _detectar_qr(path_foto: str):
+        """
+        Tenta detectar QR na foto.
+        Se falhar, usa IA para extrair a chave de acesso impressa (44 dígitos).
+        Se IA também falhar, deixa campo editável para digitação manual.
+        """
+        def _run():
+            # Passo 1: QR code
+            try:
+                from utils.image_processor import detectar_qr_nfe
+                url = detectar_qr_nfe(path_foto)
+                if url:
+                    _set_chave(url, readonly=True)
+                    logger.info("[COMPRAS] QR detectado: %s", url[:60])
+                    return
+            except Exception as ex:
+                logger.warning("[COMPRAS] detectar QR: %s", ex)
+
+            # Passo 2: IA extrai chave impressa na nota
+            logger.info("[COMPRAS] QR não detectado — tentando extrair chave via IA")
+            try:
+                import base64, json as _json
+                from utils.claudia_engine import get_client
+                with open(path_foto, "rb") as f:
+                    img_b64 = base64.b64encode(f.read()).decode()
+                ext  = path_foto.rsplit(".", 1)[-1].lower()
+                mime = {"jpg":"image/jpeg","jpeg":"image/jpeg",
+                        "png":"image/png","webp":"image/webp"}.get(ext, "image/jpeg")
+                client = get_client()
+                resp = client.messages.create(
+                    model="claude-haiku-4-5-20251001",
+                    max_tokens=200,
+                    messages=[{"role": "user", "content": [
+                        {"type": "image", "source": {
+                            "type": "base64", "media_type": mime, "data": img_b64}},
+                        {"type": "text", "text": (
+                            "Nesta nota fiscal brasileira, encontre a CHAVE DE ACESSO "
+                            "(44 dígitos numéricos, normalmente impressa abaixo do QR code "
+                            "em grupos separados por espaço).\n"
+                            "Retorne APENAS os 44 dígitos sem espaços, sem nenhum outro texto.\n"
+                            "Se não encontrar, retorne exatamente: NAO_ENCONTRADO"
+                        )},
+                    ]}],
+                )
+                raw = "".join(b.text for b in resp.content
+                              if hasattr(b, "text")).strip()
+                import re as _re
+                digitos = _re.sub(r'\D', '', raw)
+                if len(digitos) == 44:
+                    _set_chave(digitos)
+                    logger.info("[COMPRAS] chave extraída via IA: %s...", digitos[:8])
+                else:
+                    logger.info("[COMPRAS] IA não encontrou chave válida: %r", raw[:40])
+                    # Passo 3: campo fica editável com hint
+                    txt_status.value = "Chave não detectada — digite os 44 dígitos manualmente"
+                    txt_status.color = AMAR
+                    try: page.update()
+                    except Exception: pass
+            except Exception as ex:
+                logger.warning("[COMPRAS] extrair chave IA: %s", ex)
+                txt_status.value = "Digite a chave de acesso (44 dígitos)"
+                txt_status.color = AMAR
+                try: page.update()
+                except Exception: pass
+
+        import threading as _thr
+        _thr.Thread(target=_run, daemon=True).start()
+
+    # Mapa de URLs de consulta NFC-e por código de UF (posições 0-1 da chave)
+    _SEFAZ_URL = {
+        "11": "https://www.sefin.ro.gov.br/nfce/consulta",
+        "12": "https://www.sefaz.ac.gov.br/nfce/consulta",
+        "13": "https://systems.sefaz.am.gov.br/nfce/consulta",
+        "14": "https://www.sefaz.rr.gov.br/nfce/consulta",
+        "15": "https://app.sefa.pa.gov.br/nfce/consulta",
+        "16": "https://www.sefaz.ap.gov.br/nfce/consulta",
+        "17": "https://www.sefaz.to.gov.br/nfce/consulta",
+        "21": "https://www.nfce.sefaz.ma.gov.br/portal/consulta",
+        "22": "https://www.sefaz.pi.gov.br/nfce/consulta",
+        "23": "https://nfce.sefaz.ce.gov.br/pages/consultaNFe.jsf",
+        "24": "https://nfce.set.rn.gov.br/portalDFe/NFCe/ConsultaNFCe.aspx",
+        "25": "https://www.sefaz.pb.gov.br/nfce/consulta",
+        "26": "https://nfce.sefa.pe.gov.br/p/consulta",
+        "27": "https://www.sefaz.al.gov.br/nfce/consulta",
+        "28": "https://nfce.sefaz.se.gov.br/portal/consulta",
+        "29": "https://www.nfe.ba.gov.br/portalnfce/sistema/consultanfce.aspx",
+        "31": "https://nfce.fazenda.mg.gov.br/portalnfce",
+        "32": "http://app.sefaz.es.gov.br/ConsultaNFCe",
+        "33": "https://www.nfce.fazenda.rj.gov.br/consulta",
+        "35": "https://www.nfce.fazenda.sp.gov.br/consulta",
+        "41": "https://www.nfce.fazenda.pr.gov.br/nfce/consulta",
+        "42": "https://www.sef.sc.gov.br/nfce/consulta",
+        "43": "https://www.nfe.sefaz.rs.gov.br/NFCE/consulta",
+        "50": "https://www.nfce.fazenda.ms.gov.br/consulta",
+        "51": "https://www.sefaz.mt.gov.br/nfce/consultanfce",
+        "52": "https://www.nfce.go.gov.br/post/ver_nfce_nacional",
+        "53": "https://www.nfe.fazenda.df.gov.br/nfce/consulta",
+    }
+
+    def _resolver_url_nfe(valor: str) -> tuple:
+        """
+        Recebe URL completa ou chave (44 dígitos).
+        Retorna (url, erro) — erro é None se OK, string descritiva se inválido.
+        """
+        import re as _re
+        valor = valor.strip()
+
+        # Já é URL válida
+        if valor.startswith("http"):
+            return valor, None
+
+        # Extrai só dígitos
+        chave = _re.sub(r'\D', '', valor)
+
+        if len(chave) == 0:
+            return "", "Campo vazio — cole a URL do QR ou os 44 dígitos da chave de acesso"
+
+        if len(chave) < 44:
+            faltam = 44 - len(chave)
+            return "", (f"Chave incompleta: {len(chave)} dígitos (faltam {faltam}). "
+                        f"A chave de acesso tem 44 dígitos — verifique a nota fiscal")
+
+        chave    = chave[:44]
+        cod_uf   = chave[:2]
+        base     = _SEFAZ_URL.get(cod_uf, "")
+        if base:
+            return f"{base}?p={chave}|2|1|1", None
+        # UF não mapeada — tenta portal nacional
+        return (f"https://www.nfe.fazenda.gov.br/portal/consultaRecaptcha.aspx"
+                f"?tipoConsulta=completa&tipoConteudo=7PhJ+gAVw2g=&nfe={chave}"), None
+
+    def _consultar_nfe(e):
+        valor = (tf_chave.value or _qr_nfe[0] or "").strip()
+        if not valor:
+            txt_status.value = "Informe a chave de acesso (44 dígitos) ou URL do QR"
+            txt_status.color = AMAR
+            try: page.update()
+            except Exception: pass
+            return
+
+        url, erro_resolucao = _resolver_url_nfe(valor)
+        if erro_resolucao:
+            txt_status.value = erro_resolucao
+            txt_status.color = VERM
+            tf_chave.border_color = VERM
+            try: page.update()
+            except Exception: pass
+            return
+
+        tf_chave.border_color = VERD
+        txt_status.value = "Consultando SEFAZ..."
+        txt_status.color = AZUL
+        progress.visible = True
+        btn_consultar_nfe.disabled = True
+        try: page.update()
+        except Exception: pass
+
+        def _run():
+            try:
+                import urllib.request, json
+                req = urllib.request.Request(
+                    url,
+                    headers={
+                        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+                        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                        "Accept-Language": "pt-BR,pt;q=0.9",
+                    }
+                )
+                with urllib.request.urlopen(req, timeout=20) as resp:
+                    html = resp.read().decode("utf-8", errors="replace")
+
+                from utils.claudia_engine import get_client
+                client = get_client()
+                resp_ia = client.messages.create(
+                    model="claude-haiku-4-5-20251001",
+                    max_tokens=2000,
+                    messages=[{"role": "user", "content": (
+                        "Este é o HTML de uma página de consulta NFC-e/NF-e da SEFAZ brasileira.\n"
+                        "Extraia com precisão:\n"
+                        "1. Razão social e CNPJ do EMITENTE (farmácia/loja)\n"
+                        "2. Endereço do emitente\n"
+                        "3. TODOS os itens da nota com: descrição exata, quantidade, "
+                        "valor unitário, valor total\n"
+                        "4. Total da nota\n\n"
+                        "Retorne APENAS JSON válido sem markdown:\n"
+                        '{"emitente":{"nome":"","cnpj":"","endereco":""},'
+                        '"itens":[{"nome":"descrição do produto","quantidade":1,'
+                        '"preco_unitario":0.00,"preco_total":0.00,'
+                        '"dosagem":null,"comprimidos_embalagem":null}],'
+                        '"total":0.00}\n\n'
+                        "IMPORTANTE: extraia TODOS os itens da nota, não resuma.\n\n"
+                        f"HTML:\n{html[:15000]}"
+                    )}],
+                )
+                raw = "".join(b.text for b in resp_ia.content if hasattr(b, "text")).strip()
+                import re as _re2
+                m = _re2.search(r'\{.*\}', raw, _re2.DOTALL)
+                dados = json.loads(m.group()) if m else {}
+                _on_nfe_resultado(dados=dados)
+            except Exception as ex:
+                logger.error("[COMPRAS] consultar NF-e: %s", ex)
+                _on_nfe_resultado(erro=str(ex)[:120])
+            finally:
+                progress.visible = False
+                btn_consultar_nfe.disabled = False
+
+        def _on_nfe_resultado(dados=None, erro=None):
+            if erro:
+                txt_status.value = f"Erro NF-e: {erro}"
+                txt_status.color = VERM
+                try: page.update()
+                except Exception: pass
+                return
+            emit = (dados or {}).get("emitente", {})
+            if emit.get("nome"):
+                from dados.model_prontuario import listar_farmacias, salvar_farmacia
+                farmas = listar_farmacias(so_ativas=False)
+                match = next((f for f in farmas
+                              if emit["nome"].upper() in f["nome"].upper()
+                              or f["nome"].upper() in emit["nome"].upper()), None)
+                if match:
+                    _farmacia_id_sel[0] = match["id"]
+                    _mostrar_farm_chip(match["nome"])
+                else:
+                    novo_id = salvar_farmacia({
+                        "id": None, "nome": emit["nome"],
+                        "endereco": emit.get("endereco", ""), "ativo": 1,
+                    })
+                    _farmacia_id_sel[0] = novo_id
+                    _mostrar_farm_chip(emit["nome"])
+                    _farmacias.append({"id": novo_id, "nome": emit["nome"],
+                                       "endereco": emit.get("endereco", "")})
+            itens = (dados or {}).get("itens", [])
+            if itens:
+                _remedios_extraidos[0] = itens
+                _rebuild_tabela(itens)
+                txt_status.value = f"✓ NF-e SEFAZ: {len(itens)} item(s)"
+                txt_status.color = VERD
+                btn_confirmar.visible = True
+                try: page.update()
+                except Exception: pass
+            else:
+                # SEFAZ não retornou itens (JS dinâmico) — extrai da foto automaticamente
+                if _foto_nf[0]:
+                    txt_status.value = "SEFAZ sem itens — extraindo da foto com IA..."
+                    txt_status.color = AZUL
+                    try: page.update()
+                    except Exception: pass
+                    _extrair_ia(None)
+                else:
+                    txt_status.value = "SEFAZ consultada — adicione a foto para extrair os itens"
+                    txt_status.color = AMAR
+                    btn_extrair.visible = True
+                    try: page.update()
+                    except Exception: pass
+
+        import threading as _thr
+        _thr.Thread(target=_run, daemon=True).start()
+
+    btn_consultar_nfe.on_click = _consultar_nfe
+
+    # ── Tabela de itens extraídos ────────────────────────
+    tabela_itens = ft.Column(spacing=6, visible=False)
+
+    from dados.model_prontuario import listar_remedios as _listar_rems
+    _rems_cadastrados = _listar_rems(so_ativos=False)
+
+    def _campo_rem(label, valor, largura=None, keyboard=ft.KeyboardType.TEXT):
+        kw = dict(
+            value=valor, label=label,
+            bgcolor=CARD, border_color=BD2, focused_border_color=VERD,
+            label_style=ft.TextStyle(color=SEC, size=10),
+            text_style=ft.TextStyle(color=TXT, size=12),
+            border_radius=6,
+        )
+        if largura:
+            kw["width"] = largura
+        else:
+            kw["expand"] = True
+        if keyboard != ft.KeyboardType.TEXT:
+            kw["keyboard_type"] = keyboard
+        return ft.TextField(**kw)
+
+    def _picker_remedio(page, rems, id_sel, chip_ctrl, tf_ctrl):
+        """Autocomplete inline para vincular ao remédio cadastrado."""
+        sugs = ft.Column(spacing=2, visible=False)
+
+        def _mostrar_chip(nome):
+            chip_ctrl.content.controls[1].value = nome
+            chip_ctrl.visible = True
+            tf_ctrl.visible   = False
+            sugs.controls.clear(); sugs.visible = False
+            try: page.update()
+            except Exception: pass
+
+        def _limpar(e=None):
+            id_sel[0] = None
+            chip_ctrl.visible = False
+            tf_ctrl.value     = ""
+            tf_ctrl.visible   = True
+            sugs.controls.clear(); sugs.visible = False
+            try: page.update()
+            except Exception: pass
+
+        chip_ctrl.on_click = _limpar
+
+        def _filtrar(e):
+            termo = (tf_ctrl.value or "").strip().upper()
+            sugs.controls.clear()
+            if not termo:
+                sugs.visible = False
+                try: page.update()
+                except Exception: pass
+                return
+            matches = [r for r in rems
+                       if termo in r["nome"].upper()
+                       or termo in (r.get("principio_ativo") or "").upper()][:6]
+            for r in matches:
+                def _sel(e, rem=r):
+                    id_sel[0] = rem["id"]
+                    _mostrar_chip(rem["nome"])
+                sub = ft.Text(r.get("principio_ativo") or "", size=10, color=MUT)
+                sugs.controls.append(ft.Container(
+                    content=ft.Row([
+                        ft.Icon("medication_rounded", size=13, color=VERD),
+                        ft.Column([
+                            ft.Text(r["nome"], size=12, color=TXT),
+                            sub if sub.value else ft.Container(),
+                        ], spacing=1, expand=True, tight=True),
+                    ], spacing=6),
+                    bgcolor=CARD, border_radius=6,
+                    padding=ft.padding.symmetric(horizontal=8, vertical=6),
+                    border=ft.border.all(1, BD), on_click=_sel, ink=True,
+                ))
+            sugs.visible = bool(matches)
+            try: page.update()
+            except Exception: pass
+
+        tf_ctrl.on_change = _filtrar
+        return sugs
+
+    def _rebuild_tabela(itens):
+        tabela_itens.controls.clear()
+        if not itens:
+            tabela_itens.visible = False
+            btn_confirmar.visible = False
+            try: page.update()
+            except Exception: pass
+            return
+
+        def _deletar_item(idx):
+            del _remedios_extraidos[0][idx]
+            _rebuild_tabela(_remedios_extraidos[0])
+            btn_confirmar.visible = bool(_remedios_extraidos[0])
+            try: page.update()
+            except Exception: pass
+
+        def _adicionar_item(e=None):
+            _remedios_extraidos[0].append({
+                "nome": "", "dosagem": "", "quantidade": 1,
+                "preco_unitario": "", "comprimidos_embalagem": "",
+            })
+            _rebuild_tabela(_remedios_extraidos[0])
+            btn_confirmar.visible = True
+            try: page.update()
+            except Exception: pass
+
+        # Cabeçalho com contagem, reprocessar e adicionar item
+        btn_reprocessar = ft.Container(
+            content=ft.Row([
+                ft.Icon("refresh_rounded", size=13, color=ROXO),
+                ft.Text("Reprocessar", size=11, color=ROXO),
+            ], spacing=4, tight=True),
+            bgcolor=ft.Colors.with_opacity(0.10, ROXO),
+            border=ft.border.all(1, ft.Colors.with_opacity(0.3, ROXO)),
+            border_radius=6, ink=True,
+            padding=ft.padding.symmetric(horizontal=8, vertical=5),
+            on_click=lambda e: _extrair_ia(e) if _foto_nf[0] else None,
+            visible=bool(_foto_nf[0]),
+        )
+        btn_add_item = ft.Container(
+            content=ft.Row([
+                ft.Icon("add_rounded", size=13, color=VERD),
+                ft.Text("Adicionar", size=11, color=VERD),
+            ], spacing=4, tight=True),
+            bgcolor=ft.Colors.with_opacity(0.10, VERD),
+            border=ft.border.all(1, ft.Colors.with_opacity(0.3, VERD)),
+            border_radius=6, ink=True,
+            padding=ft.padding.symmetric(horizontal=8, vertical=5),
+            on_click=_adicionar_item,
+        )
+        tabela_itens.controls.append(ft.Row([
+            ft.Icon("check_circle_outline_rounded", size=13, color=VERD),
+            ft.Text(f"{len(itens)} item(s) extraído(s)", size=12, color=VERD,
+                    weight=ft.FontWeight.W_600, expand=True),
+            btn_reprocessar,
+            btn_add_item,
+        ], spacing=8))
+
+        for idx, it in enumerate(itens):
+            sel = ft.Checkbox(value=True, active_color=VERD)
+
+            f_nome_nf = _campo_rem("Nome na nota (generico/marca)", it.get("nome", ""))
+
+            rem_id_sel = [None]
+            chip_rem = ft.Container(
+                content=ft.Row([
+                    ft.Icon("medication_rounded", size=13, color=VERD),
+                    ft.Text("", size=12, color=VERD, weight=ft.FontWeight.W_600),
+                    ft.Icon("close_rounded", size=12, color=VERD),
+                ], spacing=5, tight=True),
+                bgcolor=ft.Colors.with_opacity(0.12, VERD), border_radius=14,
+                padding=ft.padding.symmetric(horizontal=8, vertical=4),
+                visible=False,
+            )
+            tf_rem = ft.TextField(
+                hint_text="Vincular ao remédio cadastrado...",
+                prefix_icon="search_rounded",
+                bgcolor=CARD, border_color=BD2, focused_border_color=VERD,
+                hint_style=ft.TextStyle(color=MUT, size=11),
+                text_style=ft.TextStyle(color=TXT, size=12),
+                border_radius=6, expand=True, height=40,
+            )
+            sugs_col = _picker_remedio(page, _rems_cadastrados, rem_id_sel, chip_rem, tf_rem)
+
+            f_dosagem = _campo_rem("Dosagem", it.get("dosagem") or "", largura=100)
+            f_comprim = _campo_rem("Comprim/emb", str(it.get("comprimidos_embalagem") or ""),
+                                   largura=90, keyboard=ft.KeyboardType.NUMBER)
+            f_qtd     = _campo_rem("Qtd emb", str(it.get("quantidade", 1)),
+                                   largura=70, keyboard=ft.KeyboardType.NUMBER)
+            f_preco   = _campo_rem("R$ unit", str(it.get("preco_unitario", "")),
+                                   largura=80, keyboard=ft.KeyboardType.NUMBER)
+
+            it["_sel"]        = sel
+            it["_f_nome_nf"]  = f_nome_nf
+            it["_rem_id_sel"] = rem_id_sel
+            it["_f_dosagem"]  = f_dosagem
+            it["_f_comprim"]  = f_comprim
+            it["_f_qtd"]      = f_qtd
+            it["_f_preco"]    = f_preco
+
+            btn_del = ft.Container(
+                content=ft.Icon("delete_outline_rounded", size=16, color=VERM),
+                width=30, height=30, border_radius=6,
+                alignment=ft.alignment.center, ink=True,
+                on_click=lambda e, i=idx: _deletar_item(i),
+                tooltip="Remover item",
+            )
+
+            tabela_itens.controls.append(ft.Container(
+                content=ft.Column([
+                    ft.Row([sel, f_nome_nf, btn_del], spacing=6,
+                           vertical_alignment=ft.CrossAxisAlignment.CENTER),
+                    ft.Row([
+                        ft.Column([
+                            ft.Text("REMÉDIO CADASTRADO", size=9, color=MUT,
+                                    weight=ft.FontWeight.W_700),
+                            chip_rem, tf_rem, sugs_col,
+                        ], spacing=3, expand=True),
+                    ], spacing=6),
+                    ft.Row([f_dosagem, f_comprim, f_qtd, f_preco], spacing=6),
+                ], spacing=6),
+                bgcolor=CARD, border_radius=8,
+                padding=ft.padding.symmetric(horizontal=10, vertical=10),
+                border=ft.border.all(1, BD2),
+            ))
+
+        tabela_itens.visible = True
+        try: page.update()
+        except Exception: pass
+
+    # ── Helper de seleção de arquivo com callback direto ─
+    def _abrir_picker(titulo, on_caminho, on_erro=None):
+        def _picker():
+            try:
+                import tkinter as tk
+                from tkinter import filedialog
+                root = tk.Tk(); root.withdraw()
+                root.attributes("-topmost", True)
+                caminho = filedialog.askopenfilename(
+                    title=titulo,
+                    filetypes=[("Imagens", "*.jpg *.jpeg *.png *.webp")],
+                )
+                root.destroy()
+                if caminho:
+                    on_caminho(caminho)
+            except Exception as ex:
+                if on_erro:
+                    on_erro(str(ex))
+        import threading
+        threading.Thread(target=_picker, daemon=True).start()
+
+    # ── Selecionar foto da nota fiscal ──────────────────
+    def _selecionar_nf(e):
+        def _on_caminho(caminho):
+            try:
+                from utils.image_processor import confirmar_processamento_documento
+                pasta_tmp = _os.path.join(_os.path.dirname(
+                    _os.path.abspath(__file__)), "..", "assets", "notas_fiscais")
+                resultado = confirmar_processamento_documento(caminho, pasta_tmp)
+                if resultado is None:
+                    return
+                _foto_nf[0] = resultado
+            except Exception:
+                _foto_nf[0] = caminho
+
+            preview_box.content = ft.Image(
+                src=_foto_nf[0], width=320, height=220,
+                fit=ft.ImageFit.CONTAIN, border_radius=10,
+            )
+            preview_box.bgcolor = None
+            txt_status.value = "Nota carregada — detectando chave NF-e..."
+            txt_status.color = SEC
+            # Mostra Extrair com IA como fallback; QR pode ocultá-lo
+            btn_extrair.visible = True
+            tf_chave.value = ""
+            tf_chave.read_only = False
+            tf_chave.border_color = BD2
+            _qr_nfe[0] = ""
+            btn_consultar_nfe.visible = False
+            secao_qr.visible = True
+            _detectar_qr(_foto_nf[0])
+            try: page.update()
+            except Exception: pass
+
+        def _on_erro(msg):
+            txt_status.value = f"Erro: {msg}"
+            txt_status.color = VERM
+            try: page.update()
+            except Exception: pass
+
+        _abrir_picker("Foto da nota fiscal", _on_caminho, _on_erro)
+
+
+    btn_selecionar = ft.Container(
+        content=ft.Row([
+            ft.Icon("add_photo_alternate_rounded", size=16, color=BG),
+            ft.Text("Nota fiscal", size=13, color=BG, weight=ft.FontWeight.W_600),
+        ], spacing=6, tight=True, alignment=ft.MainAxisAlignment.CENTER),
+        bgcolor=VERD, border_radius=10, ink=True,
+        padding=ft.padding.symmetric(horizontal=14, vertical=12),
+    )
+    btn_selecionar.on_click = _selecionar_nf
+
+    # ── Extrair com IA ───────────────────────────────────
+    btn_extrair = ft.Container(
+        content=ft.Row([
+            ft.Icon("auto_awesome_rounded", size=15, color=ROXO),
+            ft.Text("Extrair com IA", size=13, color=ROXO,
+                    weight=ft.FontWeight.W_600),
+        ], spacing=6, tight=True),
+        bgcolor=ft.Colors.with_opacity(0.12, ROXO),
+        border=ft.border.all(1, ft.Colors.with_opacity(0.4, ROXO)),
+        border_radius=8, ink=True, visible=False,
+        padding=ft.padding.symmetric(horizontal=12, vertical=9),
+    )
+
+    def _extrair_ia(e):
+        if not _foto_nf[0]:
+            return
+        txt_status.value = "Analisando nota com IA..."
+        txt_status.color = AZUL
+        btn_extrair.disabled = True
+        progress.visible = True
+        try: page.update()
+        except Exception: pass
+
+        def _analisar():
+            try:
+                import base64, json, urllib.request
+                from dados.model_prontuario import get_config
+                api_key = get_config("anthropic_api_key", "")
+                with open(_foto_nf[0], "rb") as f:
+                    img_b64 = base64.b64encode(f.read()).decode()
+                ext  = _foto_nf[0].rsplit(".", 1)[-1].lower()
+                mime = {"jpg": "image/jpeg", "jpeg": "image/jpeg",
+                        "png": "image/png", "webp": "image/webp"}.get(ext, "image/jpeg")
+                prompt = (
+                    "Esta e uma nota fiscal ou cupom de farmacia brasileira.\n"
+                    "Extraia as seguintes informacoes e retorne APENAS JSON valido sem markdown:\n"
+                    "{\n"
+                    '  "emitente": {"nome": "razao social ou null", "cnpj": "so numeros ou null", "endereco": "ou null"},\n'
+                    '  "chave_nfe": "44 digitos da chave de acesso ou URL do QR code ou null",\n'
+                    '  "total": 0.0,\n'
+                    '  "itens": [\n'
+                    '    {"nome": "nome exato na nota", "quantidade": 1,\n'
+                    '     "preco_unitario": 0.0, "preco_total": 0.0,\n'
+                    '     "dosagem": "500mg ou null", "comprimidos_embalagem": 30}\n'
+                    "  ]\n"
+                    "}\n"
+                    "IMPORTANTE: extraia a chave de acesso (44 digitos) ou URL do QR code se visivel na nota."
+                )
+                headers = {"Content-Type": "application/json",
+                           "anthropic-version": "2023-06-01"}
+                if api_key:
+                    headers["x-api-key"] = api_key
+                payload = json.dumps({
+                    "model": "claude-sonnet-4-20250514",
+                    "max_tokens": 1000,
+                    "messages": [{"role": "user", "content": [
+                        {"type": "image", "source": {
+                            "type": "base64", "media_type": mime, "data": img_b64}},
+                        {"type": "text", "text": prompt},
+                    ]}],
+                }).encode()
+                req = urllib.request.Request(
+                    "https://api.anthropic.com/v1/messages",
+                    data=payload, headers=headers, method="POST",
+                )
+                with urllib.request.urlopen(req, timeout=30) as resp:
+                    data = json.loads(resp.read())
+                raw = "".join(
+                    b.get("text", "") for b in data.get("content", [])
+                    if b.get("type") == "text"
+                ).strip()
+                import re as _re, json as _json2
+                # Tenta parsear como objeto {emitente, chave_nfe, itens}
+                m_obj = _re.search(r'\{.*\}', raw, _re.DOTALL)
+                dados = {}
+                if m_obj:
+                    try: dados = _json2.loads(m_obj.group())
+                    except Exception: pass
+                itens = dados.get("itens") or []
+                # fallback: tenta array direto
+                if not itens:
+                    m_arr = _re.search(r'\[.*\]', raw, _re.DOTALL)
+                    if m_arr:
+                        try: itens = _json2.loads(m_arr.group())
+                        except Exception: pass
+                _on_ia_resultado(dados=dados, itens=itens)
+            except Exception as ex:
+                logger.error("[COMPRAS] extrair IA: %s", ex)
+                _on_ia_resultado(erro=str(ex)[:80])
+            finally:
+                btn_extrair.disabled = False
+                progress.visible = False
+                try: page.update()
+                except Exception: pass
+
+        def _on_ia_resultado(dados=None, itens=None, erro=None):
+            if erro:
+                txt_status.value = f"Erro IA: {erro}"
+                txt_status.color = VERM
+                try: page.update()
+                except Exception: pass
+                return
+
+            dados = dados or {}
+            itens = itens or []
+
+            # Preenche chave NF-e só se campo ainda vazio (QR tem prioridade)
+            chave = dados.get("chave_nfe") or ""
+            if chave and not tf_chave.value.strip():
+                _set_chave(chave)
+                return  # tem URL → não preenche itens, aguarda Consultar SEFAZ
+
+            # Preenche emitente se campo de farmácia ainda vazio
+            emit = dados.get("emitente") or {}
+            if emit.get("nome") and not _farmacia_id_sel[0]:
+                from dados.model_prontuario import listar_farmacias, salvar_farmacia
+                farmas = listar_farmacias(so_ativas=False)
+                match = next((f for f in farmas
+                              if emit["nome"].upper() in f["nome"].upper()
+                              or f["nome"].upper() in emit["nome"].upper()), None)
+                if match:
+                    _farmacia_id_sel[0] = match["id"]
+                    _mostrar_farm_chip(match["nome"])
+                else:
+                    novo_id = salvar_farmacia({
+                        "id": None, "nome": emit["nome"],
+                        "endereco": emit.get("endereco", ""), "ativo": 1,
+                    })
+                    _farmacia_id_sel[0] = novo_id
+                    _mostrar_farm_chip(emit["nome"])
+                    _farmacias.append({"id": novo_id, "nome": emit["nome"],
+                                       "endereco": emit.get("endereco", "")})
+
+            _remedios_extraidos[0] = itens
+            _rebuild_tabela(itens)
+            txt_status.value = (f"✓ {len(itens)} item(s) extraído(s)" if itens
+                                else "Nenhum item identificado — edite manualmente")
+            txt_status.color = VERD if itens else AMAR
+            btn_confirmar.visible = bool(itens)
+            try: page.update()
+            except Exception: pass
+
+        import threading
+        threading.Thread(target=_analisar, daemon=True).start()
+
+    btn_extrair.on_click = _extrair_ia
+
+    # ── Confirmar compra ─────────────────────────────────
+    btn_confirmar = ft.Container(
+        content=ft.Row([
+            ft.Icon("check_rounded", size=16, color=BG),
+            ft.Text("Registrar compra", size=13, color=BG,
+                    weight=ft.FontWeight.W_600),
+        ], spacing=6, tight=True, alignment=ft.MainAxisAlignment.CENTER),
+        bgcolor=AZUL, border_radius=10, ink=True, visible=False,
+        padding=ft.padding.symmetric(horizontal=16, vertical=12),
+    )
+
+    txt_resultado = ft.Text("", size=12, color=VERD)
+
+    def _confirmar(e):
+        from dados.model_prontuario import (
+            listar_remedios, salvar_remedio, salvar_compra_nf,
+        )
+        import datetime as _dt
+        hoje      = _dt.date.today().isoformat()
+        itens_ui  = _remedios_extraidos[0]
+        nao_enc   = []
+
+        existentes = {r["nome"].strip().upper(): r
+                      for r in listar_remedios(so_ativos=False)}
+
+        # ── Monta lista de itens para salvar ─────────────
+        itens_salvar = []
+        for it in itens_ui:
+            if not it.get("_sel") or not it["_sel"].value:
+                continue
+            nome_nf = (it["_f_nome_nf"].value or "").strip()
+            if not nome_nf:
+                continue
+
+            rem_id_sel = it.get("_rem_id_sel", [None])
+            rid = rem_id_sel[0] if rem_id_sel[0] else None
+
+            if not rid:
+                chave = nome_nf.upper()
+                if chave in existentes:
+                    rid = existentes[chave]["id"]
+                else:
+                    dosagem = (it["_f_dosagem"].value or "").strip() or it.get("dosagem")
+                    rid = salvar_remedio({
+                        "id": None, "nome": nome_nf,
+                        "dosagem": dosagem,
+                        "estoque_atual": 0, "estoque_minimo": 5,
+                        "ativo": 1, "tipo": "remedio", "prescrito": 0,
+                    })
+                    nao_enc.append(nome_nf)
+
+            try:
+                qtd     = int(it["_f_qtd"].value or 1)
+                comprim = int(it["_f_comprim"].value or 0) or None
+                preco   = float((it["_f_preco"].value or "0").replace(",", "."))
+            except Exception:
+                qtd = 1; comprim = None; preco = 0.0
+
+            itens_salvar.append({
+                "remedio_id":     rid,
+                "nome_nf":        nome_nf,
+                "dosagem":        (it["_f_dosagem"].value or "").strip() or None,
+                "quantidade_emb": qtd,
+                "comprimidos_emb": comprim,
+                "preco_unitario": preco,
+                "preco_total":    qtd * preco,
+            })
+
+        if not itens_salvar:
+            txt_resultado.value = "Nenhum item selecionado."
+            txt_resultado.color = AMAR
+            try: page.update()
+            except Exception: pass
+            return
+
+        total_nf = sum(it["preco_total"] for it in itens_salvar)
+
+        # ── Move foto para pasta definitiva ──────────────
+        foto_final = _foto_nf[0] or None
+        if foto_final:
+            import shutil as _sh
+            _root_dir = _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__)))
+            pasta_tmp = _os.path.join(_root_dir, "assets", "compras", "tmp")
+            _os.makedirs(pasta_tmp, exist_ok=True)
+            nome_foto = _os.path.basename(foto_final)
+            dest_tmp  = _os.path.join(pasta_tmp, nome_foto)
+            try:
+                if _os.path.abspath(foto_final) != _os.path.abspath(dest_tmp):
+                    _sh.copy2(foto_final, dest_tmp)
+                foto_final = dest_tmp
+            except Exception as ex:
+                logger.warning("[COMPRAS] copiar foto: %s", ex)
+
+        # ── Salva cabeçalho + itens ───────────────────────
+        compra_id = salvar_compra_nf(
+            cabecalho={
+                "farmacia_id":  _farmacia_id_sel[0],
+                "data":         hoje,
+                "total":        total_nf,
+                "foto_path":    foto_final,
+                "foto_drive_id": _drive_id[0] or None,
+                "qr_nfe":       _qr_nfe[0] or None,
+            },
+            itens=itens_salvar,
+        )
+
+        # ── Renomeia pasta para id definitivo e faz upload Drive ──
+        if foto_final and compra_id:
+            _root_dir = _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__)))
+            pasta_def = _os.path.join(_root_dir, "assets", "compras", str(compra_id))
+            _os.makedirs(pasta_def, exist_ok=True)
+            nome_foto = _os.path.basename(foto_final)
+            novo_path = _os.path.join(pasta_def, nome_foto)
+            try:
+                import shutil as _sh2
+                _sh2.move(foto_final, novo_path)
+                import sqlite3 as _sql
+                from dados.model_prontuario import DB_PATH as _DB
+                with _sql.connect(_DB, timeout=10) as _c:
+                    _c.execute("UPDATE compras SET foto_path=? WHERE id=?",
+                               (novo_path, compra_id))
+                import threading as _thr
+                def _up(path=novo_path, cid=compra_id):
+                    try:
+                        from utils.drive_prontuario import upload_nota_fiscal
+                        fid, _ = upload_nota_fiscal(path, mov_id=cid)
+                        with _sql.connect(_DB, timeout=10) as _c2:
+                            _c2.execute("UPDATE compras SET foto_drive_id=? WHERE id=?",
+                                        (fid, cid))
+                    except Exception as ex:
+                        logger.warning("[COMPRAS] upload Drive: %s", ex)
+                _thr.Thread(target=_up, daemon=True).start()
+            except Exception as ex:
+                logger.warning("[COMPRAS] mover foto final: %s", ex)
+
+        salvos = len(itens_salvar)
+
+        # Sincroniza com Drive em background
+        def _sync():
+            try:
+                from backup.drive_backup import fazer_backup
+                fazer_backup(forcar=True)
+            except Exception as ex:
+                logger.warning("[COMPRAS] sync Drive: %s", ex)
+        import threading as _thr2
+        _thr2.Thread(target=_sync, daemon=True).start()
+
+        partes = [f"✓ {salvos} compra(s) registrada(s)"]
+        if nao_enc:
+            partes.append(f"{len(nao_enc)} remedio(s) novo(s) cadastrado(s)")
+        txt_resultado.value = " — ".join(partes)
+        txt_resultado.color = VERD
+
+        # Limpa tela para nova nota
+        _foto_nf[0]  = ""
+        _drive_id[0] = ""
+        _remedios_extraidos[0] = []
+        _limpar_farm()
+        _qr_nfe[0] = ""
+        tf_chave.value = ""
+        tf_chave.read_only = False
+        tf_chave.border_color = BD2
+        btn_consultar_nfe.visible = False
+        secao_qr.visible = False
+        preview_box.content = ft.Column([
+            ft.Icon("receipt_long_rounded", size=40, color=MUT),
+            ft.Text("Nenhuma nota selecionada", size=12, color=MUT),
+        ], horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+           alignment=ft.MainAxisAlignment.CENTER, spacing=8)
+        preview_box.bgcolor = BD
+        tabela_itens.visible = False
+        btn_extrair.visible  = False
+        btn_confirmar.visible = False
+        txt_status.value = ""
+        try: page.update()
+        except Exception: pass
+
+        # Volta para lista após 1.5s para o usuário ver o resultado
+        if on_concluido:
+            import threading as _thr
+            _thr.Timer(1.5, on_concluido).start()
+
+    btn_confirmar.on_click = _confirmar
+
+    # botão Cancelar / Voltar para lista
+    btn_voltar = ft.Container(
+        content=ft.Row([
+            ft.Icon("arrow_back_rounded", size=14, color=SEC),
+            ft.Text("Voltar", size=12, color=SEC),
+        ], spacing=6, tight=True),
+        padding=ft.padding.symmetric(horizontal=12, vertical=8),
+        border_radius=8, bgcolor=BD, ink=True,
+    )
+    if on_concluido:
+        btn_voltar.on_click = lambda e: on_concluido()
+
+    area.controls.extend([
+        ft.Row([
+            btn_voltar,
+            ft.Container(expand=True),
+        ]),
+        _label_sec("NOVA NOTA FISCAL", VERD),
+        ft.Text("Fotografe a nota e o QR Code separado para melhor leitura.",
+                size=11, color=MUT),
+        ft.Container(height=4),
+        secao_farmacia,
+        ft.Container(height=8),
+        preview_box,
+        secao_qr,
+        ft.Container(height=8),
+        ft.Row([btn_selecionar, btn_extrair], spacing=8, wrap=True),
+        progress,
+        txt_status,
+        ft.Container(height=8),
+        tabela_itens,
+        ft.Container(height=8),
+        btn_confirmar,
+        txt_resultado,
+    ])
+
+    return area.controls
+
+
+# ══════════════════════════════════════════════════════════════
+# ABA 3 — FARMÁCIAS + ORÇAMENTO WHATSAPP (mantida, não exibida)
 # ══════════════════════════════════════════════════════════════
 
 def _conteudo_farmacias(page):
@@ -1797,9 +4107,9 @@ def criar_tela_remedios(page: ft.Page, voltar_fn, readonly=False):
     area       = ft.Column(spacing=8, scroll=ft.ScrollMode.AUTO, expand=True)
 
     ABAS = [
-        (0, "today_rounded",       "Hoje",      AZUL),
-        (1, "medication_rounded",  "Remédios",  AMAR),
-        (2, "storefront_rounded",  "Farmácias", VERD),
+        (0, "today_rounded",        "Hoje",     AZUL),
+        (1, "medication_rounded",   "Remedios", AMAR),
+        (2, "shopping_cart_rounded","Compras",  VERD),
     ]
 
     def _ir_ficha(remedio):
@@ -1850,9 +4160,10 @@ def criar_tela_remedios(page: ft.Page, voltar_fn, readonly=False):
                 controles = _build_aba_hoje(page)
             elif aba_ativa[0] == 1:
                 controles = _lista_remedios(page, _ir_ficha, readonly=readonly)
+                area.controls.extend(controles)
             else:
-                controles = _conteudo_farmacias(page)
-            area.controls.extend(controles)
+                controles = _conteudo_compras(page)
+                area.controls.extend(controles)
             logger.info("[REMEDIOS] %s controles carregados na area", len(area.controls))
         except Exception as ex:
             logger.error("[REMEDIOS] erro _rebuild_conteudo: %s", ex, exc_info=True)

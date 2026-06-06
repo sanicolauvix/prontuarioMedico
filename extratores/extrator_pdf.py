@@ -60,7 +60,10 @@ def _decodificar_dyna_mapa(texto: str) -> str:
 
 def detectar_laboratorio(texto: str) -> str:
     t = texto.lower()
-    if "pretti"   in t: return "Pretti"
+    # Testar labs mais especificos primeiro para evitar falsos positivos
+    # (ex: "Pretti" aparece como solicitante em PDFs MedSenior)
+    if "medsenior"  in t: return "MedSênior"
+    if "med senior" in t: return "MedSênior"
     if "cremasco" in t: return "Cremasco"
     if "tommasi"  in t: return "Tommasi"
     if "virchow"  in t: return "Virchow"
@@ -68,11 +71,13 @@ def detectar_laboratorio(texto: str) -> str:
     if "cardio sistemas" in t: return "DynaMapa"
     if "dyna-mapa"  in t: return "DynaMapa"
     if "dyna mapa"  in t: return "DynaMapa"
-    if "medsenior"  in t: return "MedSênior"
     if "zeiss"      in t: return "Zeiss"
     if "heidelberg" in t: return "Heidelberg"
     if "medicina diagn" in t: return "Medicina Diagnóstica"
-    # Marcadores alternativos (quando o nome do lab está só em imagem)
+    # Pretti por ultimo — pode aparecer como nome de medico solicitante
+    if "laboratorio pretti" in t or "lab. pretti" in t or "lab pretti" in t: return "Pretti"
+    if "pretti" in t and "solicitante" not in t: return "Pretti"
+    # Marcadores alternativos (quando o nome do lab esta so em imagem)
     if "id lamina:" in t or "no.exames:" in t: return "Cremasco"
     return "Desconhecido"
 
@@ -203,8 +208,11 @@ def extrair_cabecalho(texto: str, laboratorio: str) -> dict:
     d["data_exame"] = _buscar(texto, [
         r"Data/Hora\s+Coleta:\s*([\d]{2}/[\d]{2}/[\d]{4})",
         r"Data\s+Coleta:\s*([\d]{2}/[\d]{2}/[\d]{4})",
+        r"Coleta[\s\.]+:\s*([\d]{2}/[\d]{2}/[\d]{4})",       # MedSenior novo: "Coleta...: 11/05/2026"
+        r"Data[\s\.]+:\s*([\d]{2}/[\d]{2}/[\d]{4})",          # MedSenior antigo: "Data...: 17/11/2025"
         r"DATA\s+ENTRADA:\s*([\d]{2}/[\d]{2}/[\d]{4})",
         r"Entrada:\s*([\d]{2}/[\d]{2}/[\d]{4})",
+        r"Atendimento[\s\.]+:\s*([\d]{2}/[\d]{2}/[\d]{4})",   # MedSenior novo: "Atendimento....: 11/05/2026"
         r"Libera[cç][aã]o:\s*([\d]{2}/[\d]{2}/[\d]{4})",
         r"Create\s+Date\s*:\s*([\d]{2}/[\d]{2}/[\d]{4})",
         r"Exam\s+Date\s*:\s*([\d]{2}/[\d]{2}/[\d]{4})",
@@ -637,6 +645,28 @@ _MAPA_NOMES = {
     # MedSênior (formato: "NOME - DESCRICAO LONGA")
     "SHBG - GLOBULINA LIGADORA DE HORMÔNIOS SEXUAIS": "SHBG",
     "SHBG - GLOBULINA LIGADORA DE HORMONIOS SEXUAIS": "SHBG",
+    # Tommasi — hemograma antigo (nomes sem acento, abreviações com pontos)
+    "Hemacias":            "Hemácias",
+    "Hemoglobina":         "Hemoglobina",
+    "Hematocrito":         "Hematócrito",
+    "V.C.M":               "VCM",
+    "H.C.M":               "HCM",
+    "C.H.C.M":             "CHCM",
+    "R.D.W":               "RDW",
+    "Leucocitos":          "Leucócitos",
+    "Bastonetes":          "Neutrófilos Bastonetes",
+    "Segmentados":         "Neutrófilos Segmentados",
+    "Eosinofilos":         "Eosinófilos",
+    "Basofilos":           "Basófilos",
+    "Linfocitos tipicos":  "Linfócitos Típicos",
+    "Monocitos":           "Monócitos",
+    "Plaquetas":           "Plaquetas",
+    "M.P.V":               "MPV (Volume Plaquetário Médio)",
+    # Tommasi — exames isolados (maiúsculas antigas)
+    "GLICOSE":             "Glicemia de Jejum",
+    "COLESTEROL - HDL":    "Colesterol HDL",
+    "COLESTEROL -LDL":     "Colesterol LDL",
+    "TRIGLICERIDEOS":      "Triglicerídeos",
 }
 
 def _normalizar_nome_parametro(nome: str) -> str:
@@ -765,10 +795,17 @@ def extrair_pretti(texto: str, on_progress=None) -> list[dict]:
                         nome = ""
                         for j in range(i-1, max(i-10, -1), -1):
                             _, cand = linhas[j]
-                            if cand and not re_lixo_nome.match(cand) and len(cand) > 2:
-                                if not _re.match(r"^[0-9,\.]+$", cand):
-                                    nome = cand
-                                    break
+                            if not cand or len(cand) <= 2:
+                                continue
+                            # ignora linhas de lixo e linhas que contenham "Valor de"/"Valores de"
+                            if re_lixo_nome.match(cand):
+                                continue
+                            if _re.search(r"Valor\s+de\s+refer|Valores\s+de\s+refer", cand, _re.IGNORECASE):
+                                continue
+                            if _re.match(r"^[0-9,\.]+$", cand):
+                                continue
+                            nome = cand
+                            break
 
                         if not nome or re_lixo_nome.match(nome):
                             i += 1
@@ -839,6 +876,20 @@ def extrair_pretti(texto: str, on_progress=None) -> list[dict]:
 # ══════════════════════════════════════════════════════════════
 # 5b. MAPA — Mapeamento Ambulatorial da Pressão Arterial
 # ══════════════════════════════════════════════════════════════
+
+def _extrair_data_mapa(texto: str) -> str | None:
+    """Extrai data de instalação/exame do MAPA — formato DD/MM/YYYY."""
+    import re as _re2
+    from datetime import datetime as _dt2
+    # procura DD/MM/YYYY no texto (ignora hora)
+    m = _re2.search(r"(\d{2}/\d{2}/\d{4})", texto)
+    if m:
+        try:
+            return _dt2.strptime(m.group(1), "%d/%m/%Y").strftime("%Y-%m-%d")
+        except Exception:
+            pass
+    return None
+
 
 def extrair_mapa(texto: str) -> dict:
     """Extrai dados estruturados de relatório MAPA (Dyna-MAPA / MedSênior).
@@ -1324,12 +1375,18 @@ def extrair_tommasi(texto: str) -> list[dict]:
     re_lixo = re.compile(
         r"^(Sr\.\s*\(a\)|Solicitante|Código|Unidade|Convenio|Convênio|"
         r"A interpretação|atos médicos|Av\.|Tommasi|CNPJ|CNES|CRF|CPF|"
-        r"Data/Hora|Legenda|Pag\.|ASSINATURA|[0-9A-F]{20,}|"
-        r"Material\s*:|Método\s*:|Metodo\s*:|Análise realizada|Padronizações|"
+        r"Data/Hora|Data\s+liberacao|Data\s+Nascimento|Legenda|Pag\.|"
+        r"ASSINATURA|[0-9A-F]{20,}|\(s[0-9]|"
+        r"Material\s*[:\.]|[Mm]etodo\s*[:\.]|[Mm]étodo\s*[:\.]|"
+        r"Análise realizada|Padronizações|material::|metodo\.\.|"
         r"ICSH|Recomendations|Int\. Jnl|EXAME LIBERADO|Ref\.:|\*Análise|"
         r"Importante:|Fonte:|Anteriores:|Literatura|Ref\. David|"
+        r"Nota[\s:]|Nota\s+T|Valores\s+de\s+Col|Valores\s+de\s+ref|"
+        r"Dosagem\s+de\s+Colesterol\s+presente|"
         r"Deficiência|Limítrofe|Desejável|Elevado|Muito elevado|"
-        r"←|→|[0-9]{3,4}\s*→|←\s*[0-9])",
+        r"←|→|[0-9]{3,4}\s*→|←\s*[0-9]|"
+        r"\*\s+Amostra|segundo\s+as|Dislipidemias|Sociedade|Diretriz|"
+        r"Aceitavel|Otimo|Limitrofe|Alto|Muito\s+alto)",
         re.IGNORECASE
     )
 
@@ -1375,9 +1432,17 @@ def extrair_tommasi(texto: str) -> list[dict]:
         re.IGNORECASE
     )
 
+    # ── Regex Formato D — "NOME EXAME valor unidade" sem pontos/dois-pontos ──
+    # Ex: "COLESTEROL - HDL 34 mg/dL"  "TRIGLICERIDEOS 220 mg/dL"
+    re_fmt_d = re.compile(
+        r"^([A-ZÁÀÃÂÉÊÍÓÔÕÚÇ][A-ZÁÀÃÂÉÊÍÓÔÕÚÇ\s\-/]{3,50}?)\s{2,}"
+        r"([\d,\.]+)\s+"
+        r"([a-zA-Zµ/%³]+(?:[/\.][a-zA-Z³\d]+)?)\s*$"
+    )
+
     # ── Regex VR — referência na linha seguinte ───────────────
     re_vr = re.compile(
-        r"^V\.?R\.?:?\s*(.{5,100})",
+        r"^(?:V\.?R\.?|VR)\s*[:\.]?\s*(.{5,100})",
         re.IGNORECASE
     )
 
@@ -1454,8 +1519,8 @@ def extrair_tommasi(texto: str) -> list[dict]:
                 and not re.match(r"^\d", linha)):
             titulo_secao = linha.strip()
 
-        # Detecta início do hemograma
-        if re.search(r"SÉRIE VERMELHA|SÉRIE BRANCA", linha):
+        # Detecta início do hemograma (inclui variantes antigas e artefatos de encoding)
+        if re.search(r"SÉRIE VERMELHA|SÉRIE BRANCA|SERIE VERMELHA|SERIE BRANCA|HEMOGRAMA", linha):
             em_hemograma = True
             i += 1
             continue
@@ -1496,14 +1561,22 @@ def extrair_tommasi(texto: str) -> list[dict]:
                 i += 1
                 continue
 
-            # Linha normal hemograma
+            # Linha normal hemograma (formato colunar moderno)
             m = re_hemo_normal.match(linha)
             if m:
                 nome = m.group(1).strip()
                 if not re_ignorar_param.match(nome) and len(nome) > 2:
                     ref = m.group(4).strip()
-                    # Remover parte da unidade duplicada na ref: "41,0 a 53,0 %" → ok
                     _add(nome, m.group(2), m.group(3), ref)
+                i += 1
+                continue
+
+            # Hemograma antigo formato "Nome.....: valor unidade" (Formato B)
+            m = re_fmt_b.match(linha)
+            if m:
+                nome = m.group(1).strip().rstrip(".")
+                if not re_ignorar_param.match(nome) and len(nome) > 2:
+                    _add(nome, m.group(2), m.group(3), "")
                 i += 1
                 continue
 
@@ -1528,6 +1601,24 @@ def extrair_tommasi(texto: str) -> list[dict]:
         m = re_fmt_b.match(linha)
         if m:
             nome = m.group(1).strip().rstrip(".")
+            if not re_lixo.match(nome) and len(nome) > 3:
+                ref = ""
+                for offset in range(1, 8):
+                    if i + offset >= total: break
+                    prox = linhas[i + offset].strip()
+                    if not prox: continue
+                    mv = re_vr.match(prox)
+                    if mv:
+                        ref = mv.group(1).strip()
+                    break
+                _add(nome, m.group(2), m.group(3), ref)
+            i += 1
+            continue
+
+        # ── FORMATO D: "NOME EXAME  valor unidade" sem pontos ─
+        m = re_fmt_d.match(linha)
+        if m:
+            nome = m.group(1).strip()
             if not re_lixo.match(nome) and len(nome) > 3:
                 ref = ""
                 for offset in range(1, 8):
@@ -1596,6 +1687,15 @@ def extrair_pdf_bytes(conteudo_bytes: bytes, nome_arquivo: str,
             except Exception as e_pag:
                 logging.warning(f"[EXTRATOR] Página {idx+1}/{total_pags} erro: {e_pag}")
                 textos_por_pag.append("")
+
+            # detecção antecipada de MAPA após primeira página — para o loop
+            if idx == 0 and textos_por_pag:
+                _t0 = textos_por_pag[0]
+                if _detectar_encoding_dyna_mapa(_t0):
+                    _t0 = _decodificar_dyna_mapa(_t0)
+                if detectar_tipo(_t0) == "mapa":
+                    logging.info("[EXTRATOR] MAPA detectado pag 1 — interrompendo leitura")
+                    break
             print(f"[EXTRATOR] pag {idx+1}/{total_pags} · {linhas_mapeadas} linhas")
             logging.info(f"[EXTRATOR] pag {idx+1}/{total_pags} · {linhas_mapeadas} linhas")
             _prog("contando", idx + 1, total_pags, linhas_mapeadas)
@@ -1603,6 +1703,46 @@ def extrair_pdf_bytes(conteudo_bytes: bytes, nome_arquivo: str,
     # Total real de linhas conhecido antes de começar a "processar"
     total_linhas_real = sum(t.count("\n") + (1 if t else 0) for t in textos_por_pag)
     _prog("lendo", 0, total_pags, 0, 0, total_linhas_real)
+
+    # ── Detecção antecipada de MAPA (primeira página basta) ──────────────
+    # Decodifica antes de testar — Dyna-MAPA usa encoding shift +0x1D
+    _amostra_p1 = textos_por_pag[0] if textos_por_pag else ""
+    if _detectar_encoding_dyna_mapa(_amostra_p1):
+        _amostra_p1 = _decodificar_dyna_mapa(_amostra_p1)
+    if detectar_tipo(_amostra_p1) == "mapa":
+        logging.info("[EXTRATOR] MAPA detectado na pag 1 — pulando API, processando direto")
+        # decodifica todas as páginas se necessário
+        if _detectar_encoding_dyna_mapa("".join(textos_por_pag[:2])):
+            textos_por_pag = [_decodificar_dyna_mapa(t) for t in textos_por_pag]
+        texto_completo = "\n".join(textos_por_pag)
+        laboratorio    = detectar_laboratorio(texto_completo)
+        cabecalho      = extrair_cabecalho(texto_completo, laboratorio)
+        mapa           = extrair_mapa(texto_completo)
+        _prog("concluido", total_pags, total_pags,
+              texto_completo.count("\n"), len(mapa["resultados"]))
+        _d = {
+            "arquivo_origem":          nome_arquivo,
+            "drive_file_id":           drive_file_id,
+            "resultado_texto":         texto_completo,
+            "tipo":                    "mapa",
+            "tipo_exame":              mapa["tipo_exame"],
+            "paciente_nome":           mapa.get("paciente_nome") or cabecalho.get("paciente_nome"),
+            "paciente_cpf":            cabecalho.get("paciente_cpf"),
+            "data_exame":              (cabecalho.get("data_exame")
+                                        or mapa.get("data_exame")
+                                        or _extrair_data_mapa(texto_completo)),
+            "laboratorio":             cabecalho.get("laboratorio"),
+            "medico_solicit":          cabecalho.get("medico_solicit"),
+            "resultados":              mapa["resultados"],
+            "laudo":                   {
+                "texto_completo": mapa["texto_completo"],
+                "resumo":         mapa["resumo"],
+                "conclusao":      mapa["conclusao"],
+            },
+            "modelo_nao_configurado":  False,
+            "status_sugerido":         None if cabecalho.get("data_exame") else "revisao",
+        }
+        return _d
 
     # ── Passagem 2: montar texto_completo emitindo progresso por linha ──
     # Detectar e decodificar encoding Dyna-MAPA (shift +0x1D)
@@ -1621,51 +1761,63 @@ def extrair_pdf_bytes(conteudo_bytes: bytes, nome_arquivo: str,
             logging.warning(f"[EXTRATOR] Limite de chars atingido em {nome_arquivo}")
             break
 
-    # ── Tentativa via API Claude (primaria) ──────────────────
+    # ── Labs com extratores regex dedicados: sempre usam regex, sem API ──────
+    # Pretti, Cremasco, Tommasi, MedSênior têm parsers próprios que extraem
+    # valores numéricos com alta fidelidade. A API Claude não melhora o resultado
+    # e pode distorcer (multiplos_laudos sem valores, nomes errados, etc.).
+    _LABS_REGEX = {"Pretti", "Cremasco", "Tommasi", "MedSênior"}
+    _lab_detec  = detectar_laboratorio(texto_completo)
+    _pular_api  = _lab_detec in _LABS_REGEX
+
+    # ── Tentativa via API Claude (somente labs sem extrator dedicado) ─────────
     # PDFs escaneados (<200 chars) → caminho de visão; senão → texto
     _pdf_escaneado = len(texto_completo.strip()) < 200
-    try:
-        if _pdf_escaneado:
-            _prog("api_visao", 0, total_pags, 0, 0, 0)
-            from .extrator_api import extrair_via_api_pdf as _ext_pdf
-            logging.info("[EXTRATOR] PDF escaneado/laudo — usando Claude Vision")
-            _dados_api = _ext_pdf(conteudo_bytes, nome_arquivo)
-        else:
-            _prog("api_texto", 0, total_pags, 0, 0, 0)
-            from .extrator_api import extrair_via_api as _ext_api
-            _dados_api = _ext_api(texto_completo, nome_arquivo)
-        if _dados_api:
-            _dados_api["arquivo_origem"] = nome_arquivo
-            _dados_api["drive_file_id"]  = drive_file_id
-            if not _pdf_escaneado:
-                _dados_api["resultado_texto"] = texto_completo
-            if not _dados_api.get("data_exame"):
-                _dados_api["status_sugerido"] = "revisao"
-            if _dados_api.get("multiplos_laudos"):
-                _prog("multiplos_laudos", total_pags, total_pags, 0,
-                      len(_dados_api.get("laudos", [])), 0)
+    if not _pular_api:
+        try:
+            if _pdf_escaneado:
+                _prog("api_visao", 0, total_pags, 0, 0, 0)
+                from .extrator_api import extrair_via_api_pdf as _ext_pdf
+                logging.info("[EXTRATOR] PDF escaneado/laudo — usando Claude Vision")
+                _dados_api = _ext_pdf(conteudo_bytes, nome_arquivo)
             else:
-                _prog("concluido", total_pags, total_pags, texto_completo.count("\n"),
-                      len(_dados_api.get("resultados", [])))
-            return _dados_api
-        else:
-            _kb = len(conteudo_bytes) // 1024
-            _msg = f"[EXTRATOR] API retornou None para {nome_arquivo} ({_kb} KB) — caindo no regex"
-            logging.warning(_msg)
-            try:
-                from pathlib import Path as _p
-                from datetime import datetime as _dt
-                _lp = _p(__file__).parent.parent / "logs" / "erro_processar.log"
-                _lp.parent.mkdir(exist_ok=True)
-                with open(_lp, "a", encoding="utf-8") as _f:
-                    _f.write(f"{_dt.now()} {_msg}\n")
-            except Exception:
-                pass
-    except Exception as _api_ex:
-        if type(_api_ex).__name__ == "SemCreditosError":
-            raise
-        logging.warning(f"[EXTRATOR] API excecao: {_api_ex}")
-    # ── Fallback: deteccao e extracao por regex ───────────────
+                _prog("api_texto", 0, total_pags, 0, 0, 0)
+                from .extrator_api import extrair_via_api as _ext_api
+                _dados_api = _ext_api(texto_completo, nome_arquivo)
+            if _dados_api:
+                _dados_api["arquivo_origem"] = nome_arquivo
+                _dados_api["drive_file_id"]  = drive_file_id
+                if not _pdf_escaneado:
+                    _dados_api["resultado_texto"] = texto_completo
+                if not _dados_api.get("data_exame"):
+                    _dados_api["status_sugerido"] = "revisao"
+                if _dados_api.get("multiplos_laudos"):
+                    _prog("multiplos_laudos", total_pags, total_pags, 0,
+                          len(_dados_api.get("laudos", [])), 0)
+                else:
+                    _prog("concluido", total_pags, total_pags, texto_completo.count("\n"),
+                          len(_dados_api.get("resultados", [])))
+                return _dados_api
+            else:
+                _kb = len(conteudo_bytes) // 1024
+                _msg = f"[EXTRATOR] API retornou None para {nome_arquivo} ({_kb} KB) — caindo no regex"
+                logging.warning(_msg)
+                try:
+                    from pathlib import Path as _p
+                    from datetime import datetime as _dt
+                    _lp = _p(__file__).parent.parent / "logs" / "erro_processar.log"
+                    _lp.parent.mkdir(exist_ok=True)
+                    with open(_lp, "a", encoding="utf-8") as _f:
+                        _f.write(f"{_dt.now()} {_msg}\n")
+                except Exception:
+                    pass
+        except Exception as _api_ex:
+            if type(_api_ex).__name__ == "SemCreditosError":
+                raise
+            logging.warning(f"[EXTRATOR] API excecao: {_api_ex}")
+    else:
+        logging.info(f"[EXTRATOR] {_lab_detec} — extrator regex dedicado, API ignorada")
+
+    # ── Extrator regex ────────────────────────────────────────────────────────
 
     laboratorio = detectar_laboratorio(texto_completo)
     cabecalho   = extrair_cabecalho(texto_completo, laboratorio)

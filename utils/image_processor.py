@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
+# SHARED | utils/image_processor.py -- gerenciado por flet_shared/sync_shared.py
 """
-image_processor.py — Koios Prontuario
+image_processor.py — Koios (compartilhado via flet_shared)
 Processamento de imagem com tres perfis:
   1. processar_foto_produto   — RGB, recorte suave, uso visual (produtos, pessoas)
   2. processar_foto_documento — perspective transform + grayscale + threshold (OCR/IA)
@@ -235,6 +236,87 @@ def processar_foto_documento(path_origem: str, pasta_destino: str) -> str:
     return destino
 
 
+# ── Detecção de QR Code (NF-e / cupom fiscal) ────────────────────────────────
+
+def detectar_qr_nfe(path_imagem: str) -> str:
+    """
+    Tenta detectar QR code na imagem usando cv2.QRCodeDetector.
+    Retorna a string decodificada (URL da SEFAZ) ou "" se não encontrar.
+
+    Estrategia:
+    1. Imagem original
+    2. Escalas variadas (QR pequeno confunde o detector)
+    3. Grayscale + threshold Otsu
+    4. Quadrantes da imagem (QR pode estar num canto — cupom fiscal)
+    5. Metade inferior com zoom (QR de NF-e fica quase sempre na parte de baixo)
+    """
+    cv2, np = _importar_cv2()
+    if cv2 is None:
+        return ""
+
+    def _tentar(candidato):
+        detector = cv2.QRCodeDetector()
+        val, _, _ = detector.detectAndDecode(candidato)
+        return val or ""
+
+    def _preparar_variantes(src):
+        """Gera lista de variantes da imagem para tentar a detecção."""
+        h, w = src.shape[:2]
+        variantes = [src]
+        # escalas maiores ajudam QR pequeno
+        for esc in [2.0, 3.0, 1.5]:
+            variantes.append(cv2.resize(src, (int(w*esc), int(h*esc)),
+                                        interpolation=cv2.INTER_CUBIC))
+        # threshold binário
+        gray = cv2.cvtColor(src, cv2.COLOR_BGR2GRAY)
+        _, thr = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+        variantes.append(cv2.cvtColor(thr, cv2.COLOR_GRAY2BGR))
+        # threshold adaptativo (melhor para iluminacao irregular)
+        thr_ad = cv2.adaptiveThreshold(gray, 255,
+                                       cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+                                       cv2.THRESH_BINARY, 11, 2)
+        variantes.append(cv2.cvtColor(thr_ad, cv2.COLOR_GRAY2BGR))
+        return variantes
+
+    try:
+        img = cv2.imread(path_imagem)
+        if img is None:
+            return ""
+
+        h, w = img.shape[:2]
+
+        # Tentativas na imagem completa
+        for v in _preparar_variantes(img):
+            val = _tentar(v)
+            if val:
+                logger.info("[QR] detectado imagem completa: %s", val[:80])
+                return val
+
+        # Quadrantes — QR pode estar em qualquer canto
+        regioes = [
+            img[h//2:, :w//2],        # inferior-esquerdo (mais comum em cupom)
+            img[h//2:, w//2:],        # inferior-direito
+            img[:h//2, :w//2],        # superior-esquerdo
+            img[:h//2, w//2:],        # superior-direito
+            img[h//3:, :],            # dois terços inferiores
+            img[2*h//3:, :],          # terço inferior
+        ]
+        for i, reg in enumerate(regioes):
+            if reg.size == 0:
+                continue
+            for v in _preparar_variantes(reg):
+                val = _tentar(v)
+                if val:
+                    logger.info("[QR] detectado regiao %d: %s", i, val[:80])
+                    return val
+
+        logger.info("[QR] nenhum QR encontrado em %s", path_imagem)
+        return ""
+    except Exception as ex:
+        logger.warning("[QR] detectar_qr_nfe: %s", ex)
+        return ""
+
+
 # ── Confirmação visual (subprocess isolado — evita Tcl_AsyncDelete com Flet) ──
 
 def confirmar_processamento_documento(path_origem: str, pasta_destino: str) -> "str | None":
@@ -253,14 +335,17 @@ def confirmar_processamento_documento(path_origem: str, pasta_destino: str) -> "
             [sys.executable, script, path_origem, pasta_destino],
             capture_output=True,
             text=True,
+            encoding="utf-8",
             timeout=300,  # 5 min máximo para o usuário interagir
         )
         saida = proc.stdout.strip()
+        logger.info("[IMG] subprocess rc=%d saida=%r stderr=%s",
+                    proc.returncode, saida, proc.stderr[:200] if proc.stderr else "")
         if saida and os.path.exists(saida):
             logger.info("[IMG] confirmado: %s", saida)
             return saida
-        if proc.returncode != 0 and proc.stderr:
-            logger.warning("[IMG] gui stderr: %s", proc.stderr[:200])
+        if saida:
+            logger.warning("[IMG] saida recebida mas arquivo nao existe: %r", saida)
         return None
     except subprocess.TimeoutExpired:
         logger.warning("[IMG] janela de confirmacao expirou (5 min)")

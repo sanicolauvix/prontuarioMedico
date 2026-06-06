@@ -1115,10 +1115,15 @@ EXAMES_PADRAO = [
         "nome_oficial": "Homocisteína",
         "sinonimos": ["HOMOCISTEINA", "HOMOCISTEÍNA", "HOMOCISTEINA (PLASMA)",
                       "Dosagem de Homocisteína"],
-        "categoria": "Vitaminas", "unidade": "µmol/L",
-        "referencias": [{"sexo": "ambos", "idade_min": 0, "idade_max": 120,
-            "critico_baixo": 2, "limite_baixo": 4, "otimo_min": 5,
-            "otimo_max": 10, "limite_alto": 15, "critico_alto": 50}]
+        "categoria": "Marcadores Cardíacos", "unidade": "µmol/L",
+        "referencias": [
+            {"sexo": "M", "idade_min": 0, "idade_max": 120,
+             "critico_baixo": 2, "limite_baixo": 5, "otimo_min": 5,
+             "otimo_max": 12, "limite_alto": 16, "critico_alto": 50},
+            {"sexo": "F", "idade_min": 0, "idade_max": 120,
+             "critico_baixo": 2, "limite_baixo": 4, "otimo_min": 4,
+             "otimo_max": 10, "limite_alto": 14, "critico_alto": 50},
+        ]
     },
     {
         "nome_oficial": "Serotonina",
@@ -1234,6 +1239,815 @@ EXAMES_PADRAO = [
         "referencias": [{"sexo": "ambos", "idade_min": 0, "idade_max": 120,
             "critico_baixo": 30, "limite_baixo": 80, "otimo_min": 90,
             "otimo_max": 130, "limite_alto": 145, "critico_alto": 250}]
+    },
+
+    # ══════════════════════════════════════════════════════
+    # MARCADORES TUMORAIS
+    # ══════════════════════════════════════════════════════
+    {
+        "nome_oficial": "PSA Livre",
+        "sinonimos": ["PSA LIVRE", "ANTIGENO PROSTATICO LIVRE",
+                      "ANTÍGENO PROSTÁTICO ESPECÍFICO LIVRE",
+                      "PSA LIVRE RESULTADO"],
+        "categoria": "Marcadores Tumorais", "unidade": "ng/mL",
+        "referencias": [
+            {"sexo": "M", "idade_min": 40, "idade_max": 120,
+             "critico_baixo": 0, "limite_baixo": 0, "otimo_min": 0,
+             "otimo_max": 1.5, "limite_alto": 2.0, "critico_alto": 5.0},
+        ]
+    },
+    {
+        "nome_oficial": "PSA Livre/Total (%)",
+        "sinonimos": ["PSA LIVRE/TOTAL", "RELACAO PSA LIVRE TOTAL",
+                      "PORCENTAGEM PSA LIVRE", "% PSA LIVRE"],
+        "categoria": "Marcadores Tumorais", "unidade": "%",
+        "referencias": [
+            {"sexo": "M", "idade_min": 40, "idade_max": 120,
+             "critico_baixo": 0, "limite_baixo": 15, "otimo_min": 20,
+             "otimo_max": 100, "limite_alto": 100, "critico_alto": 100},
+        ]
+    },
+    {
+        "nome_oficial": "CEA",
+        "sinonimos": ["CEA", "ANTIGENO CARCINOEMBRIONARIO",
+                      "ANTÍGENO CARCINOEMBRIÔNICO", "CEA RESULTADO"],
+        "categoria": "Marcadores Tumorais", "unidade": "ng/mL",
+        "referencias": [
+            {"sexo": "ambos", "idade_min": 0, "idade_max": 120,
+             "critico_baixo": 0, "limite_baixo": 0, "otimo_min": 0,
+             "otimo_max": 3.4, "limite_alto": 5.0, "critico_alto": 20.0},
+        ]
+    },
+    {
+        "nome_oficial": "CA 19-9",
+        "sinonimos": ["CA 19-9", "CA19-9", "CA-19-9",
+                      "ANTIGENO CARBOIDRATO 19-9"],
+        "categoria": "Marcadores Tumorais", "unidade": "U/mL",
+        "referencias": [
+            {"sexo": "ambos", "idade_min": 0, "idade_max": 120,
+             "critico_baixo": 0, "limite_baixo": 0, "otimo_min": 0,
+             "otimo_max": 37.0, "limite_alto": 37.0, "critico_alto": 200.0},
+        ]
+    },
+    {
+        "nome_oficial": "AFP (Alfa-fetoproteína)",
+        "sinonimos": ["AFP", "ALFA FETOPROTEINA", "ALFA-FETOPROTEÍNA",
+                      "ALFAFETOPROTEINA", "AFP RESULTADO"],
+        "categoria": "Marcadores Tumorais", "unidade": "ng/mL",
+        "referencias": [
+            {"sexo": "ambos", "idade_min": 0, "idade_max": 120,
+             "critico_baixo": 0, "limite_baixo": 0, "otimo_min": 0,
+             "otimo_max": 7.0, "limite_alto": 10.0, "critico_alto": 400.0},
+        ]
+    },
+    {
+        "nome_oficial": "Beta-HCG",
+        "sinonimos": ["BETA-HCG", "BETA HCG", "HCG", "GONADOTROFINA CORIONICA",
+                      "GONADOTROFINA CORIÔNICA HUMANA", "B-HCG"],
+        "categoria": "Marcadores Tumorais", "unidade": "mUI/mL",
+        "referencias": [
+            {"sexo": "M", "idade_min": 0, "idade_max": 120,
+             "critico_baixo": 0, "limite_baixo": 0, "otimo_min": 0,
+             "otimo_max": 2.5, "limite_alto": 5.0, "critico_alto": 50.0},
+            {"sexo": "F", "idade_min": 0, "idade_max": 120,
+             "critico_baixo": 0, "limite_baixo": 0, "otimo_min": 0,
+             "otimo_max": 5.0, "limite_alto": 5.0, "critico_alto": 50.0},
+        ]
+    },
+    {
+        "nome_oficial": "CA 125",
+        "sinonimos": ["CA 125", "CA-125", "CA125",
+                      "ANTIGENO CARBOIDRATO 125"],
+        "categoria": "Marcadores Tumorais", "unidade": "U/mL",
+        "referencias": [
+            {"sexo": "F", "idade_min": 0, "idade_max": 120,
+             "critico_baixo": 0, "limite_baixo": 0, "otimo_min": 0,
+             "otimo_max": 35.0, "limite_alto": 35.0, "critico_alto": 200.0},
+        ]
+    },
+    {
+        "nome_oficial": "CA 15-3",
+        "sinonimos": ["CA 15-3", "CA-15-3", "CA15-3",
+                      "ANTIGENO CARBOIDRATO 15-3"],
+        "categoria": "Marcadores Tumorais", "unidade": "U/mL",
+        "referencias": [
+            {"sexo": "F", "idade_min": 0, "idade_max": 120,
+             "critico_baixo": 0, "limite_baixo": 0, "otimo_min": 0,
+             "otimo_max": 30.0, "limite_alto": 31.5, "critico_alto": 100.0},
+        ]
+    },
+    {
+        "nome_oficial": "Tireoglobulina",
+        "sinonimos": ["TIREOGLOBULINA", "THYROGLOBULIN", "TG"],
+        "categoria": "Tireoide", "unidade": "ng/mL",
+        "referencias": [
+            {"sexo": "ambos", "idade_min": 0, "idade_max": 120,
+             "critico_baixo": 0, "limite_baixo": 0, "otimo_min": 0,
+             "otimo_max": 55.0, "limite_alto": 55.0, "critico_alto": 300.0},
+        ]
+    },
+
+    # ══════════════════════════════════════════════════════
+    # MARCADORES CARDÍACOS
+    # ══════════════════════════════════════════════════════
+    {
+        "nome_oficial": "Troponina I",
+        "sinonimos": ["TROPONINA I", "TROPONINA", "TROPONINA I CARDIACA",
+                      "TROPONINA I CARDÍACA", "cTnI"],
+        "categoria": "Marcadores Cardíacos", "unidade": "ng/mL",
+        "referencias": [
+            {"sexo": "ambos", "idade_min": 0, "idade_max": 120,
+             "critico_baixo": 0, "limite_baixo": 0, "otimo_min": 0,
+             "otimo_max": 0.04, "limite_alto": 0.04, "critico_alto": 0.5},
+        ]
+    },
+    {
+        "nome_oficial": "Troponina I Ultrassensível",
+        "sinonimos": ["TROPONINA I ULTRASSENSIVEL", "TROPONINA I US",
+                      "TROPONINA I ULTRA SENSIVEL", "hs-cTnI",
+                      "TROPONINA I ALTA SENSIBILIDADE"],
+        "categoria": "Marcadores Cardíacos", "unidade": "ng/L",
+        "referencias": [
+            {"sexo": "M", "idade_min": 18, "idade_max": 120,
+             "critico_baixo": 0, "limite_baixo": 0, "otimo_min": 0,
+             "otimo_max": 34.0, "limite_alto": 34.0, "critico_alto": 500.0},
+            {"sexo": "F", "idade_min": 18, "idade_max": 120,
+             "critico_baixo": 0, "limite_baixo": 0, "otimo_min": 0,
+             "otimo_max": 16.0, "limite_alto": 16.0, "critico_alto": 500.0},
+        ]
+    },
+    {
+        "nome_oficial": "Troponina T",
+        "sinonimos": ["TROPONINA T", "TROPONINA T CARDIACA",
+                      "TROPONINA T CARDÍACA", "cTnT", "TROPONINA T US",
+                      "TROPONINA T ULTRASSENSIVEL"],
+        "categoria": "Marcadores Cardíacos", "unidade": "ng/L",
+        "referencias": [
+            {"sexo": "ambos", "idade_min": 18, "idade_max": 120,
+             "critico_baixo": 0, "limite_baixo": 0, "otimo_min": 0,
+             "otimo_max": 14.0, "limite_alto": 14.0, "critico_alto": 300.0},
+        ]
+    },
+    {
+        "nome_oficial": "BNP",
+        "sinonimos": ["BNP", "PEPTIDEO NATRIURETICO CEREBRAL",
+                      "PEPTÍDEO NATRIURÉTICO TIPO B",
+                      "BRAIN NATRIURETIC PEPTIDE"],
+        "categoria": "Marcadores Cardíacos", "unidade": "pg/mL",
+        "referencias": [
+            {"sexo": "ambos", "idade_min": 0, "idade_max": 75,
+             "critico_baixo": 0, "limite_baixo": 0, "otimo_min": 0,
+             "otimo_max": 35.0, "limite_alto": 100.0, "critico_alto": 400.0},
+            {"sexo": "ambos", "idade_min": 76, "idade_max": 120,
+             "critico_baixo": 0, "limite_baixo": 0, "otimo_min": 0,
+             "otimo_max": 35.0, "limite_alto": 125.0, "critico_alto": 400.0},
+        ]
+    },
+    {
+        "nome_oficial": "NT-proBNP",
+        "sinonimos": ["NT-PROBNP", "NT PROBNP", "PRO-BNP",
+                      "N-TERMINAL PRO-BNP", "NT-PRO-BNP"],
+        "categoria": "Marcadores Cardíacos", "unidade": "pg/mL",
+        "referencias": [
+            {"sexo": "ambos", "idade_min": 0, "idade_max": 50,
+             "critico_baixo": 0, "limite_baixo": 0, "otimo_min": 0,
+             "otimo_max": 125.0, "limite_alto": 300.0, "critico_alto": 1800.0},
+            {"sexo": "ambos", "idade_min": 51, "idade_max": 75,
+             "critico_baixo": 0, "limite_baixo": 0, "otimo_min": 0,
+             "otimo_max": 125.0, "limite_alto": 900.0, "critico_alto": 5000.0},
+            {"sexo": "ambos", "idade_min": 76, "idade_max": 120,
+             "critico_baixo": 0, "limite_baixo": 0, "otimo_min": 0,
+             "otimo_max": 125.0, "limite_alto": 1800.0, "critico_alto": 10000.0},
+        ]
+    },
+    {
+        "nome_oficial": "Mioglobina",
+        "sinonimos": ["MIOGLOBINA", "MYOGLOBIN"],
+        "categoria": "Marcadores Cardíacos", "unidade": "ng/mL",
+        "referencias": [
+            {"sexo": "M", "idade_min": 18, "idade_max": 120,
+             "critico_baixo": 0, "limite_baixo": 0, "otimo_min": 0,
+             "otimo_max": 72.0, "limite_alto": 90.0, "critico_alto": 500.0},
+            {"sexo": "F", "idade_min": 18, "idade_max": 120,
+             "critico_baixo": 0, "limite_baixo": 0, "otimo_min": 0,
+             "otimo_max": 58.0, "limite_alto": 70.0, "critico_alto": 400.0},
+        ]
+    },
+    {
+        "nome_oficial": "PCR Ultrassensível",
+        "sinonimos": ["PCR ULTRASSENSIVEL", "PCR US", "PCR ALTA SENSIBILIDADE",
+                      "PROTEINA C REATIVA ULTRASSENSIVEL",
+                      "PROTEÍNA C REATIVA ULTRASSENSÍVEL",
+                      "hs-CRP", "PCR-US"],
+        "categoria": "Marcadores Cardíacos", "unidade": "mg/L",
+        "referencias": [
+            {"sexo": "ambos", "idade_min": 0, "idade_max": 120,
+             "critico_baixo": 0, "limite_baixo": 0, "otimo_min": 0,
+             "otimo_max": 1.0, "limite_alto": 3.0, "critico_alto": 10.0},
+        ]
+    },
+    # ══════════════════════════════════════════════════════
+    # HORMÔNIOS — COMPLEMENTARES
+    # ══════════════════════════════════════════════════════
+    {
+        "nome_oficial": "Progesterona",
+        "sinonimos": ["PROGESTERONA", "PROGESTERONA SERICA",
+                      "PROGESTERONA SÉRICA", "Progesterona"],
+        "categoria": "Hormônios", "unidade": "ng/mL",
+        "referencias": [
+            {"sexo": "F", "idade_min": 18, "idade_max": 50,
+             "critico_baixo": 0.1, "limite_baixo": 0.2, "otimo_min": 0.5,
+             "otimo_max": 1.5, "limite_alto": 1.5, "critico_alto": 5.0,
+             "obs": "Fase folicular"},
+            {"sexo": "F", "idade_min": 18, "idade_max": 50,
+             "critico_baixo": 5.0, "limite_baixo": 5.0, "otimo_min": 7.0,
+             "otimo_max": 25.0, "limite_alto": 30.0, "critico_alto": 60.0,
+             "obs": "Fase lútea"},
+            {"sexo": "M", "idade_min": 18, "idade_max": 120,
+             "critico_baixo": 0, "limite_baixo": 0.1, "otimo_min": 0.2,
+             "otimo_max": 1.4, "limite_alto": 1.5, "critico_alto": 5.0},
+        ]
+    },
+    {
+        "nome_oficial": "Androstenediona",
+        "sinonimos": ["ANDROSTENEDIONA", "ANDROSTENEDIONE",
+                      "ANDROSTENEDIONA RESULTADO"],
+        "categoria": "Hormônios", "unidade": "ng/mL",
+        "referencias": [
+            {"sexo": "M", "idade_min": 18, "idade_max": 120,
+             "critico_baixo": 0.3, "limite_baixo": 0.7, "otimo_min": 0.8,
+             "otimo_max": 2.5, "limite_alto": 3.1, "critico_alto": 6.0},
+            {"sexo": "F", "idade_min": 18, "idade_max": 120,
+             "critico_baixo": 0.2, "limite_baixo": 0.5, "otimo_min": 0.8,
+             "otimo_max": 3.0, "limite_alto": 3.4, "critico_alto": 7.0},
+        ]
+    },
+
+    # ══════════════════════════════════════════════════════
+    # FUNÇÃO RENAL — AVANÇADA
+    # ══════════════════════════════════════════════════════
+    {
+        "nome_oficial": "Cistatina C",
+        "sinonimos": ["CISTATINA C", "CYSTATIN C", "CISTATINA"],
+        "categoria": "Função Renal", "unidade": "mg/L",
+        "referencias": [
+            {"sexo": "ambos", "idade_min": 0, "idade_max": 1,
+             "critico_baixo": 0, "limite_baixo": 0.8, "otimo_min": 0.8,
+             "otimo_max": 2.3, "limite_alto": 2.5, "critico_alto": 5.0,
+             "obs": "0-12 meses"},
+            {"sexo": "ambos", "idade_min": 1, "idade_max": 18,
+             "critico_baixo": 0, "limite_baixo": 0.5, "otimo_min": 0.5,
+             "otimo_max": 1.0, "limite_alto": 1.1, "critico_alto": 3.0,
+             "obs": "1-18 anos"},
+            {"sexo": "ambos", "idade_min": 18, "idade_max": 120,
+             "critico_baixo": 0, "limite_baixo": 0.56, "otimo_min": 0.6,
+             "otimo_max": 0.98, "limite_alto": 1.2, "critico_alto": 3.0,
+             "obs": "adultos"},
+        ]
+    },
+    {
+        "nome_oficial": "Microalbuminúria 24h",
+        "sinonimos": ["MICROALBUMINURIA 24H", "MICROALBUMINÚRIA 24 HORAS",
+                      "ALBUMINA URINA 24H", "PROTEINURIA 24H"],
+        "categoria": "Função Renal", "unidade": "mg/24h",
+        "referencias": [
+            {"sexo": "ambos", "idade_min": 0, "idade_max": 120,
+             "critico_baixo": 0, "limite_baixo": 0, "otimo_min": 0,
+             "otimo_max": 30.0, "limite_alto": 300.0, "critico_alto": 3000.0},
+        ]
+    },
+    {
+        "nome_oficial": "Relação Albumina/Creatinina (urina)",
+        "sinonimos": ["RELACAO ALBUMINA CREATININA URINA",
+                      "RAZAO ALBUMINA CREATININA",
+                      "ACR URINA", "ALBUMINA/CREATININA URINARIA"],
+        "categoria": "Função Renal", "unidade": "mg/g",
+        "referencias": [
+            {"sexo": "ambos", "idade_min": 0, "idade_max": 120,
+             "critico_baixo": 0, "limite_baixo": 0, "otimo_min": 0,
+             "otimo_max": 30.0, "limite_alto": 300.0, "critico_alto": 3000.0},
+        ]
+    },
+    {
+        "nome_oficial": "Creatinina Urinária",
+        "sinonimos": ["CREATININA URINARIA", "CREATININA NA URINA",
+                      "CREATININA URINA 24H"],
+        "categoria": "Função Renal", "unidade": "mg/dL",
+        "referencias": [
+            {"sexo": "ambos", "idade_min": 0, "idade_max": 120,
+             "critico_baixo": 20, "limite_baixo": 40, "otimo_min": 60,
+             "otimo_max": 200, "limite_alto": 300, "critico_alto": 400},
+        ]
+    },
+
+    # ══════════════════════════════════════════════════════
+    # LIPÍDIOS — COMPLEMENTARES
+    # ══════════════════════════════════════════════════════
+    {
+        "nome_oficial": "Apolipoproteína B",
+        "sinonimos": ["APOLIPOPROTEINA B", "APOLIPOPROTEÍNA B",
+                      "APO B", "APOB"],
+        "categoria": "Lipídios", "unidade": "mg/dL",
+        "referencias": [
+            {"sexo": "M", "idade_min": 18, "idade_max": 120,
+             "critico_baixo": 20, "limite_baixo": 55, "otimo_min": 60,
+             "otimo_max": 100, "limite_alto": 130, "critico_alto": 200},
+            {"sexo": "F", "idade_min": 18, "idade_max": 120,
+             "critico_baixo": 20, "limite_baixo": 55, "otimo_min": 60,
+             "otimo_max": 100, "limite_alto": 130, "critico_alto": 200},
+        ]
+    },
+    {
+        "nome_oficial": "Apolipoproteína A-I",
+        "sinonimos": ["APOLIPOPROTEINA A1", "APOLIPOPROTEÍNA A-I",
+                      "APO A", "APOA1"],
+        "categoria": "Lipídios", "unidade": "mg/dL",
+        "referencias": [
+            {"sexo": "M", "idade_min": 18, "idade_max": 120,
+             "critico_baixo": 50, "limite_baixo": 94, "otimo_min": 120,
+             "otimo_max": 180, "limite_alto": 200, "critico_alto": 300},
+            {"sexo": "F", "idade_min": 18, "idade_max": 120,
+             "critico_baixo": 50, "limite_baixo": 101, "otimo_min": 120,
+             "otimo_max": 200, "limite_alto": 220, "critico_alto": 300},
+        ]
+    },
+    {
+        "nome_oficial": "Lipoproteína (a)",
+        "sinonimos": ["LPA", "LIPOPROTEINA A", "LIPOPROTEÍNA (A)",
+                      "Lp(a)"],
+        "categoria": "Lipídios", "unidade": "mg/dL",
+        "referencias": [
+            {"sexo": "ambos", "idade_min": 0, "idade_max": 120,
+             "critico_baixo": 0, "limite_baixo": 0, "otimo_min": 0,
+             "otimo_max": 30.0, "limite_alto": 50.0, "critico_alto": 100.0},
+        ]
+    },
+
+    # ══════════════════════════════════════════════════════
+    # VITAMINAS — COMPLEMENTARES
+    # ══════════════════════════════════════════════════════
+    {
+        "nome_oficial": "Vitamina E (alfa-tocoferol)",
+        "sinonimos": ["VITAMINA E", "ALFA TOCOFEROL",
+                      "DOSAGEM DE VITAMINA E",
+                      "Dosagem de Vitamina E (alfa-tocoferol)"],
+        "categoria": "Vitaminas", "unidade": "mg/L",
+        "referencias": [
+            {"sexo": "ambos", "idade_min": 0, "idade_max": 120,
+             "critico_baixo": 3.0, "limite_baixo": 5.0, "otimo_min": 7.0,
+             "otimo_max": 18.0, "limite_alto": 20.0, "critico_alto": 40.0},
+        ]
+    },
+
+    # ══════════════════════════════════════════════════════
+    # MINERAIS — COMPLEMENTARES
+    # ══════════════════════════════════════════════════════
+    {
+        "nome_oficial": "Cobre",
+        "sinonimos": ["COBRE", "COPPER", "COBRE SERICO",
+                      "DOSAGEM DE COBRE"],
+        "categoria": "Minerais", "unidade": "µg/dL",
+        "referencias": [
+            {"sexo": "M", "idade_min": 18, "idade_max": 120,
+             "critico_baixo": 40, "limite_baixo": 70, "otimo_min": 80,
+             "otimo_max": 130, "limite_alto": 140, "critico_alto": 250},
+            {"sexo": "F", "idade_min": 18, "idade_max": 120,
+             "critico_baixo": 50, "limite_baixo": 80, "otimo_min": 85,
+             "otimo_max": 155, "limite_alto": 170, "critico_alto": 300},
+        ]
+    },
+    {
+        "nome_oficial": "Selênio",
+        "sinonimos": ["SELENIO", "SELÊNIO", "SELENIUM",
+                      "DOSAGEM DE SELENIO"],
+        "categoria": "Minerais", "unidade": "µg/L",
+        "referencias": [
+            {"sexo": "ambos", "idade_min": 0, "idade_max": 120,
+             "critico_baixo": 40, "limite_baixo": 70, "otimo_min": 100,
+             "otimo_max": 160, "limite_alto": 200, "critico_alto": 400},
+        ]
+    },
+
+    # ══════════════════════════════════════════════════════
+    # HEMOGRAMA PEDIÁTRICO — FAIXAS ETÁRIAS EXPANDIDAS
+    # ══════════════════════════════════════════════════════
+    {
+        "nome_oficial": "Hemoglobina (RN)",
+        "sinonimos": ["HEMOGLOBINA RN", "HB RECEM NASCIDO"],
+        "categoria": "Hemograma Pediátrico", "unidade": "g/dL",
+        "referencias": [
+            {"sexo": "ambos", "idade_min": 0, "idade_max": 0,
+             "critico_baixo": 10.0, "limite_baixo": 14.0, "otimo_min": 16.0,
+             "otimo_max": 19.0, "limite_alto": 22.0, "critico_alto": 24.0,
+             "obs": "RN 0-28 dias"},
+            {"sexo": "ambos", "idade_min": 0, "idade_max": 2,
+             "critico_baixo": 7.0, "limite_baixo": 9.5, "otimo_min": 10.0,
+             "otimo_max": 14.0, "limite_alto": 15.0, "critico_alto": 20.0,
+             "obs": "1-2 meses"},
+            {"sexo": "ambos", "idade_min": 2, "idade_max": 6,
+             "critico_baixo": 7.0, "limite_baixo": 9.5, "otimo_min": 10.0,
+             "otimo_max": 13.5, "limite_alto": 14.0, "critico_alto": 18.0,
+             "obs": "2-6 meses"},
+            {"sexo": "ambos", "idade_min": 6, "idade_max": 24,
+             "critico_baixo": 7.0, "limite_baixo": 10.5, "otimo_min": 11.0,
+             "otimo_max": 13.5, "limite_alto": 14.0, "critico_alto": 18.0,
+             "obs": "6m-2 anos"},
+            {"sexo": "ambos", "idade_min": 2, "idade_max": 6,
+             "critico_baixo": 7.0, "limite_baixo": 11.0, "otimo_min": 11.5,
+             "otimo_max": 13.5, "limite_alto": 14.0, "critico_alto": 18.0,
+             "obs": "2-6 anos"},
+            {"sexo": "ambos", "idade_min": 6, "idade_max": 12,
+             "critico_baixo": 7.0, "limite_baixo": 11.5, "otimo_min": 12.0,
+             "otimo_max": 14.5, "limite_alto": 15.5, "critico_alto": 18.0,
+             "obs": "6-12 anos"},
+            {"sexo": "M", "idade_min": 12, "idade_max": 18,
+             "critico_baixo": 7.0, "limite_baixo": 13.0, "otimo_min": 14.0,
+             "otimo_max": 16.0, "limite_alto": 16.5, "critico_alto": 20.0,
+             "obs": "12-18 anos M"},
+            {"sexo": "F", "idade_min": 12, "idade_max": 18,
+             "critico_baixo": 7.0, "limite_baixo": 12.0, "otimo_min": 12.5,
+             "otimo_max": 15.0, "limite_alto": 16.0, "critico_alto": 19.0,
+             "obs": "12-18 anos F"},
+        ]
+    },
+    {
+        "nome_oficial": "Leucócitos (Pediátrico)",
+        "sinonimos": ["LEUCOCITOS PEDIATRICO", "WBC PEDIATRICO",
+                      "LEUCOCITOS CRIANCA"],
+        "categoria": "Hemograma Pediátrico", "unidade": "/mm³",
+        "referencias": [
+            {"sexo": "ambos", "idade_min": 0, "idade_max": 0,
+             "critico_baixo": 5000, "limite_baixo": 9000, "otimo_min": 10000,
+             "otimo_max": 26000, "limite_alto": 30000, "critico_alto": 50000,
+             "obs": "RN 0-28 dias"},
+            {"sexo": "ambos", "idade_min": 0, "idade_max": 1,
+             "critico_baixo": 4000, "limite_baixo": 6000, "otimo_min": 8000,
+             "otimo_max": 17000, "limite_alto": 20000, "critico_alto": 40000,
+             "obs": "1-12 meses"},
+            {"sexo": "ambos", "idade_min": 1, "idade_max": 6,
+             "critico_baixo": 3000, "limite_baixo": 5000, "otimo_min": 6000,
+             "otimo_max": 15000, "limite_alto": 17000, "critico_alto": 30000,
+             "obs": "1-6 anos"},
+            {"sexo": "ambos", "idade_min": 6, "idade_max": 12,
+             "critico_baixo": 2500, "limite_baixo": 4500, "otimo_min": 5000,
+             "otimo_max": 13000, "limite_alto": 15000, "critico_alto": 30000,
+             "obs": "6-12 anos"},
+            {"sexo": "ambos", "idade_min": 12, "idade_max": 18,
+             "critico_baixo": 2000, "limite_baixo": 4000, "otimo_min": 4500,
+             "otimo_max": 11000, "limite_alto": 13000, "critico_alto": 30000,
+             "obs": "12-18 anos"},
+        ]
+    },
+    {
+        "nome_oficial": "TSH (Pediátrico)",
+        "sinonimos": ["TSH PEDIATRICO", "TSH RECEM NASCIDO", "TSH CRIANCA"],
+        "categoria": "Tireoide Pediátrica", "unidade": "mUI/L",
+        "referencias": [
+            {"sexo": "ambos", "idade_min": 0, "idade_max": 0,
+             "critico_baixo": 0.2, "limite_baixo": 0.7, "otimo_min": 1.0,
+             "otimo_max": 10.0, "limite_alto": 15.2, "critico_alto": 30.0,
+             "obs": "RN 0-5 dias"},
+            {"sexo": "ambos", "idade_min": 0, "idade_max": 3,
+             "critico_baixo": 0.2, "limite_baixo": 0.72, "otimo_min": 1.0,
+             "otimo_max": 8.0, "limite_alto": 11.0, "critico_alto": 20.0,
+             "obs": "6-90 dias"},
+            {"sexo": "ambos", "idade_min": 3, "idade_max": 12,
+             "critico_baixo": 0.2, "limite_baixo": 0.73, "otimo_min": 1.0,
+             "otimo_max": 6.0, "limite_alto": 8.35, "critico_alto": 15.0,
+             "obs": "4-12 meses"},
+            {"sexo": "ambos", "idade_min": 1, "idade_max": 6,
+             "critico_baixo": 0.2, "limite_baixo": 0.7, "otimo_min": 1.0,
+             "otimo_max": 5.0, "limite_alto": 5.97, "critico_alto": 12.0,
+             "obs": "1-6 anos"},
+            {"sexo": "ambos", "idade_min": 7, "idade_max": 11,
+             "critico_baixo": 0.2, "limite_baixo": 0.6, "otimo_min": 1.0,
+             "otimo_max": 4.0, "limite_alto": 4.84, "critico_alto": 10.0,
+             "obs": "7-11 anos"},
+            {"sexo": "ambos", "idade_min": 12, "idade_max": 20,
+             "critico_baixo": 0.1, "limite_baixo": 0.51, "otimo_min": 1.0,
+             "otimo_max": 3.5, "limite_alto": 4.3, "critico_alto": 10.0,
+             "obs": "12-20 anos"},
+        ]
+    },
+    {
+        "nome_oficial": "Creatinina (Pediátrica)",
+        "sinonimos": ["CREATININA PEDIATRICA", "CREATININA CRIANCA"],
+        "categoria": "Função Renal Pediátrica", "unidade": "mg/dL",
+        "referencias": [
+            {"sexo": "ambos", "idade_min": 0, "idade_max": 0,
+             "critico_baixo": 0.2, "limite_baixo": 0.3, "otimo_min": 0.4,
+             "otimo_max": 0.9, "limite_alto": 1.0, "critico_alto": 2.0,
+             "obs": "RN"},
+            {"sexo": "ambos", "idade_min": 0, "idade_max": 1,
+             "critico_baixo": 0.1, "limite_baixo": 0.2, "otimo_min": 0.2,
+             "otimo_max": 0.5, "limite_alto": 0.6, "critico_alto": 1.5,
+             "obs": "1-12 meses"},
+            {"sexo": "ambos", "idade_min": 1, "idade_max": 3,
+             "critico_baixo": 0.1, "limite_baixo": 0.2, "otimo_min": 0.3,
+             "otimo_max": 0.6, "limite_alto": 0.7, "critico_alto": 1.5,
+             "obs": "1-3 anos"},
+            {"sexo": "ambos", "idade_min": 3, "idade_max": 7,
+             "critico_baixo": 0.1, "limite_baixo": 0.25, "otimo_min": 0.3,
+             "otimo_max": 0.7, "limite_alto": 0.8, "critico_alto": 1.5,
+             "obs": "3-7 anos"},
+            {"sexo": "ambos", "idade_min": 7, "idade_max": 10,
+             "critico_baixo": 0.1, "limite_baixo": 0.3, "otimo_min": 0.4,
+             "otimo_max": 0.8, "limite_alto": 0.9, "critico_alto": 2.0,
+             "obs": "7-10 anos"},
+            {"sexo": "ambos", "idade_min": 10, "idade_max": 14,
+             "critico_baixo": 0.1, "limite_baixo": 0.4, "otimo_min": 0.5,
+             "otimo_max": 0.9, "limite_alto": 1.0, "critico_alto": 2.5,
+             "obs": "10-14 anos"},
+            {"sexo": "M", "idade_min": 14, "idade_max": 18,
+             "critico_baixo": 0.2, "limite_baixo": 0.5, "otimo_min": 0.6,
+             "otimo_max": 1.1, "limite_alto": 1.2, "critico_alto": 2.5,
+             "obs": "14-18 anos M"},
+            {"sexo": "F", "idade_min": 14, "idade_max": 18,
+             "critico_baixo": 0.2, "limite_baixo": 0.4, "otimo_min": 0.5,
+             "otimo_max": 1.0, "limite_alto": 1.1, "critico_alto": 2.0,
+             "obs": "14-18 anos F"},
+        ]
+    },
+    {
+        "nome_oficial": "Fosfatase Alcalina (Pediátrica)",
+        "sinonimos": ["FOSFATASE ALCALINA PEDIATRICA", "ALP PEDIATRICA"],
+        "categoria": "Função Hepática Pediátrica", "unidade": "U/L",
+        "referencias": [
+            {"sexo": "ambos", "idade_min": 0, "idade_max": 1,
+             "critico_baixo": 50, "limite_baixo": 100, "otimo_min": 150,
+             "otimo_max": 450, "limite_alto": 500, "critico_alto": 1000,
+             "obs": "0-12 meses"},
+            {"sexo": "ambos", "idade_min": 1, "idade_max": 10,
+             "critico_baixo": 50, "limite_baixo": 100, "otimo_min": 150,
+             "otimo_max": 350, "limite_alto": 400, "critico_alto": 800,
+             "obs": "1-10 anos"},
+            {"sexo": "M", "idade_min": 10, "idade_max": 18,
+             "critico_baixo": 50, "limite_baixo": 100, "otimo_min": 150,
+             "otimo_max": 500, "limite_alto": 700, "critico_alto": 1200,
+             "obs": "10-18 anos M (pico pubertário)"},
+            {"sexo": "F", "idade_min": 10, "idade_max": 18,
+             "critico_baixo": 50, "limite_baixo": 100, "otimo_min": 130,
+             "otimo_max": 400, "limite_alto": 500, "critico_alto": 900,
+             "obs": "10-18 anos F"},
+        ]
+    },
+    {
+        "nome_oficial": "Cálcio (Pediátrico)",
+        "sinonimos": ["CALCIO PEDIATRICO", "CALCIO CRIANCA"],
+        "categoria": "Minerais Pediátricos", "unidade": "mg/dL",
+        "referencias": [
+            {"sexo": "ambos", "idade_min": 0, "idade_max": 0,
+             "critico_baixo": 5.0, "limite_baixo": 7.5, "otimo_min": 8.0,
+             "otimo_max": 10.5, "limite_alto": 11.0, "critico_alto": 13.0,
+             "obs": "RN"},
+            {"sexo": "ambos", "idade_min": 0, "idade_max": 1,
+             "critico_baixo": 6.0, "limite_baixo": 8.5, "otimo_min": 9.0,
+             "otimo_max": 11.0, "limite_alto": 11.5, "critico_alto": 14.0,
+             "obs": "1-12 meses"},
+            {"sexo": "ambos", "idade_min": 1, "idade_max": 12,
+             "critico_baixo": 6.5, "limite_baixo": 8.8, "otimo_min": 9.2,
+             "otimo_max": 10.8, "limite_alto": 11.0, "critico_alto": 13.5,
+             "obs": "1-12 anos"},
+        ]
+    },
+    {
+        "nome_oficial": "Fósforo (Pediátrico)",
+        "sinonimos": ["FOSFORO PEDIATRICO", "FOSFATO PEDIATRICO"],
+        "categoria": "Minerais Pediátricos", "unidade": "mg/dL",
+        "referencias": [
+            {"sexo": "ambos", "idade_min": 0, "idade_max": 0,
+             "critico_baixo": 2.5, "limite_baixo": 4.0, "otimo_min": 4.5,
+             "otimo_max": 9.0, "limite_alto": 9.5, "critico_alto": 12.0,
+             "obs": "RN"},
+            {"sexo": "ambos", "idade_min": 0, "idade_max": 1,
+             "critico_baixo": 2.0, "limite_baixo": 3.8, "otimo_min": 4.5,
+             "otimo_max": 7.5, "limite_alto": 8.0, "critico_alto": 10.0,
+             "obs": "1-12 meses"},
+            {"sexo": "ambos", "idade_min": 1, "idade_max": 6,
+             "critico_baixo": 1.5, "limite_baixo": 3.5, "otimo_min": 4.0,
+             "otimo_max": 6.5, "limite_alto": 7.0, "critico_alto": 9.0,
+             "obs": "1-6 anos"},
+            {"sexo": "ambos", "idade_min": 6, "idade_max": 12,
+             "critico_baixo": 1.0, "limite_baixo": 3.0, "otimo_min": 3.5,
+             "otimo_max": 5.5, "limite_alto": 6.0, "critico_alto": 8.0,
+             "obs": "6-12 anos"},
+        ]
+    },
+    {
+        "nome_oficial": "Ureia (Pediátrica)",
+        "sinonimos": ["UREIA PEDIATRICA", "UREIA CRIANCA", "BUN PEDIATRICO"],
+        "categoria": "Função Renal Pediátrica", "unidade": "mg/dL",
+        "referencias": [
+            {"sexo": "ambos", "idade_min": 0, "idade_max": 0,
+             "critico_baixo": 2, "limite_baixo": 3, "otimo_min": 5,
+             "otimo_max": 15, "limite_alto": 18, "critico_alto": 50,
+             "obs": "RN"},
+            {"sexo": "ambos", "idade_min": 0, "idade_max": 1,
+             "critico_baixo": 2, "limite_baixo": 5, "otimo_min": 7,
+             "otimo_max": 17, "limite_alto": 20, "critico_alto": 50,
+             "obs": "1-12 meses"},
+            {"sexo": "ambos", "idade_min": 1, "idade_max": 18,
+             "critico_baixo": 2, "limite_baixo": 7, "otimo_min": 10,
+             "otimo_max": 17, "limite_alto": 20, "critico_alto": 60,
+             "obs": "1-18 anos"},
+        ]
+    },
+    {
+        "nome_oficial": "Ácido Úrico (Pediátrico)",
+        "sinonimos": ["ACIDO URICO PEDIATRICO", "ACIDO URICO CRIANCA"],
+        "categoria": "Função Renal Pediátrica", "unidade": "mg/dL",
+        "referencias": [
+            {"sexo": "ambos", "idade_min": 0, "idade_max": 12,
+             "critico_baixo": 0.5, "limite_baixo": 1.5, "otimo_min": 2.0,
+             "otimo_max": 4.5, "limite_alto": 5.0, "critico_alto": 8.0,
+             "obs": "crianças até 12 anos"},
+            {"sexo": "M", "idade_min": 13, "idade_max": 18,
+             "critico_baixo": 1.0, "limite_baixo": 3.0, "otimo_min": 3.5,
+             "otimo_max": 6.0, "limite_alto": 7.0, "critico_alto": 10.0,
+             "obs": "13-18 anos M"},
+            {"sexo": "F", "idade_min": 13, "idade_max": 18,
+             "critico_baixo": 1.0, "limite_baixo": 2.5, "otimo_min": 3.0,
+             "otimo_max": 5.5, "limite_alto": 6.0, "critico_alto": 9.0,
+             "obs": "13-18 anos F"},
+        ]
+    },
+    {
+        "nome_oficial": "Ferritina (Pediátrica)",
+        "sinonimos": ["FERRITINA PEDIATRICA", "FERRITINA RECEM NASCIDO"],
+        "categoria": "Ferro Pediátrico", "unidade": "ng/mL",
+        "referencias": [
+            {"sexo": "ambos", "idade_min": 0, "idade_max": 0,
+             "critico_baixo": 50, "limite_baixo": 100, "otimo_min": 200,
+             "otimo_max": 600, "limite_alto": 700, "critico_alto": 1500,
+             "obs": "RN"},
+            {"sexo": "ambos", "idade_min": 0, "idade_max": 2,
+             "critico_baixo": 20, "limite_baixo": 50, "otimo_min": 100,
+             "otimo_max": 400, "limite_alto": 500, "critico_alto": 1000,
+             "obs": "1-2 meses"},
+            {"sexo": "ambos", "idade_min": 2, "idade_max": 5,
+             "critico_baixo": 5, "limite_baixo": 7, "otimo_min": 10,
+             "otimo_max": 80, "limite_alto": 100, "critico_alto": 500,
+             "obs": "2-5 meses"},
+            {"sexo": "ambos", "idade_min": 5, "idade_max": 12,
+             "critico_baixo": 5, "limite_baixo": 7, "otimo_min": 10,
+             "otimo_max": 140, "limite_alto": 160, "critico_alto": 500,
+             "obs": "6 meses-12 anos"},
+            {"sexo": "M", "idade_min": 12, "idade_max": 18,
+             "critico_baixo": 5, "limite_baixo": 12, "otimo_min": 25,
+             "otimo_max": 150, "limite_alto": 200, "critico_alto": 500,
+             "obs": "12-18 anos M"},
+            {"sexo": "F", "idade_min": 12, "idade_max": 18,
+             "critico_baixo": 5, "limite_baixo": 10, "otimo_min": 20,
+             "otimo_max": 100, "limite_alto": 130, "critico_alto": 400,
+             "obs": "12-18 anos F"},
+        ]
+    },
+    {
+        "nome_oficial": "FSH (com fases)",
+        "sinonimos": ["FSH FEMININO", "FSH FASES", "FSH FASE FOLICULAR",
+                      "FSH FOLICULO ESTIMULANTE FEMININO"],
+        "categoria": "Hormônios", "unidade": "mUI/mL",
+        "referencias": [
+            {"sexo": "F", "idade_min": 18, "idade_max": 50,
+             "critico_baixo": 0.5, "limite_baixo": 2.8, "otimo_min": 3.0,
+             "otimo_max": 11.3, "limite_alto": 12.0, "critico_alto": 20.0,
+             "obs": "Fase folicular"},
+            {"sexo": "F", "idade_min": 18, "idade_max": 50,
+             "critico_baixo": 5.0, "limite_baixo": 12.0, "otimo_min": 14.0,
+             "otimo_max": 24.0, "limite_alto": 25.0, "critico_alto": 40.0,
+             "obs": "Pico ovulatório"},
+            {"sexo": "F", "idade_min": 18, "idade_max": 50,
+             "critico_baixo": 0.5, "limite_baixo": 1.2, "otimo_min": 2.0,
+             "otimo_max": 9.0, "limite_alto": 12.0, "critico_alto": 20.0,
+             "obs": "Fase lútea"},
+            {"sexo": "F", "idade_min": 50, "idade_max": 120,
+             "critico_baixo": 0, "limite_baixo": 25.8, "otimo_min": 30.0,
+             "otimo_max": 100.0, "limite_alto": 134.8, "critico_alto": 300.0,
+             "obs": "Pós-menopausa"},
+        ]
+    },
+    {
+        "nome_oficial": "LH (com fases)",
+        "sinonimos": ["LH FEMININO", "LH FASES", "LH FASE FOLICULAR"],
+        "categoria": "Hormônios", "unidade": "mUI/mL",
+        "referencias": [
+            {"sexo": "F", "idade_min": 18, "idade_max": 50,
+             "critico_baixo": 0.5, "limite_baixo": 1.1, "otimo_min": 2.0,
+             "otimo_max": 11.6, "limite_alto": 12.0, "critico_alto": 20.0,
+             "obs": "Fase folicular"},
+            {"sexo": "F", "idade_min": 18, "idade_max": 50,
+             "critico_baixo": 10.0, "limite_baixo": 17.0, "otimo_min": 20.0,
+             "otimo_max": 77.0, "limite_alto": 80.0, "critico_alto": 150.0,
+             "obs": "Pico ovulatório"},
+            {"sexo": "F", "idade_min": 18, "idade_max": 50,
+             "critico_baixo": 0.5, "limite_baixo": 1.0, "otimo_min": 1.5,
+             "otimo_max": 14.7, "limite_alto": 15.0, "critico_alto": 30.0,
+             "obs": "Fase lútea"},
+            {"sexo": "F", "idade_min": 50, "idade_max": 120,
+             "critico_baixo": 0, "limite_baixo": 11.3, "otimo_min": 15.0,
+             "otimo_max": 50.0, "limite_alto": 75.0, "critico_alto": 200.0,
+             "obs": "Pós-menopausa"},
+        ]
+    },
+    {
+        "nome_oficial": "Estradiol (com fases)",
+        "sinonimos": ["ESTRADIOL FEMININO", "ESTRADIOL FASES",
+                      "E2 FEMININO", "ESTRADIOL FASE FOLICULAR"],
+        "categoria": "Hormônios", "unidade": "pg/mL",
+        "referencias": [
+            {"sexo": "F", "idade_min": 18, "idade_max": 50,
+             "critico_baixo": 10, "limite_baixo": 30, "otimo_min": 40,
+             "otimo_max": 100, "limite_alto": 150, "critico_alto": 300,
+             "obs": "Fase folicular precoce"},
+            {"sexo": "F", "idade_min": 18, "idade_max": 50,
+             "critico_baixo": 50, "limite_baixo": 100, "otimo_min": 150,
+             "otimo_max": 500, "limite_alto": 700, "critico_alto": 1500,
+             "obs": "Pico pré-ovulatório"},
+            {"sexo": "F", "idade_min": 18, "idade_max": 50,
+             "critico_baixo": 20, "limite_baixo": 70, "otimo_min": 80,
+             "otimo_max": 300, "limite_alto": 400, "critico_alto": 800,
+             "obs": "Fase lútea"},
+            {"sexo": "F", "idade_min": 50, "idade_max": 120,
+             "critico_baixo": 0, "limite_baixo": 0, "otimo_min": 5,
+             "otimo_max": 30, "limite_alto": 40, "critico_alto": 100,
+             "obs": "Pós-menopausa"},
+        ]
+    },
+    {
+        "nome_oficial": "DHEA-S (com faixas etárias)",
+        "sinonimos": ["DHEA-S FAIXAS", "DHEAS ETARIO"],
+        "categoria": "Hormônios", "unidade": "µg/dL",
+        "referencias": [
+            {"sexo": "M", "idade_min": 18, "idade_max": 30,
+             "critico_baixo": 100, "limite_baixo": 160, "otimo_min": 250,
+             "otimo_max": 500, "limite_alto": 560, "critico_alto": 800,
+             "obs": "18-30 anos M"},
+            {"sexo": "M", "idade_min": 31, "idade_max": 40,
+             "critico_baixo": 80, "limite_baixo": 120, "otimo_min": 200,
+             "otimo_max": 440, "limite_alto": 500, "critico_alto": 750,
+             "obs": "31-40 anos M"},
+            {"sexo": "M", "idade_min": 41, "idade_max": 50,
+             "critico_baixo": 60, "limite_baixo": 90, "otimo_min": 150,
+             "otimo_max": 350, "limite_alto": 400, "critico_alto": 700,
+             "obs": "41-50 anos M"},
+            {"sexo": "M", "idade_min": 51, "idade_max": 120,
+             "critico_baixo": 30, "limite_baixo": 60, "otimo_min": 100,
+             "otimo_max": 250, "limite_alto": 310, "critico_alto": 600,
+             "obs": ">50 anos M"},
+            {"sexo": "F", "idade_min": 18, "idade_max": 30,
+             "critico_baixo": 60, "limite_baixo": 95, "otimo_min": 150,
+             "otimo_max": 380, "limite_alto": 430, "critico_alto": 700,
+             "obs": "18-30 anos F"},
+            {"sexo": "F", "idade_min": 31, "idade_max": 50,
+             "critico_baixo": 40, "limite_baixo": 65, "otimo_min": 100,
+             "otimo_max": 340, "limite_alto": 380, "critico_alto": 650,
+             "obs": "31-50 anos F"},
+            {"sexo": "F", "idade_min": 51, "idade_max": 120,
+             "critico_baixo": 20, "limite_baixo": 30, "otimo_min": 60,
+             "otimo_max": 230, "limite_alto": 260, "critico_alto": 500,
+             "obs": ">50 anos F"},
+        ]
+    },
+    {
+        "nome_oficial": "Testosterona Total (com faixas etárias)",
+        "sinonimos": ["TESTOSTERONA TOTAL ETARIA", "TESTOSTERONA FAIXAS"],
+        "categoria": "Hormônios", "unidade": "ng/dL",
+        "referencias": [
+            {"sexo": "M", "idade_min": 18, "idade_max": 40,
+             "critico_baixo": 100, "limite_baixo": 300, "otimo_min": 500,
+             "otimo_max": 900, "limite_alto": 1000, "critico_alto": 1500,
+             "obs": "18-40 anos M"},
+            {"sexo": "M", "idade_min": 41, "idade_max": 60,
+             "critico_baixo": 100, "limite_baixo": 280, "otimo_min": 400,
+             "otimo_max": 800, "limite_alto": 900, "critico_alto": 1300,
+             "obs": "41-60 anos M"},
+            {"sexo": "M", "idade_min": 61, "idade_max": 120,
+             "critico_baixo": 80, "limite_baixo": 200, "otimo_min": 350,
+             "otimo_max": 700, "limite_alto": 800, "critico_alto": 1200,
+             "obs": ">60 anos M"},
+            {"sexo": "F", "idade_min": 18, "idade_max": 50,
+             "critico_baixo": 5, "limite_baixo": 15, "otimo_min": 20,
+             "otimo_max": 70, "limite_alto": 80, "critico_alto": 200,
+             "obs": "18-50 anos F"},
+            {"sexo": "F", "idade_min": 51, "idade_max": 120,
+             "critico_baixo": 2, "limite_baixo": 10, "otimo_min": 15,
+             "otimo_max": 55, "limite_alto": 70, "critico_alto": 150,
+             "obs": ">50 anos F (pós-menopausa)"},
+        ]
+    },
+
+    # ══════════════════════════════════════════════════════
+    # COAGULAÇÃO — COMPLEMENTAR
+    # ══════════════════════════════════════════════════════
+    {
+        "nome_oficial": "Tempo de Trombina",
+        "sinonimos": ["TEMPO DE TROMBINA", "TT", "TROMBINA TIME"],
+        "categoria": "Coagulação", "unidade": "seg",
+        "referencias": [
+            {"sexo": "ambos", "idade_min": 0, "idade_max": 120,
+             "critico_baixo": 5, "limite_baixo": 12, "otimo_min": 14,
+             "otimo_max": 19, "limite_alto": 21, "critico_alto": 40},
+        ]
     },
 
     # ══════════════════════════════════════════════════════
@@ -1424,13 +2238,14 @@ def popular_banco():
                 INSERT INTO referencias_padrao
                 (exame_padrao_id, sexo, idade_min, idade_max,
                  critico_baixo, limite_baixo, otimo_min, otimo_max,
-                 limite_alto, critico_alto)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 limite_alto, critico_alto, observacoes, fonte)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
-                exame_id, ref["sexo"], ref["idade_min"], ref["idade_max"],
+                exame_id, ref.get("sexo", "ambos"), ref["idade_min"], ref["idade_max"],
                 ref["critico_baixo"], ref["limite_baixo"],
                 ref["otimo_min"], ref["otimo_max"],
                 ref["limite_alto"], ref["critico_alto"],
+                ref.get("obs", None), ref.get("fonte", None),
             ))
         inseridos += 1
 

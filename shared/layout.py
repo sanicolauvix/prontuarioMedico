@@ -198,3 +198,110 @@ class Layout:
             ],
             expand=True, spacing=0,
         )
+
+    # ── Overlays padrao Koios ────────────────────────────────────────────────
+
+    _BORDA2 = "#30363D"
+    _CARD   = "#161B22"
+    _TXT    = "#E6EDF3"
+    _SEC    = "#8B949E"
+    _AZUL2  = "#58A6FF"
+    _VERM   = "#FF4444"
+
+    def loading(
+        self,
+        msg: str = "Aguarde...",
+        cor_spinner: str = "",
+        cor_fundo: str = "",
+        cor_txt: str = "",
+    ):
+        """
+        Overlay bloqueante com spinner + mensagem.
+        Padrao Koios para qualquer operacao assincrona (upload, sync, IA...).
+
+        Uso:
+            fechar = lay.loading("Enviando foto...")
+            # ... operacao assincrona ...
+            fechar()   # remove o overlay
+
+        Retorna funcao _fechar() que remove o overlay ao ser chamada.
+        """
+        spin = cor_spinner or self._AZUL2
+        bg   = cor_fundo   or self._CARD
+        txt  = cor_txt     or self._TXT
+        ov   = [None]
+
+        def _fechar():
+            if ov[0] and ov[0] in self.page.overlay:
+                self.page.overlay.remove(ov[0])
+            try: self.page.update()
+            except Exception: pass
+
+        ov[0] = ft.Container(
+            content=ft.Container(
+                content=ft.Column([
+                    ft.ProgressRing(width=32, height=32, stroke_width=3, color=spin),
+                    ft.Container(height=12),
+                    ft.Text(msg, size=13, color=txt, weight=ft.FontWeight.W_600,
+                            text_align=ft.TextAlign.CENTER),
+                ], horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+                   alignment=ft.MainAxisAlignment.CENTER, tight=True, spacing=0),
+                bgcolor=bg, border_radius=14,
+                padding=ft.padding.symmetric(horizontal=32, vertical=24),
+                border=ft.Border(
+                    top=ft.BorderSide(1, self._BORDA2),
+                    bottom=ft.BorderSide(1, self._BORDA2),
+                    left=ft.BorderSide(1, self._BORDA2),
+                    right=ft.BorderSide(1, self._BORDA2),
+                ),
+            ),
+            bgcolor="#CC000000", expand=True, alignment=ft.Alignment(0, 0),
+        )
+        self.page.overlay.append(ov[0])
+        try: self.page.update()
+        except Exception: pass
+        return _fechar
+
+    def upload_foto_com_loading(
+        self,
+        path_abs: str,
+        pasta_drive: str,
+        on_concluido=None,
+        on_erro=None,
+        nome_arquivo: str = "",
+        msg_loading: str = "Enviando foto...",
+    ) -> None:
+        """
+        Padrao Koios completo de upload de foto:
+          1. Exibe overlay loading
+          2. Faz upload em background via upload_foto_imediato
+          3. Fecha loading ao concluir ou ao errar
+          4. Chama on_concluido(drive_id, nome) ou on_erro(msg)
+
+        Uso:
+            lay.upload_foto_com_loading(
+                path_abs   = "/path/local/foto.jpg",
+                pasta_drive= "fotos/clientes/42",
+                on_concluido = lambda fid, nome: salvar_no_banco(fid, nome),
+                on_erro      = lambda msg: snack(f"Erro: {msg}"),
+            )
+        """
+        fechar = self.loading(msg_loading)
+
+        def _ok(drive_id, nome):
+            fechar()
+            if on_concluido:
+                on_concluido(drive_id, nome)
+
+        def _err(msg):
+            fechar()
+            if on_erro:
+                on_erro(msg)
+
+        from utils.foto_picker import upload_foto_imediato
+        upload_foto_imediato(
+            self.page, path_abs, pasta_drive,
+            on_concluido=_ok,
+            on_erro=_err,
+            nome_arquivo=nome_arquivo,
+        )

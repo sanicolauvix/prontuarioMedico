@@ -844,9 +844,10 @@ def criar_tela_incluir_exame(page: ft.Page, voltar_fn):
             if not drive_ok:
                 fase[0] = "drive_falhou"; _rebuild(); return
 
-            from utils.drive_sync import _EXAMES_PDF_ID, upload_foto as _upload_foto
+            from utils.drive_sync import garantir_pasta, upload_foto as _upload_foto
             creds        = drive_ou_erro
-            pasta_exames = _EXAMES_PDF_ID
+            _set_status("Preparando pasta no Drive...", AZUL, 0.10)
+            pasta_exames = garantir_pasta("exames_laboratorio", pai_id=None, creds=creds)
 
             caminho      = dados_multi.get("arquivo_path", "")
             pdf_bytes    = Path(caminho).read_bytes() if caminho and os.path.exists(caminho) else b""
@@ -909,6 +910,8 @@ def criar_tela_incluir_exame(page: ft.Page, voltar_fn):
         dados = dados_extra[0] or {}
 
         def _on_liberar():
+            pendencias[0] = []   # todas resolvidas no painel — limpa antes de liberar
+            logging.info(f"[LIBERAR] data_exame no momento do confirmar: {dados_extra[0].get('data_exame') if dados_extra[0] else 'None'}")
             threading.Thread(target=_liberar, daemon=True).start()
 
         return construir_painel_conferencia(
@@ -1120,9 +1123,13 @@ def criar_tela_incluir_exame(page: ft.Page, voltar_fn):
             _set_status("", AZUL, 0.96, "verificando paciente...", "validando")
             v = validar_paciente_pdf(dados.get("paciente_nome"))
             if not v["valido"]:
-                try: _snack(f"⚠ {v['motivo']}", VERM)
+                from dados.model_prontuario import carregar_perfil as _cp
+                _pf = _cp() or {}
+                fase[0] = "selecao"
+                try: _rebuild()
                 except Exception: pass
-                fase[0] = "selecao"; _rebuild(); return
+                _overlay_paciente_invalido(dados.get("paciente_nome"), _pf.get("nome"))
+                return
 
             _set_status("", AZUL, 0.97, "verificando vínculos...", "validando")
             params   = [r.get("parametro") for r in dados.get("resultados", []) if r.get("parametro")]
@@ -1440,16 +1447,16 @@ def criar_tela_incluir_exame(page: ft.Page, voltar_fn):
             v = validar_paciente_pdf(dados.get("paciente_nome"))
             if not v["valido"]:
                 _log_erro(f"PACIENTE INVALIDO: {v['motivo']}")
+                from dados.model_prontuario import carregar_perfil as _cp
+                _pf = _cp() or {}
                 fase[0] = "selecao"
                 try: _rebuild()
                 except Exception: pass
-                import time as _time
-                _time.sleep(0.15)
-                try: _snack(f"⚠ Exame rejeitado: {v['motivo']}", VERM)
-                except Exception: pass
+                _overlay_paciente_invalido(dados.get("paciente_nome"), _pf.get("nome"))
                 return
 
             _set_status("", AZUL, 0.97, "verificando vínculos de parâmetros...", "validando")
+            logging.info(f"[PROCESSAR] data_exame extraida: {dados.get('data_exame')} | lab: {dados.get('laboratorio')} | paciente: {dados.get('paciente_nome')}")
             params   = [r.get("parametro") for r in dados.get("resultados", []) if r.get("parametro")]
             vinculos = buscar_vinculos_parametros(params)
             vinc_ok  = {v["parametro"] for v in vinculos.get("vinculados", [])}
@@ -1550,23 +1557,16 @@ def criar_tela_incluir_exame(page: ft.Page, voltar_fn):
                 return
 
             # ── Upload Drive ──────────────────────────────────
-            from utils.drive_sync import _EXAMES_PDF_ID, upload_foto as _upload_foto
-            creds        = drive_ou_erro  # credenciais validadas por _verificar_drive
-            pasta_exames = _EXAMES_PDF_ID
+            import shutil as _sh2
+            import sqlite3 as _sq3
+            from dados.model_prontuario import DB_PATH as _DB3
+            from utils.drive_sync import garantir_pasta, upload_foto as _upload_foto
+            creds        = drive_ou_erro
+            caminho      = dados.get("arquivo_path", "")
+            PASTA_LOCAL  = "G:/Meu Drive/Eco_Koios/Prontuario/exames_laboratorio"
 
-            _set_status("Enviando arquivo...", VERD, 0.50)
-            caminho  = dados.get("arquivo_path", "")
-            logging.info(f"[LIBERAR] upload: {caminho}")
-            drive_id = _upload_foto(caminho, os.path.basename(caminho),
-                                    pasta_exames, creds) if caminho and os.path.exists(caminho) else None
-            if drive_id:
-                dados["drive_file_id"] = drive_id
-                logging.info(f"[LIBERAR] upload OK: {drive_id}")
-            else:
-                logging.warning(f"[LIBERAR] arquivo nao encontrado para upload: {caminho}")
-
-            # ── Gravar banco ──────────────────────────────────
-            _set_status("Gravando no banco...", VERD, 0.75)
+            # ── 1. Gravar banco (sem drive_file_id ainda) ─────
+            _set_status("Gravando no banco...", VERD, 0.60)
             logging.info("[LIBERAR] gravando no banco...")
             exame_id_antigo = dados.pop("_reprocessar_id", None)
             if exame_id_antigo:
@@ -1575,12 +1575,77 @@ def criar_tela_incluir_exame(page: ft.Page, voltar_fn):
                 eid = salvar_exame(dados, status="ativo")
             logging.info(f"[LIBERAR] banco OK: exame_id={eid}")
 
-            # ── Sync pendente ─────────────────────────────────
-            _set_status("Finalizando...", VERD, 0.90)
+            # ── 2. Copia local com nome {eid}.pdf ─────────────
+            dest_local = None
+            if caminho and os.path.exists(caminho) and eid:
+                try:
+                    os.makedirs(PASTA_LOCAL, exist_ok=True)
+                    dest_local = os.path.join(PASTA_LOCAL, f"{eid}.pdf")
+                    _sh2.copy2(caminho, dest_local)
+                    conn_u = _sq3.connect(_DB3, timeout=30)
+                    conn_u.execute(
+                        "UPDATE exames SET arquivo_origem=? WHERE id=?",
+                        (dest_local, eid))
+                    conn_u.commit(); conn_u.close()
+                    logging.info(f"[LIBERAR] PDF local: {dest_local}")
+                except Exception as _cp_ex:
+                    logging.warning(f"[LIBERAR] copia PDF local: {_cp_ex}")
+
+            # ── 3. Upload Drive com nome {eid}.pdf ────────────
+            _set_status("Preparando pasta no Drive...", VERD, 0.70)
+            pasta_exames = garantir_pasta("exames_laboratorio",
+                                          pai_id=None, creds=creds)
+
+            # deleta duplicatas com mesmo nome antes de enviar
+            try:
+                import urllib.request as _ur, urllib.parse as _up
+                _q = _up.urlencode({
+                    "q": f"name='{eid}.pdf' and '{pasta_exames}' in parents and trashed=false",
+                    "fields": "files(id)",
+                })
+                _req_list = _ur.Request(
+                    f"https://www.googleapis.com/drive/v3/files?{_q}",
+                    headers={"Authorization": f"Bearer {creds.token}"}
+                )
+                import json as _json2
+                _resp = _json2.loads(_ur.urlopen(_req_list).read())
+                for _f in _resp.get("files", []):
+                    _ur.urlopen(_ur.Request(
+                        f"https://www.googleapis.com/drive/v3/files/{_f['id']}",
+                        method="DELETE",
+                        headers={"Authorization": f"Bearer {creds.token}"}
+                    ))
+                    logging.info(f"[LIBERAR] duplicata Drive removida: {_f['id']}")
+            except Exception as _dup_ex:
+                logging.warning(f"[LIBERAR] verificacao duplicata Drive: {_dup_ex}")
+
+            _set_status("Enviando arquivo...", VERD, 0.80)
+            src_upload  = dest_local if dest_local and os.path.exists(dest_local) else caminho
+            nome_upload = f"{eid}.pdf"
+            drive_id = _upload_foto(src_upload, nome_upload,
+                                    pasta_exames, creds) if src_upload and os.path.exists(src_upload) else None
+            if drive_id:
+                conn_u2 = _sq3.connect(_DB3, timeout=30)
+                conn_u2.execute(
+                    "UPDATE exames SET drive_file_id=? WHERE id=?",
+                    (drive_id, eid))
+                conn_u2.commit(); conn_u2.close()
+                logging.info(f"[LIBERAR] upload OK: {drive_id}")
+            else:
+                logging.warning(f"[LIBERAR] upload falhou — arquivo local mantido")
+
+            # ── Sync pendente + backup do banco ───────────────
+            _set_status("Sincronizando banco...", VERD, 0.90)
             try:
                 salvar_sync_pendente(eid)
             except Exception as _se:
                 logging.warning(f"[LIBERAR] sync_pendente falhou (ignorado): {_se}")
+            try:
+                from backup.drive_backup import fazer_backup as _fb
+                _fb(forcar=True)
+                logging.info("[LIBERAR] banco sincronizado com Drive")
+            except Exception as _fb_ex:
+                logging.warning(f"[LIBERAR] backup banco falhou (ignorado): {_fb_ex}")
 
             # ── Apagar cache ──────────────────────────────────
             try:
@@ -1593,9 +1658,233 @@ def criar_tela_incluir_exame(page: ft.Page, voltar_fn):
             # ── Concluído ─────────────────────────────────────
             _set_status("Concluído!", VERD, 1.0)
             logging.info("[LIBERAR] concluido — voltando para selecao")
-            time.sleep(1.0)
-            _voltar_selecao()
-            _snack(f"Exame incluído com sucesso! (id={eid})", VERD)
+
+            # overlay de sucesso com opção de adicionar imagens
+            ref_ok    = [None]
+            _imgs_col = ft.Column(spacing=4)
+            _n_imgs   = [0]
+            _salvando = [False]
+            _picker   = ft.FilePicker()
+            page.overlay.append(_picker)
+
+            # btn_ok criado aqui para que _on_pick_imgs possa referenciá-lo
+            btn_ok = ft.Container(
+                content=ft.Text("Concluir", size=14, color=BG,
+                                weight=ft.FontWeight.W_700),
+                bgcolor=VERD, border_radius=10, ink=True,
+                padding=ft.padding.symmetric(horizontal=32, vertical=12),
+            )
+
+            def _fechar_ok(e=None):
+                if _salvando[0]:
+                    return
+                if ref_ok[0] in page.overlay:
+                    page.overlay.remove(ref_ok[0])
+                if _picker in page.overlay:
+                    page.overlay.remove(_picker)
+                try: page.update()
+                except Exception: pass
+                _voltar_selecao()
+
+            btn_ok.on_click = _fechar_ok
+
+            def _on_pick_imgs(result: ft.FilePickerResultEvent):
+                if not result.files:
+                    return
+                import sqlite3 as _sq4
+                from dados.model_prontuario import DB_PATH as _DB4
+                _eid = eid
+
+                txt_imgs.value = f"Salvando {len(result.files)} arquivo(s)..."
+                txt_imgs.color = AZUL
+                btn_add_imgs.disabled = True
+                _salvando[0] = True
+                btn_ok.bgcolor = MUT
+                btn_ok.ink = False
+                try: page.update()
+                except Exception: pass
+
+                def _upload_imgs():
+                    try:
+                        from utils.drive_sync import garantir_pasta, upload_foto as _uf
+                        creds_img = None
+                        try:
+                            from utils.drive_sync import _get_creds
+                            creds_img = _get_creds()
+                        except Exception:
+                            pass
+
+                        pasta_img = None
+                        if creds_img:
+                            try:
+                                pasta_img = garantir_pasta(
+                                    f"exame_{_eid}_imgs", pai_id=None, creds=creds_img)
+                            except Exception:
+                                pass
+
+                        PASTA_EXAMES = "G:/Meu Drive/Eco_Koios/Prontuario/exames_laboratorio"
+                        os.makedirs(PASTA_EXAMES, exist_ok=True)
+                        total = len(result.files)
+                        ok_drive = 0
+                        ok_local = 0
+                        conn_i = _sq4.connect(_DB4, timeout=30)
+                        # conta quantos anexos ja existem para este exame
+                        n_exist = conn_i.execute(
+                            "SELECT COUNT(*) FROM exame_anexos WHERE exame_id=?",
+                            (_eid,)).fetchone()[0]
+
+                        for i, f in enumerate(result.files):
+                            src = f.path
+                            if not src or not os.path.isfile(src):
+                                continue
+                            nome_arq  = os.path.basename(src)
+                            ext       = os.path.splitext(nome_arq)[-1].lower() or ".png"
+                            cont      = n_exist + i + 1
+                            nome_pad  = f"{_eid}_{cont}{ext}"
+                            dest_local = os.path.join(PASTA_EXAMES, nome_pad)
+
+                            # status: copiando...
+                            txt_imgs.value = f"Salvando {i+1}/{total}: {nome_pad}"
+                            try: page.update()
+                            except Exception: pass
+
+                            # copia para pasta local padronizada
+                            try:
+                                import shutil as _sh3
+                                _sh3.copy2(src, dest_local)
+                            except Exception as _cp_ex:
+                                logging.warning(f"[IMGS] copia local: {_cp_ex}")
+                                dest_local = src  # fallback: path original
+
+                            drive_id_img = None
+                            if creds_img and pasta_img:
+                                try:
+                                    drive_id_img = _uf(dest_local, nome_pad,
+                                                       pasta_img, creds_img)
+                                except Exception:
+                                    pass
+
+                            if drive_id_img:
+                                ok_drive += 1
+                            else:
+                                ok_local += 1
+
+                            conn_i.execute("""
+                                INSERT INTO exame_anexos
+                                    (exame_id, drive_file_id, nome_arquivo,
+                                     ordem, arquivo_local, pendente_sync)
+                                VALUES (?,?,?,?,?,?)
+                            """, (_eid, drive_id_img, nome_pad,
+                                  _n_imgs[0], dest_local,
+                                  0 if drive_id_img else 1))
+                            _n_imgs[0] += 1
+
+                            _eh_video = ext in (".mp4", ".avi", ".mov", ".mkv")
+                            ico_tipo  = "videocam_rounded" if _eh_video else "image_rounded"
+                            ico_sync  = "cloud_done_rounded" if drive_id_img else "cloud_off_rounded"
+                            cor_i     = VERD if drive_id_img else AMAR
+                            _imgs_col.controls.append(
+                                ft.Row([
+                                    ft.Icon(ico_tipo, size=12, color=AZUL),
+                                    ft.Text(nome_pad, size=11, color=TXT, expand=True),
+                                    ft.Icon(ico_sync, size=13, color=cor_i),
+                                    ft.Text("Drive" if drive_id_img else "Local",
+                                            size=10, color=cor_i),
+                                ], spacing=6)
+                            )
+                            try: page.update()
+                            except Exception: pass
+
+                        conn_i.commit(); conn_i.close()
+
+                        # mensagem final
+                        partes = []
+                        if ok_drive:
+                            partes.append(f"{ok_drive} no Drive")
+                        if ok_local:
+                            partes.append(f"{ok_local} so local (sem Drive)")
+                        txt_imgs.value = (
+                            f"✓ {_n_imgs[0]} imagem(ns) salva(s): {', '.join(partes)}"
+                            if partes else f"✓ {_n_imgs[0]} imagem(ns) salva(s)"
+                        )
+                        txt_imgs.color = VERD if ok_drive else AMAR
+                        try: page.update()
+                        except Exception: pass
+                    except Exception as _ex_img:
+                        txt_imgs.value = f"Erro: {str(_ex_img)[:60]}"
+                        txt_imgs.color = VERM
+                        logging.warning(f"[IMGS] {_ex_img}")
+                    finally:
+                        btn_add_imgs.disabled = False
+                        _salvando[0] = False
+                        btn_ok.bgcolor = VERD
+                        btn_ok.ink = True
+                        try: page.update()
+                        except Exception: pass
+
+                threading.Thread(target=_upload_imgs, daemon=True).start()
+
+            _picker.on_result = _on_pick_imgs
+
+            txt_imgs = ft.Text("", size=11, color=AZUL,
+                               text_align=ft.TextAlign.CENTER)
+
+            btn_add_imgs = ft.Container(
+                content=ft.Row([
+                    ft.Icon("add_photo_alternate_rounded", size=16, color=AZUL),
+                    ft.Text("Adicionar Imagens", size=13, color=AZUL,
+                            weight=ft.FontWeight.W_600),
+                ], spacing=6, tight=True),
+                bgcolor=ft.Colors.with_opacity(0.10, AZUL),
+                border=ft.border.all(1, ft.Colors.with_opacity(0.35, AZUL)),
+                border_radius=10, ink=True,
+                padding=ft.padding.symmetric(horizontal=20, vertical=10),
+            )
+            btn_add_imgs.on_click = lambda e: _picker.pick_files(
+                dialog_title="Selecione imagens ou videos do exame",
+                allowed_extensions=["png", "jpg", "jpeg", "bmp", "webp",
+                                    "pdf", "mp4", "avi", "mov", "mkv"],
+                allow_multiple=True,
+            )
+
+            ref_ok[0] = ft.Container(
+                content=ft.Container(
+                    content=ft.Column([
+                        ft.Icon("check_circle_rounded", size=48, color=VERD),
+                        ft.Container(height=6),
+                        ft.Text("Exame incluído com sucesso!",
+                                size=16, color=TXT,
+                                weight=ft.FontWeight.W_700,
+                                text_align=ft.TextAlign.CENTER),
+                        ft.Text(f"id: {eid}  •  {dados.get('laboratorio','')}",
+                                size=11, color=SEC,
+                                text_align=ft.TextAlign.CENTER),
+                        ft.Divider(color=BD, height=16),
+                        ft.Text("Deseja adicionar imagens a este exame?",
+                                size=12, color=SEC,
+                                text_align=ft.TextAlign.CENTER),
+                        ft.Container(height=4),
+                        btn_add_imgs,
+                        txt_imgs,
+                        _imgs_col,
+                        ft.Container(height=8),
+                        btn_ok,
+                    ], horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+                       tight=True, spacing=6,
+                       scroll=ft.ScrollMode.AUTO),
+                    bgcolor=CARD, border_radius=16,
+                    padding=ft.padding.all(28),
+                    width=320,
+                    height=min((page.height or 700) * 0.80, 560),
+                    border=ft.border.all(1, ft.Colors.with_opacity(0.35, VERD)),
+                ),
+                bgcolor=ft.Colors.with_opacity(0.70, "#000000"),
+                expand=True, alignment=ft.Alignment(0, 0),
+            )
+            ref_ok[0].on_click = lambda e: None  # nao fecha ao clicar fundo
+            page.overlay.append(ref_ok[0])
+            try: page.update()
+            except Exception: pass
 
         except Exception as ex:
             logging.exception(f"[LIBERAR] ERRO: {ex}")
@@ -1634,7 +1923,7 @@ def criar_tela_incluir_exame(page: ft.Page, voltar_fn):
                 _snack("Nenhuma credencial encontrada. Configure o client_secrets.json.", AMAR)
 
         def _salvar_local(e):
-            """Grava no banco sem Drive."""
+            """Grava no banco sem Drive — copia PDF para pasta local."""
             try:
                 dados = dados_extra[0]
                 fase[0] = "liberando"; _rebuild()
@@ -1643,11 +1932,36 @@ def criar_tela_incluir_exame(page: ft.Page, voltar_fn):
                 eid = _salvar_sem_drive(dados, exame_id_antigo)
                 logging.info(f"[LIBERAR] salvo SEM Drive: exame_id={eid}")
 
+                # Copia PDF para pasta local — nome = {id}.pdf
+                import shutil as _sh
+                PASTA_LOCAL = "G:/Meu Drive/Eco_Koios/Prontuario/exames_laboratorio"
+                caminho = dados.get("arquivo_path", "")
+                if caminho and os.path.exists(caminho) and eid:
+                    try:
+                        os.makedirs(PASTA_LOCAL, exist_ok=True)
+                        dest = os.path.join(PASTA_LOCAL, f"{eid}.pdf")
+                        _sh.copy2(caminho, dest)
+                        import sqlite3 as _sq
+                        from dados.model_prontuario import DB_PATH as _DB
+                        with _sq.connect(_DB, timeout=30) as _c:
+                            _c.execute(
+                                "UPDATE exames SET arquivo_origem=? WHERE id=?",
+                                (dest, eid))
+                        logging.info(f"[LIBERAR] PDF salvo: {dest}")
+                    except Exception as _cp_ex:
+                        logging.warning(f"[LIBERAR] copia PDF local: {_cp_ex}")
+
                 # Apagar cache
                 try:
-                    caminho = dados.get("arquivo_path", "")
                     if caminho and os.path.exists(caminho):
                         _cache_apagar(Path(caminho).read_bytes())
+                except Exception:
+                    pass
+
+                # sync do banco local
+                try:
+                    from backup.drive_backup import fazer_backup as _fb2
+                    _fb2(forcar=True)
                 except Exception:
                     pass
 
@@ -1738,6 +2052,70 @@ def criar_tela_incluir_exame(page: ft.Page, voltar_fn):
         page.snack_bar = ft.SnackBar(ft.Text(msg, color=TXT), bgcolor=cor)
         page.snack_bar.open = True
         page.update()
+
+    def _overlay_paciente_invalido(nome_pdf, nome_usuario):
+        ref = [None]
+
+        def _fechar(e=None):
+            if ref[0] in page.overlay:
+                page.overlay.remove(ref[0])
+            try: page.update()
+            except Exception: pass
+
+        btn_ok = ft.Container(
+            content=ft.Text("Entendido", size=13, color=VERM,
+                            weight=ft.FontWeight.W_600),
+            padding=ft.padding.symmetric(horizontal=20, vertical=10),
+            border_radius=8, bgcolor=ft.Colors.with_opacity(0.12, VERM),
+            border=ft.border.all(1, ft.Colors.with_opacity(0.40, VERM)),
+            ink=True,
+        )
+        btn_ok.on_click = _fechar
+
+        ref[0] = ft.Container(
+            content=ft.Container(
+                content=ft.Column([
+                    ft.Row([
+                        ft.Icon("person_off_rounded", size=22, color=VERM),
+                        ft.Text("Exame rejeitado", size=15, color=VERM,
+                                weight=ft.FontWeight.W_700),
+                    ], spacing=10),
+                    ft.Container(height=8),
+                    ft.Text("Este exame nao pertence ao paciente cadastrado.",
+                            size=13, color=TXT),
+                    ft.Container(height=10),
+                    ft.Container(
+                        content=ft.Column([
+                            ft.Row([
+                                ft.Text("No PDF:", size=11, color=SEC, width=80),
+                                ft.Text(nome_pdf or "—", size=12, color=VERM,
+                                        weight=ft.FontWeight.W_600),
+                            ], spacing=6),
+                            ft.Row([
+                                ft.Text("Esperado:", size=11, color=SEC, width=80),
+                                ft.Text(nome_usuario or "—", size=12, color=VERD,
+                                        weight=ft.FontWeight.W_600),
+                            ], spacing=6),
+                        ], spacing=6, tight=True),
+                        bgcolor=ft.Colors.with_opacity(0.06, VERM),
+                        border_radius=8,
+                        padding=ft.padding.all(12),
+                        border=ft.border.all(1, ft.Colors.with_opacity(0.20, VERM)),
+                    ),
+                    ft.Container(height=16),
+                    ft.Row([btn_ok], alignment=ft.MainAxisAlignment.CENTER),
+                ], tight=True, spacing=4),
+                bgcolor=CARD, border_radius=14,
+                padding=ft.padding.all(24), width=320,
+                border=ft.border.all(1, ft.Colors.with_opacity(0.30, VERM)),
+            ),
+            bgcolor=ft.Colors.with_opacity(0.70, "#000000"),
+            expand=True, alignment=ft.Alignment(0, 0),
+        )
+        ref[0].on_click = _fechar
+        page.overlay.append(ref[0])
+        try: page.update()
+        except Exception: pass
 
     # ══════════════════════════════════════════════════════════
     # LAYOUT

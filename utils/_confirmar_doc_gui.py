@@ -13,6 +13,10 @@ import time
 import shutil
 import tempfile
 
+if hasattr(sys.stdout, "reconfigure"):
+    try: sys.stdout.reconfigure(encoding="utf-8")
+    except Exception: pass
+
 def main():
     if len(sys.argv) < 3:
         sys.exit(1)
@@ -107,6 +111,8 @@ def main():
     root.configure(bg=BG)
     root.attributes("-topmost", True)
     root.resizable(True, True)
+    root.lift()
+    root.focus_force()
 
     def _fechar():
         try:
@@ -122,6 +128,10 @@ def main():
         w_win = max(w_min, root.winfo_reqwidth())
         h_win = min(root.winfo_reqheight() + 24, sh - 60)
         root.geometry(f"{w_win}x{h_win}+{(sw-w_win)//2}+{(sh-h_win)//2}")
+        # Reforça topmost após centralizar (Flet pode ter tomado o foco)
+        root.attributes("-topmost", True)
+        root.lift()
+        root.focus_force()
 
     modo = ["auto" if cantos_auto is not None else "manual"]
     pontos_manual = []

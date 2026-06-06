@@ -18,7 +18,7 @@ AMAR = "#D29922"
 VERM = "#F85149"
 
 
-def criar_tela_perfil(page: ft.Page, voltar_fn=None):
+def criar_tela_perfil(page: ft.Page, voltar_fn=None, readonly: bool = False):
     _montado      = [False]
     _status_banco = ["normal"]
     _handler_ant  = [None]
@@ -92,6 +92,7 @@ def criar_tela_perfil(page: ft.Page, voltar_fn=None):
             border_radius=8,
             content_padding=ft.padding.symmetric(horizontal=12, vertical=10),
             width=largura,
+            read_only=readonly,
         )
         return tf
 
@@ -115,10 +116,15 @@ def criar_tela_perfil(page: ft.Page, voltar_fn=None):
 
     email_atual = perfil.get("email") or email_google
 
-    f_nome       = _campo("Nome completo",  perfil.get("nome", ""))
-    f_data_nasc  = _campo("Data nasc.",     perfil.get("data_nasc", ""), hint="AAAA-MM-DD", largura=160)
-    f_peso       = _campo("Peso (kg)",      perfil.get("peso", ""),      hint="70.5",       largura=120)
-    f_altura     = _campo("Altura (cm)",    perfil.get("altura", ""),    hint="175",         largura=120)
+    from shared.date_field import campo_data
+
+    f_nome      = _campo("Nome completo", perfil.get("nome", ""))
+    f_peso      = _campo("Peso (kg)",     perfil.get("peso", ""),  hint="70.5", largura=120)
+    f_altura    = _campo("Altura (cm)",   perfil.get("altura", ""), hint="175", largura=120)
+    row_data_nasc, f_data_nasc = campo_data(
+        page, label="Data nasc.", value=perfil.get("data_nasc", ""),
+        cor_acento=AZUL, largura=160,
+    )
 
     dd_sexo = ft.Dropdown(
         label="Sexo",
@@ -135,10 +141,11 @@ def criar_tela_perfil(page: ft.Page, voltar_fn=None):
         bgcolor=CARD,
         border_radius=8,
         expand=True,
+        disabled=readonly,
     )
 
     dd_sangue = ft.Dropdown(
-        label="Tipo sanguíneo",
+        label="TS",
         value=perfil.get("tipo_sanguineo", ""),
         options=[ft.dropdown.Option(t) for t in
                  ["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-", "Não sei"]],
@@ -149,13 +156,9 @@ def criar_tela_perfil(page: ft.Page, voltar_fn=None):
         bgcolor=CARD,
         border_radius=8,
         expand=True,
+        disabled=readonly,
     )
 
-    f_cond = _campo(
-        "Condições crônicas",
-        ", ".join(perfil.get("condicoes_cronicas") or []),
-        hint="Ex: Hipertensão, Diabetes",
-    )
     f_contato = _campo("Contato de emergência", perfil.get("contato_emergencia", ""))
     f_tel     = _campo("Telefone emergência",   perfil.get("tel_emergencia", ""), hint="(99) 99999-9999")
 
@@ -163,19 +166,17 @@ def criar_tela_perfil(page: ft.Page, voltar_fn=None):
 
     def _salvar(e):
         try:
-            condicoes_raw = f_cond.value.strip()
-            condicoes = [c.strip() for c in condicoes_raw.split(",") if c.strip()] if condicoes_raw else []
-
+            from dados.model_prontuario import normalizar_data
             dados = {
                 "nome":               f_nome.value.strip() or None,
                 "email":              email_atual,
-                "data_nasc":          f_data_nasc.value.strip() or None,
+                "data_nasc":          normalizar_data(f_data_nasc.value) or None,
                 "sexo":               dd_sexo.value or None,
                 "foto_url":           perfil.get("foto_url"),
                 "peso":               float(f_peso.value.replace(",", ".")) if f_peso.value.strip() else None,
                 "altura":             float(f_altura.value.replace(",", ".")) if f_altura.value.strip() else None,
                 "tipo_sanguineo":     dd_sangue.value or None,
-                "condicoes_cronicas": condicoes,
+                "condicoes_cronicas": perfil.get("condicoes_cronicas", []),
                 "contato_emergencia": f_contato.value.strip() or None,
                 "tel_emergencia":     f_tel.value.strip() or None,
                 "tema":               perfil.get("tema", "dark"),
@@ -398,7 +399,7 @@ def criar_tela_perfil(page: ft.Page, voltar_fn=None):
         "Perfil", lambda e=None: _sair(),
         icone_titulo="manage_accounts_rounded",
         cor_titulo=AZUL,
-        acoes=[btn_salvar_hdr],
+        acoes=[] if readonly else [btn_salvar_hdr],
     )
 
     def _secao(titulo):
@@ -433,12 +434,11 @@ def criar_tela_perfil(page: ft.Page, voltar_fn=None):
         _card_section([
             f_nome,
             email_row,
-            ft.Row([f_data_nasc, dd_sexo], spacing=10),
+            ft.Row([row_data_nasc, dd_sexo], spacing=10),
         ]),
         _secao("DADOS CLÍNICOS"),
         _card_section([
             ft.Row([f_peso, f_altura, dd_sangue], spacing=10),
-            f_cond,
         ]),
         _secao("EMERGÊNCIA"),
         _card_section([

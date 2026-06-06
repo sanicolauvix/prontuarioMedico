@@ -10,7 +10,7 @@ import sqlite3
 import logging
 from dados.model_prontuario import (
     DB_PATH, carregar_perfil,
-    listar_remedios, listar_receitas, salvar_receita,
+    listar_remedios, listar_receitas_laudos as listar_receitas, salvar_receita,
     listar_rotina, listar_medicos,
 )
 

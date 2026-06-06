@@ -40,20 +40,28 @@ def interpretar_receita_com_ia(texto: str) -> list[dict]:
 
         prompt = f"""Você é um assistente médico especializado em interpretar receitas médicas brasileiras.
 
-Analise o texto da receita abaixo e extraia TODOS os medicamentos prescritos.
+REGRAS CRÍTICAS DE INTERPRETAÇÃO:
+1. Receitas médicas têm letra frequentemente ilegível. Use o contexto clínico para inferir o nome correto do medicamento.
+2. Se um nome parecer com um medicamento conhecido (ex: "Litmine" -> provavelmente "Ritalina", "Concerta" ou similar; "Lexapro" mal escrito -> "Lexapro"), use o nome correto do medicamento.
+3. Considere a especialidade do médico (psiquiatra, cardiologista, etc.) e outros medicamentos da receita para inferir nomes com grafia ruim.
+4. Psiquiatras prescrevem: antidepressivos, ansiolíticos, estabilizadores de humor, psicoestimulantes (Ritalina, Venvanse, Concerta), antipsicóticos.
+5. NUNCA descarte um medicamento por não reconhecer o nome — se parece um remédio no contexto de uma receita, inclua com o nome mais próximo que você identificar.
+6. Adicione o campo "nome_original" com o que estava escrito literalmente, e "nome" com sua melhor interpretação do medicamento correto.
 
 Para cada medicamento, retorne um objeto JSON com os campos:
-- nome: nome do medicamento (string)
+- nome: nome correto do medicamento conforme sua interpretação (string)
+- nome_original: texto exato como aparece na receita, antes de qualquer correção (string)
 - dosagem: concentração/dose (ex: "500mg", "10mg/mL") (string ou null)
 - frequencia: como tomar (ex: "1 comprimido de 8 em 8 horas", "2x ao dia") (string ou null)
 - data_inicio: data de inicio se mencionada no formato YYYY-MM-DD (string ou null)
-- data_fim: data de fim ou duracao convertida (ex: "por 7 dias" -> calcule a partir da data da receita) no formato YYYY-MM-DD (string ou null)
+- data_fim: data de fim ou duracao convertida no formato YYYY-MM-DD (string ou null)
 - medico: nome do médico que prescreveu (string ou null)
-- intervalo_horas: número inteiro de horas entre doses se identificável (ex: 8, 12, 24) (integer ou null)
-- observacoes: instruções especiais (ex: "tomar com alimento", "não partir") (string ou null)
+- especialidade_medico: especialidade inferida do médico se identificável (string ou null)
+- intervalo_horas: número inteiro de horas entre doses se identificável (integer ou null)
+- observacoes: instruções especiais (string ou null)
+- confianca: "alta" se nome claro, "media" se inferido por contexto, "baixa" se muito ilegível (string)
 
 Retorne SOMENTE um array JSON válido, sem texto adicional, sem markdown, sem explicações.
-Exemplo: [{{"nome": "Amoxicilina", "dosagem": "500mg", "frequencia": "1 cápsula de 8 em 8 horas", ...}}]
 
 TEXTO DA RECEITA:
 {texto}"""

@@ -129,25 +129,35 @@ def _migrar_campos_perfil():
         ("tema",               "TEXT DEFAULT 'dark'"),
         ("accent_color",       "TEXT DEFAULT '#58A6FF'"),
         ("tamanho_fonte",      "TEXT DEFAULT 'medio'"),
+        ("foto_url",           "TEXT"),
     ]
-    conn = None
-    try:
-        conn = sqlite3.connect(CORE_DB, timeout=30)
-        cur  = conn.cursor()
-        cols = [r[1] for r in cur.execute('PRAGMA table_info(perfil_usuario)').fetchall()]
-        for col, tipo in novos:
-            if col not in cols:
-                try:
-                    cur.execute(f'ALTER TABLE perfil_usuario ADD COLUMN {col} {tipo}')
-                    print(f'[PERFIL] coluna {col} adicionada')
-                except Exception as ex:
-                    print(f'[PERFIL] erro ao adicionar {col}: {ex}')
-        conn.commit()
-    except Exception as ex:
-        print(f'[PERFIL] _migrar_campos_perfil: {ex}')
-    finally:
-        if conn:
-            conn.close()
+    for _db in (DB_PATH, CORE_DB):
+        conn = None
+        try:
+            conn = sqlite3.connect(_db, timeout=30)
+            cur  = conn.cursor()
+            # garante que a tabela existe em prontuario.db
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS perfil_usuario (
+                    id INTEGER PRIMARY KEY CHECK (id = 1),
+                    nome TEXT, email TEXT, data_nasc TEXT, sexo TEXT,
+                    foto_url TEXT, criado_em TEXT DEFAULT (datetime('now')),
+                    atualizado_em TEXT DEFAULT (datetime('now'))
+                )
+            """)
+            cols = [r[1] for r in cur.execute('PRAGMA table_info(perfil_usuario)').fetchall()]
+            for col, tipo in novos:
+                if col not in cols:
+                    try:
+                        cur.execute(f'ALTER TABLE perfil_usuario ADD COLUMN {col} {tipo}')
+                    except Exception:
+                        pass
+            conn.commit()
+        except Exception as ex:
+            print(f'[PERFIL] _migrar_campos_perfil {_db}: {ex}')
+        finally:
+            if conn:
+                conn.close()
 
 
 def _migrar_principio_ativo():
@@ -228,14 +238,135 @@ def _migrar_remedio_fotos():
         print(f"[MODEL] _migrar_remedio_fotos: {ex}")
 
 
-def _migrar_receita_foto_path():
-    """Adiciona coluna foto_path em receitas para caminho local da imagem."""
+def _migrar_farmacia_razao_social():
+    """Adiciona razao_social em farmacias (nome fantasia fica em nome)."""
     try:
         with sqlite3.connect(DB_PATH, timeout=30) as conn:
-            cols = [r[1] for r in conn.execute("PRAGMA table_info(receitas)").fetchall()]
+            cols = [r[1] for r in conn.execute("PRAGMA table_info(farmacias)").fetchall()]
+            if "razao_social" not in cols:
+                conn.execute("ALTER TABLE farmacias ADD COLUMN razao_social TEXT")
+                print("[MODEL] coluna razao_social adicionada em farmacias")
+    except Exception as ex:
+        print(f"[MODEL] _migrar_farmacia_razao_social: {ex}")
+
+
+def _migrar_medico_endereco_clinica():
+    """Adiciona endereco_json, clinica_id e clinica_nome em medicos."""
+    try:
+        with sqlite3.connect(DB_PATH, timeout=30) as conn:
+            cols = [r[1] for r in conn.execute("PRAGMA table_info(medicos)").fetchall()]
+            if "endereco_json" not in cols:
+                conn.execute("ALTER TABLE medicos ADD COLUMN endereco_json TEXT")
+                print("[MODEL] coluna endereco_json adicionada em medicos")
+            if "clinica_id" not in cols:
+                conn.execute("ALTER TABLE medicos ADD COLUMN clinica_id INTEGER REFERENCES clinicas(id)")
+                print("[MODEL] coluna clinica_id adicionada em medicos")
+            if "clinica_nome" not in cols:
+                conn.execute("ALTER TABLE medicos ADD COLUMN clinica_nome TEXT")
+                print("[MODEL] coluna clinica_nome adicionada em medicos")
+    except Exception as ex:
+        print(f"[MODEL] _migrar_medico_endereco_clinica: {ex}")
+
+
+def _criar_tabelas_compras():
+    """Cria tabelas compras (cabeçalho NF) e compra_itens (remédios da nota)."""
+    try:
+        with sqlite3.connect(DB_PATH, timeout=30) as conn:
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS compras (
+                    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+                    farmacia_id     INTEGER REFERENCES farmacias(id),
+                    data            TEXT NOT NULL,
+                    total           REAL DEFAULT 0,
+                    foto_path       TEXT,
+                    foto_drive_id   TEXT,
+                    qr_nfe          TEXT,
+                    observacoes     TEXT,
+                    status          TEXT DEFAULT 'ativa',
+                    criado_em       TEXT DEFAULT (datetime('now'))
+                )
+            """)
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS compra_itens (
+                    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+                    compra_id           INTEGER NOT NULL REFERENCES compras(id) ON DELETE CASCADE,
+                    remedio_id          INTEGER REFERENCES remedios(id),
+                    nome_nf             TEXT NOT NULL,
+                    dosagem             TEXT,
+                    quantidade_emb      INTEGER DEFAULT 1,
+                    comprimidos_emb     INTEGER,
+                    preco_unitario      REAL DEFAULT 0,
+                    preco_total         REAL DEFAULT 0,
+                    quantidade_devolvida INTEGER DEFAULT 0,
+                    criado_em           TEXT DEFAULT (datetime('now'))
+                )
+            """)
+            # Migration para compras já existentes
+            cols = [r[1] for r in conn.execute("PRAGMA table_info(compras)").fetchall()]
+            if "status" not in cols:
+                conn.execute("ALTER TABLE compras ADD COLUMN status TEXT DEFAULT 'ativa'")
+            cols_i = [r[1] for r in conn.execute("PRAGMA table_info(compra_itens)").fetchall()]
+            if "quantidade_devolvida" not in cols_i:
+                conn.execute("ALTER TABLE compra_itens ADD COLUMN quantidade_devolvida INTEGER DEFAULT 0")
+    except Exception as ex:
+        print(f"[MODEL] _criar_tabelas_compras: {ex}")
+
+
+def _migrar_mov_foto_nf():
+    """Adiciona colunas foto_nf_path, foto_nf_drive_id e qr_nfe em remedios_mov."""
+    try:
+        with sqlite3.connect(DB_PATH, timeout=30) as conn:
+            cols = [r[1] for r in conn.execute("PRAGMA table_info(remedios_mov)").fetchall()]
+            if "foto_nf_path" not in cols:
+                conn.execute("ALTER TABLE remedios_mov ADD COLUMN foto_nf_path TEXT")
+                print("[MODEL] coluna foto_nf_path adicionada em remedios_mov")
+            if "foto_nf_drive_id" not in cols:
+                conn.execute("ALTER TABLE remedios_mov ADD COLUMN foto_nf_drive_id TEXT")
+                print("[MODEL] coluna foto_nf_drive_id adicionada em remedios_mov")
+            if "qr_nfe" not in cols:
+                conn.execute("ALTER TABLE remedios_mov ADD COLUMN qr_nfe TEXT")
+                print("[MODEL] coluna qr_nfe adicionada em remedios_mov")
+    except Exception as ex:
+        print(f"[MODEL] _migrar_mov_foto_nf: {ex}")
+
+
+def _renomear_receitas_para_laudos():
+    """Garante que receitas (laudos) vira receitas_laudos e receitas (culinaria) tem schema correto."""
+    try:
+        with sqlite3.connect(DB_PATH, timeout=30) as conn:
+            tables = [r[0] for r in conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table'").fetchall()]
+            if "receitas" in tables:
+                cols = [r[1] for r in conn.execute("PRAGMA table_info(receitas)").fetchall()]
+                if "consulta_id" in cols:
+                    # schema antigo de laudos — mover para receitas_laudos
+                    if "receitas_laudos" not in tables:
+                        conn.execute("ALTER TABLE receitas RENAME TO receitas_laudos")
+                        print("[MODEL] receitas renomeada para receitas_laudos")
+                    else:
+                        # receitas_laudos ja existe — copiar dados novos e dropar
+                        ids_existentes = {r[0] for r in conn.execute(
+                            "SELECT id FROM receitas_laudos").fetchall()}
+                        for row in conn.execute(
+                            "SELECT id,consulta_id,medico_id,drive_file_id,nome_arquivo,"
+                            "data,observacoes,criado_em,foto_path FROM receitas").fetchall():
+                            if row[0] not in ids_existentes:
+                                conn.execute(
+                                    "INSERT INTO receitas_laudos VALUES (?,?,?,?,?,?,?,?,?)", row)
+                        conn.execute("DROP TABLE receitas")
+                        print("[MODEL] receitas (laudos) mesclada em receitas_laudos e dropada")
+    except Exception as ex:
+        print(f"[MODEL] _renomear_receitas_para_laudos: {ex}")
+
+
+def _migrar_receita_foto_path():
+    """Adiciona coluna foto_path em receitas_laudos para caminho local da imagem."""
+    try:
+        with sqlite3.connect(DB_PATH, timeout=30) as conn:
+            cols = [r[1] for r in conn.execute("PRAGMA table_info(receitas_laudos)").fetchall()]
             if "foto_path" not in cols:
-                conn.execute("ALTER TABLE receitas ADD COLUMN foto_path TEXT")
-                print("[MODEL] coluna foto_path adicionada em receitas")
+                conn.execute("ALTER TABLE receitas_laudos ADD COLUMN foto_path TEXT")
+                print("[MODEL] coluna foto_path adicionada em receitas_laudos")
     except Exception as ex:
         print(f"[MODEL] _migrar_receita_foto_path: {ex}")
 
@@ -435,7 +566,7 @@ def _criar_periodos_uso_remedio():
                 CREATE TABLE IF NOT EXISTS periodos_uso_remedio (
                     id            INTEGER PRIMARY KEY AUTOINCREMENT,
                     remedio_id    INTEGER NOT NULL REFERENCES remedios(id) ON DELETE CASCADE,
-                    receita_id    INTEGER REFERENCES receitas(id),
+                    receita_id    INTEGER REFERENCES receitas_laudos(id),
                     data_inicio   TEXT NOT NULL,
                     data_fim      TEXT,
                     ativo         INTEGER DEFAULT 1,
@@ -486,8 +617,8 @@ def listar_periodos_uso(remedio_id: int) -> list:
                    r.foto_path as receita_foto,
                    m.nome as medico_nome
             FROM periodos_uso_remedio p
-            LEFT JOIN receitas r ON r.id = p.receita_id
-            LEFT JOIN medicos m  ON m.id = (SELECT medico_id FROM receitas WHERE id=p.receita_id)
+            LEFT JOIN receitas_laudos r ON r.id = p.receita_id
+            LEFT JOIN medicos m  ON m.id = (SELECT medico_id FROM receitas_laudos WHERE id=p.receita_id)
             WHERE p.remedio_id = ?
             ORDER BY p.data_inicio DESC
         """, (remedio_id,)).fetchall()
@@ -774,7 +905,7 @@ def _migrar_datas_iso():
     """Converte datas em formato DD/MM/YYYY para YYYY-MM-DD em todas as tabelas."""
     tabelas_campos = [
         ("consultas",          ["data"]),
-        ("receitas",           ["data"]),
+        ("receitas_laudos",    ["data"]),
         ("remedios",           ["data_inicio", "data_fim"]),
         ("internacoes",        ["data_entrada", "data_saida"]),
         ("exames",             ["data_exame"]),
@@ -888,6 +1019,46 @@ def _criar_rotinas():
                     criado_em  TEXT DEFAULT (datetime('now'))
                 );
 
+                CREATE TABLE IF NOT EXISTS receitas (
+                    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                    nome         TEXT NOT NULL,
+                    descricao    TEXT,
+                    modo_preparo TEXT,
+                    rendimento_qtd  TEXT,
+                    rendimento_unid TEXT DEFAULT 'Porcao',
+                    calorias_total  REAL,
+                    proteinas_total REAL,
+                    vitaminas       TEXT,
+                    ativo        INTEGER DEFAULT 1,
+                    criado_em    TEXT DEFAULT (datetime('now'))
+                );
+
+                CREATE TABLE IF NOT EXISTS receita_ingredientes (
+                    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+                    receita_id     INTEGER NOT NULL REFERENCES receitas(id) ON DELETE CASCADE,
+                    tipo           TEXT NOT NULL DEFAULT 'item',
+                    descricao      TEXT,
+                    sub_receita_id INTEGER REFERENCES receitas(id),
+                    quantidade     TEXT,
+                    unidade        TEXT DEFAULT 'Unidade',
+                    calorias       REAL,
+                    proteinas      REAL,
+                    ordem          INTEGER DEFAULT 0
+                );
+
+                CREATE TABLE IF NOT EXISTS item_ingredientes (
+                    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+                    item_id        INTEGER NOT NULL REFERENCES itens_momento(id) ON DELETE CASCADE,
+                    tipo           TEXT NOT NULL DEFAULT 'item',
+                    descricao      TEXT,
+                    sub_receita_id INTEGER REFERENCES receitas(id),
+                    quantidade     TEXT,
+                    unidade        TEXT DEFAULT 'Unidade',
+                    calorias       REAL,
+                    proteinas      REAL,
+                    ordem          INTEGER DEFAULT 0
+                );
+
                 CREATE TABLE IF NOT EXISTS rotina_diario (
                     id          INTEGER PRIMARY KEY AUTOINCREMENT,
                     data        TEXT NOT NULL,
@@ -904,14 +1075,22 @@ def _criar_rotinas():
             """)
         # Migrações para bancos antigos
         for sql in [
-            "ALTER TABLE rotinas_templates ADD COLUMN tipo    TEXT DEFAULT 'alimentacao'",
-            "ALTER TABLE rotinas_templates ADD COLUMN horario TEXT",
-            "ALTER TABLE itens_momento     ADD COLUMN frequencia  TEXT DEFAULT 'diario'",
-            "ALTER TABLE itens_momento     ADD COLUMN quantidade  TEXT",
-            "ALTER TABLE itens_momento     ADD COLUMN unidade     TEXT DEFAULT 'Unidade'",
-            "ALTER TABLE itens_momento     ADD COLUMN calorias    REAL",
-            "ALTER TABLE itens_momento     ADD COLUMN proteinas   REAL",
-            "ALTER TABLE itens_momento     ADD COLUMN vitaminas   TEXT",
+            "ALTER TABLE rotinas_templates ADD COLUMN tipo               TEXT DEFAULT 'alimentacao'",
+            "ALTER TABLE rotinas_templates ADD COLUMN horario            TEXT",
+            "ALTER TABLE rotinas_templates ADD COLUMN hora_inicio        TEXT",
+            "ALTER TABLE rotinas_templates ADD COLUMN hora_fim           TEXT",
+            "ALTER TABLE rotinas_templates ADD COLUMN intensidade_fisica TEXT",
+            "ALTER TABLE rotinas_templates ADD COLUMN intensidade_mental TEXT",
+            "ALTER TABLE itens_momento     ADD COLUMN frequencia          TEXT DEFAULT 'diario'",
+            "ALTER TABLE itens_momento     ADD COLUMN quantidade          TEXT",
+            "ALTER TABLE itens_momento     ADD COLUMN unidade             TEXT DEFAULT 'Unidade'",
+            "ALTER TABLE itens_momento     ADD COLUMN calorias            REAL",
+            "ALTER TABLE itens_momento     ADD COLUMN proteinas           REAL",
+            "ALTER TABLE itens_momento     ADD COLUMN vitaminas           TEXT",
+            "ALTER TABLE itens_momento     ADD COLUMN hora_inicio         TEXT",
+            "ALTER TABLE itens_momento     ADD COLUMN hora_fim            TEXT",
+            "ALTER TABLE itens_momento     ADD COLUMN intensidade_fisica  TEXT",
+            "ALTER TABLE itens_momento     ADD COLUMN intensidade_mental  TEXT",
         ]:
             try: conn.execute(sql)
             except Exception: pass
@@ -1177,6 +1356,9 @@ def _migrar_referencias_padrao():
         if 'observacoes' not in cols_ref:
             cur.execute("ALTER TABLE referencias_padrao ADD COLUMN observacoes TEXT")
             print('[REF] observacoes adicionada em referencias_padrao')
+        if 'fonte' not in cols_ref:
+            cur.execute("ALTER TABLE referencias_padrao ADD COLUMN fonte TEXT")
+            print('[REF] fonte adicionada em referencias_padrao')
         # exames_padrao
         cols_ep = [r[1] for r in cur.execute('PRAGMA table_info(exames_padrao)').fetchall()]
         if 'observacoes' not in cols_ep:
@@ -1386,6 +1568,7 @@ def criar_tabelas():
             resultado_texto TEXT,
             arquivo_origem  TEXT,
             drive_file_id   TEXT,
+            grupo_id        INTEGER REFERENCES grupos_exame(id),
             importado_em    TEXT DEFAULT (datetime('now'))
         );
 
@@ -1401,6 +1584,7 @@ def criar_tabelas():
             unidade             TEXT,
             referencia          TEXT,
             exame_padrao_id     INTEGER REFERENCES exames_padrao(id),
+            grupo_id            INTEGER REFERENCES grupos_exame(id),
             nivel_interpretacao TEXT
         );
 
@@ -1470,6 +1654,19 @@ def criar_tabelas():
         );
 
         -- ────────────────────────────────────────────────────────
+        -- GRUPOS DE EXAMES
+        -- ────────────────────────────────────────────────────────
+        CREATE TABLE IF NOT EXISTS grupos_exame (
+            id        INTEGER PRIMARY KEY AUTOINCREMENT,
+            nome      TEXT UNIQUE NOT NULL,
+            descricao TEXT,
+            tipo      TEXT NOT NULL,  -- 'sangue' | 'imagem' | 'outros'
+            icone     TEXT,
+            ordem     INTEGER DEFAULT 0,
+            ativo     INTEGER DEFAULT 1
+        );
+
+        -- ────────────────────────────────────────────────────────
         -- DICIONÁRIO PADRÃO
         -- ────────────────────────────────────────────────────────
         CREATE TABLE IF NOT EXISTS exames_padrao (
@@ -1477,9 +1674,11 @@ def criar_tabelas():
             nome_oficial TEXT UNIQUE,
             sinonimos    TEXT,
             categoria    TEXT,
+            subcategoria TEXT,
             tipo         TEXT DEFAULT 'numerico',
             unidade      TEXT,
             observacoes  TEXT,
+            grupo_id     INTEGER REFERENCES grupos_exame(id),
             ativo        INTEGER DEFAULT 1,
             criado_em    TEXT DEFAULT (datetime('now'))
         );
@@ -1487,17 +1686,52 @@ def criar_tabelas():
         CREATE TABLE IF NOT EXISTS referencias_padrao (
             id              INTEGER PRIMARY KEY AUTOINCREMENT,
             exame_padrao_id INTEGER REFERENCES exames_padrao(id),
-            sexo            TEXT,
-            idade_min       INTEGER,
-            idade_max       INTEGER,
-            critico_baixo   REAL,
-            limite_baixo    REAL,
-            otimo_min       REAL,
-            otimo_max       REAL,
-            limite_alto     REAL,
-            critico_alto    REAL,
-            observacoes     TEXT,
+            sexo            TEXT,           -- 'M' | 'F' | NULL (ambos)
+            idade_min       INTEGER,        -- anos (0 = neonato/lactente via obs)
+            idade_max       INTEGER,        -- 999 = sem limite superior
+            critico_baixo   REAL,           -- valor abaixo = risco de vida
+            limite_baixo    REAL,           -- limite inferior do normal
+            otimo_min       REAL,           -- início da faixa ideal
+            otimo_max       REAL,           -- fim da faixa ideal
+            limite_alto     REAL,           -- limite superior do normal
+            critico_alto    REAL,           -- valor acima = risco de vida
+            observacoes     TEXT,           -- ex: "Adulto", "Grávida", "RN"
+            fonte           TEXT,           -- ex: "SBPC/ML 2023", "SBD 2024"
             criado_em       TEXT DEFAULT (datetime('now'))
+        );
+
+        -- ────────────────────────────────────────────────────────
+        -- CONHECIMENTO DE EXAMES
+        -- Tabela rica: o que o exame é, representa e indica
+        -- ────────────────────────────────────────────────────────
+        CREATE TABLE IF NOT EXISTS exame_conhecimento (
+            id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+            exame_padrao_id     INTEGER UNIQUE REFERENCES exames_padrao(id) ON DELETE CASCADE,
+
+            -- Identidade clínica
+            o_que_mede          TEXT,   -- descrição do que o exame mede biologicamente
+            marcadores          TEXT,   -- JSON array: ["diabetes","metabolismo glicídico"]
+            sistema_orgao       TEXT,   -- ex: "Pâncreas / Metabolismo"
+
+            -- Interpretação clínica
+            alterado_alto       TEXT,   -- o que indica quando ALTO
+            alterado_baixo      TEXT,   -- o que indica quando BAIXO
+            faixa_alerta        TEXT,   -- zona de atenção antes do patológico
+
+            -- Quem pede e por quê
+            quem_solicita       TEXT,   -- "Clínico Geral, Endocrinologista"
+            especialidades      TEXT,   -- JSON array de especialidades
+            frequencia          TEXT,   -- 'rotina' | 'monitoramento' | 'investigacao' | 'urgencia'
+
+            -- Contexto de uso
+            indicacoes          TEXT,   -- quando é solicitado
+            interferentes       TEXT,   -- o que interfere no resultado (medicamentos, alimentos)
+            preparo_paciente    TEXT,   -- jejum, repouso, fase do ciclo, etc.
+            curiosidade_clinica TEXT,   -- fato relevante para o paciente entender
+
+            -- Metadados
+            fonte               TEXT,   -- referência bibliográfica principal
+            atualizado_em       TEXT DEFAULT (datetime('now'))
         );
 
         -- ────────────────────────────────────────────────────────
@@ -1518,7 +1752,7 @@ def criar_tabelas():
         -- ────────────────────────────────────────────────────────
         -- RECEITAS
         -- ────────────────────────────────────────────────────────
-        CREATE TABLE IF NOT EXISTS receitas (
+        CREATE TABLE IF NOT EXISTS receitas_laudos (
             id            INTEGER PRIMARY KEY AUTOINCREMENT,
             consulta_id   INTEGER REFERENCES consultas(id),
             medico_id     INTEGER REFERENCES medicos(id),
@@ -1540,7 +1774,7 @@ def criar_tabelas():
             data_inicio     TEXT,
             data_fim        TEXT,
             medico_id       INTEGER REFERENCES medicos(id),
-            receita_id      INTEGER REFERENCES receitas(id),
+            receita_id      INTEGER REFERENCES receitas_laudos(id),
             estoque_atual   INTEGER DEFAULT 0,
             estoque_minimo  INTEGER DEFAULT 5,
             foto_path       TEXT,
@@ -1610,6 +1844,30 @@ def criar_tabelas():
             criado_em       TEXT DEFAULT (datetime('now')),
             FOREIGN KEY (remedio_id) REFERENCES remedios(id) ON DELETE CASCADE,
             FOREIGN KEY (farmacia_id) REFERENCES farmacias(id)
+        );
+
+        CREATE TABLE IF NOT EXISTS remedios_mov (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            remedio_id      INTEGER NOT NULL,
+            tipo            TEXT NOT NULL,
+            -- tipos: 'compra' | 'inicio_uso' | 'tomada' | 'ajuste' | 'vencimento'
+            data            TEXT NOT NULL,
+            quantidade      INTEGER DEFAULT 0,
+            -- positivo = entrada (compra), negativo = saida (tomada/ajuste)
+            estoque_apos    INTEGER,
+            preco_unitario  REAL,
+            preco_total     REAL,
+            farmacia_id     INTEGER,
+            receita_id      INTEGER,
+            consulta_id     INTEGER,
+            origem          TEXT,
+            -- 'receita' | 'manual' | 'automatico'
+            observacoes     TEXT,
+            criado_em       TEXT DEFAULT (datetime('now')),
+            FOREIGN KEY (remedio_id)  REFERENCES remedios(id) ON DELETE CASCADE,
+            FOREIGN KEY (farmacia_id) REFERENCES farmacias(id),
+            FOREIGN KEY (receita_id)  REFERENCES receitas(id),
+            FOREIGN KEY (consulta_id) REFERENCES consultas(id)
         );
 
         CREATE TABLE IF NOT EXISTS remedios_orcamentos (
@@ -1809,6 +2067,27 @@ def criar_tabelas():
         );
 
         -- ────────────────────────────────────────────────────────
+        -- DIAGNOSTICOS
+        -- ────────────────────────────────────────────────────────
+        CREATE TABLE IF NOT EXISTS diagnosticos (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            titulo          TEXT NOT NULL,
+            cid             TEXT,
+            descricao       TEXT,
+            sistema         TEXT,
+            data_diagnostico TEXT,
+            data_resolucao  TEXT,
+            status          TEXT DEFAULT 'ativo',
+            certeza         TEXT DEFAULT 'confirmado',
+            medico_id       INTEGER REFERENCES medicos(id),
+            internacao_id   INTEGER REFERENCES internacoes(id),
+            observacoes     TEXT,
+            ativo           INTEGER DEFAULT 1,
+            criado_em       TEXT DEFAULT (datetime('now')),
+            atualizado_em   TEXT DEFAULT (datetime('now'))
+        );
+
+        -- ────────────────────────────────────────────────────────
         -- INTERNACOES
         -- ────────────────────────────────────────────────────────
         CREATE TABLE IF NOT EXISTS internacoes (
@@ -1864,6 +2143,14 @@ def criar_tabelas():
     _migrar_marcadores_contexto()
     _migrar_tipo_prescrito()
     _migrar_remedio_fotos()
+    _migrar_farmacia_razao_social()
+    _migrar_medico_endereco_clinica()
+    _migrar_mov_foto_nf()
+    _criar_tabelas_compras()
+    _renomear_receitas_para_laudos()
+    _criar_tabela_nutricao()
+    _migrar_ingrediente_peso_unitario()
+    _migrar_receitas_porcao()
     _migrar_receita_foto_path()
     _migrar_consulta_pauta()
     _migrar_compromisso()
@@ -1895,7 +2182,7 @@ def criar_tabelas():
         _conn.commit(); _conn.close()
     except Exception:
         pass
-    # Popular base de exames padrão (135 exames com categorias e referências)
+    # Popular base de exames padrão (179 exames com categorias e referências)
     try:
         from .exames_padrao_dados import popular_banco
         popular_banco()
@@ -1907,6 +2194,62 @@ def criar_tabelas():
             print(f"[AVISO] popular_banco: {_ex}")
     # Popular especialidades médicas pré-configuradas
     seed_especialidades()
+    # Seeds pesados — so rodam quando a versao do seed muda
+    _SEED_VER = "seed_v3"
+    try:
+        import sqlite3 as _sq_seed
+        with _sq_seed.connect(DB_PATH, timeout=10) as _cs:
+            _cs.execute("ALTER TABLE exames_padrao ADD COLUMN sistema TEXT")
+    except Exception:
+        pass  # coluna ja existe
+    try:
+        import sqlite3 as _sq_seed2
+        with _sq_seed2.connect(DB_PATH, timeout=10) as _cs2:
+            _row = _cs2.execute(
+                "SELECT valor FROM config WHERE chave='seed_versao'"
+            ).fetchone()
+            _seed_ok = _row and _row[0] == _SEED_VER
+    except Exception:
+        _seed_ok = False
+
+    if not _seed_ok:
+        try:
+            from .popular_conhecimento import popular_conhecimento as _pop_con
+            _pop_con(DB_PATH)
+        except Exception as _ex2:
+            try:
+                from popular_conhecimento import popular_conhecimento as _pop_con
+                _pop_con(DB_PATH)
+            except Exception:
+                print(f"[AVISO] popular_conhecimento: {_ex2}")
+        try:
+            from .grupos_exame_seed import popular_grupos as _pop_grp
+            _pop_grp(DB_PATH)
+        except Exception as _ex3:
+            try:
+                from grupos_exame_seed import popular_grupos as _pop_grp
+                _pop_grp(DB_PATH)
+            except Exception:
+                print(f"[AVISO] popular_grupos: {_ex3}")
+        try:
+            from .sistema_resolver import resolver_sistemas as _res_sis
+            _res_sis(DB_PATH)
+        except Exception as _ex4:
+            try:
+                from sistema_resolver import resolver_sistemas as _res_sis
+                _res_sis(DB_PATH)
+            except Exception:
+                print(f"[AVISO] sistema_resolver: {_ex4}")
+        # Marca seed como concluido
+        try:
+            import sqlite3 as _sq_seed3
+            with _sq_seed3.connect(DB_PATH, timeout=10) as _cs3:
+                _cs3.execute("""
+                    INSERT INTO config(chave, valor) VALUES(?,?)
+                    ON CONFLICT(chave) DO UPDATE SET valor=excluded.valor
+                """, ("seed_versao", _SEED_VER))
+        except Exception:
+            pass
 
 
 # ══════════════════════════════════════════════════════════════
@@ -2182,24 +2525,49 @@ def salvar_exame(dados: dict, status: str = "ativo") -> int:
         ))
         exame_id = cur.lastrowid
 
-        # Resultados numéricos (com sub-resultados opcionais e vínculo automático)
+        # Resultados numéricos (com sub-resultados, vínculo automático e grupo)
+        try:
+            from .grupo_resolver import resolver_grupo_parametro as _res_grp
+        except ImportError:
+            from grupo_resolver import resolver_grupo_parametro as _res_grp
+
+        votos_grupo: dict = {}   # grupo_id → contagem de votos
+
         for r in dados.get("resultados", []):
-            padrao_id = _buscar_padrao_id(_padrao_idx, r.get("parametro"))
+            padrao_id = r.get("exame_padrao_id") or _buscar_padrao_id(_padrao_idx, r.get("parametro"))
+            grupo_id  = _res_grp(conn, padrao_id, r.get("categoria"), r.get("parametro"))
+            if grupo_id:
+                votos_grupo[grupo_id] = votos_grupo.get(grupo_id, 0) + 1
             cur.execute("""
                 INSERT INTO exame_resultados
-                (exame_id, pai_id, parametro, valor, unidade, referencia, exame_padrao_id)
-                VALUES (?,?,?,?,?,?,?)
+                (exame_id, pai_id, parametro, valor, unidade, referencia, exame_padrao_id, grupo_id)
+                VALUES (?,?,?,?,?,?,?,?)
             """, (exame_id, None, r.get("parametro"), r.get("valor"),
-                  r.get("unidade"), r.get("referencia"), padrao_id))
+                  r.get("unidade"), r.get("referencia"), padrao_id, grupo_id))
             pai_id = cur.lastrowid
             for sub in r.get("sub_resultados", []):
-                sub_padrao_id = _buscar_padrao_id(_padrao_idx, sub.get("parametro"))
+                sub_padrao_id = r.get("exame_padrao_id") or _buscar_padrao_id(_padrao_idx, sub.get("parametro"))
+                sub_grupo_id  = _res_grp(conn, sub_padrao_id, None, sub.get("parametro"))
                 cur.execute("""
                     INSERT INTO exame_resultados
-                    (exame_id, pai_id, parametro, valor, unidade, referencia, exame_padrao_id)
-                    VALUES (?,?,?,?,?,?,?)
+                    (exame_id, pai_id, parametro, valor, unidade, referencia, exame_padrao_id, grupo_id)
+                    VALUES (?,?,?,?,?,?,?,?)
                 """, (exame_id, pai_id, sub.get("parametro"), sub.get("valor"),
-                      sub.get("unidade"), sub.get("referencia"), sub_padrao_id))
+                      sub.get("unidade"), sub.get("referencia"), sub_padrao_id, sub_grupo_id))
+
+        # Grupo predominante do exame (maioria dos votos)
+        if votos_grupo:
+            grupo_exame = max(votos_grupo, key=lambda g: votos_grupo[g])
+            cur.execute("UPDATE exames SET grupo_id=? WHERE id=?", (grupo_exame, exame_id))
+        elif dados.get("tipo_exame"):
+            # Fallback por tipo_exame (laudo sem resultados numéricos)
+            try:
+                from .grupo_resolver import resolver_grupo_por_categoria as _res_cat
+            except ImportError:
+                from grupo_resolver import resolver_grupo_por_categoria as _res_cat
+            gid = _res_cat(dados.get("tipo_exame", ""))
+            if gid:
+                cur.execute("UPDATE exames SET grupo_id=? WHERE id=?", (gid, exame_id))
 
         # Laudo textual
         laudo = dados.get("laudo")
@@ -2796,19 +3164,30 @@ def listar_medicos(so_ativos=True) -> list[dict]:
         where = "WHERE m.ativo = 1" if so_ativos else ""
         cur.execute(f"""
             SELECT m.id, m.nome, m.crm, m.uf, m.telefone, m.email,
-                   m.endereco, m.site, m.redes_sociais, m.foto_drive_id,
-                   m.observacoes, m.ativo,
-                   e.nome as especialidade, m.especialidade_id
+                   m.endereco, m.endereco_json, m.site, m.redes_sociais,
+                   m.foto_drive_id, m.observacoes, m.ativo,
+                   e.nome as especialidade, m.especialidade_id,
+                   m.clinica_id, m.clinica_nome,
+                   c.nome as clinica_nome_join
             FROM medicos m
             LEFT JOIN especialidades e ON e.id = m.especialidade_id
+            LEFT JOIN clinicas c ON c.id = m.clinica_id
             {where}
             ORDER BY m.nome
         """)
-        cols = ["id","nome","crm","uf","telefone","email","endereco",
+        cols = ["id","nome","crm","uf","telefone","email","endereco","endereco_json",
                 "site","redes_sociais","foto_drive_id","observacoes","ativo",
-                "especialidade","especialidade_id"]
+                "especialidade","especialidade_id","clinica_id","clinica_nome",
+                "clinica_nome_join"]
         rows = cur.fetchall()
-        return [dict(zip(cols, r)) for r in rows]
+        result = []
+        for r in rows:
+            d = dict(zip(cols, r))
+            # clinica_nome_join prevalece sobre clinica_nome (texto livre)
+            d["clinica_nome"] = d["clinica_nome_join"] or d["clinica_nome"] or ""
+            del d["clinica_nome_join"]
+            result.append(d)
+        return result
     finally:
         conn.close()
 
@@ -2820,25 +3199,32 @@ def salvar_medico(dados: dict) -> int:
         if dados.get("id"):
             cur.execute("""
                 UPDATE medicos SET nome=?, crm=?, uf=?, especialidade_id=?,
-                telefone=?, email=?, endereco=?, site=?, redes_sociais=?,
-                foto_drive_id=?, observacoes=?, ativo=?
+                telefone=?, email=?, endereco=?, endereco_json=?, site=?,
+                redes_sociais=?, foto_drive_id=?, observacoes=?, ativo=?,
+                clinica_id=?, clinica_nome=?
                 WHERE id=?
             """, (dados["nome"], dados.get("crm"), dados.get("uf"),
                   dados.get("especialidade_id"), dados.get("telefone"),
-                  dados.get("email"), dados.get("endereco"), dados.get("site"),
+                  dados.get("email"), dados.get("endereco"),
+                  dados.get("endereco_json"), dados.get("site"),
                   dados.get("redes_sociais"), dados.get("foto_drive_id"),
-                  dados.get("observacoes"), dados.get("ativo", 1), dados["id"]))
+                  dados.get("observacoes"), dados.get("ativo", 1),
+                  dados.get("clinica_id"), dados.get("clinica_nome"),
+                  dados["id"]))
             mid = dados["id"]
         else:
             cur.execute("""
                 INSERT INTO medicos (nome, crm, uf, especialidade_id, telefone,
-                email, endereco, site, redes_sociais, foto_drive_id, observacoes)
-                VALUES (?,?,?,?,?,?,?,?,?,?,?)
+                email, endereco, endereco_json, site, redes_sociais,
+                foto_drive_id, observacoes, clinica_id, clinica_nome)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
             """, (dados["nome"], dados.get("crm"), dados.get("uf"),
                   dados.get("especialidade_id"), dados.get("telefone"),
-                  dados.get("email"), dados.get("endereco"), dados.get("site"),
+                  dados.get("email"), dados.get("endereco"),
+                  dados.get("endereco_json"), dados.get("site"),
                   dados.get("redes_sociais"), dados.get("foto_drive_id"),
-                  dados.get("observacoes")))
+                  dados.get("observacoes"), dados.get("clinica_id"),
+                  dados.get("clinica_nome")))
             mid = cur.lastrowid
         conn.commit()
         return mid
@@ -3058,7 +3444,7 @@ def salvar_receita(dados: dict) -> int:
     try:
         cur  = conn.cursor()
         cur.execute("""
-            INSERT INTO receitas (consulta_id, medico_id, drive_file_id, nome_arquivo, data, observacoes, foto_path)
+            INSERT INTO receitas_laudos (consulta_id, medico_id, drive_file_id, nome_arquivo, data, observacoes, foto_path)
             VALUES (?,?,?,?,?,?,?)
         """, (dados.get("consulta_id"), dados.get("medico_id"),
               dados.get("drive_file_id"), dados.get("nome_arquivo"),
@@ -3074,7 +3460,18 @@ def salvar_receita(dados: dict) -> int:
         conn.close()
 
 
-def listar_receitas(consulta_id: int = None) -> list[dict]:
+def excluir_receita(receita_id: int) -> bool:
+    try:
+        with sqlite3.connect(DB_PATH, timeout=30) as conn:
+            conn.execute("DELETE FROM receitas_laudos WHERE id=?", (receita_id,))
+        return True
+    except Exception as ex:
+        import logging as _log
+        _log.getLogger(__name__).exception("[MODEL] excluir_receita: %s", ex)
+        return False
+
+
+def listar_receitas_laudos(consulta_id: int = None) -> list[dict]:
     conn = sqlite3.connect(DB_PATH, timeout=30)
     try:
         cur  = conn.cursor()
@@ -3082,7 +3479,7 @@ def listar_receitas(consulta_id: int = None) -> list[dict]:
         cur.execute(f"""
             SELECT r.id, r.data, r.nome_arquivo, r.drive_file_id,
                    r.observacoes, m.nome as medico, r.foto_path
-            FROM receitas r
+            FROM receitas_laudos r
             LEFT JOIN medicos m ON m.id = r.medico_id
             {where}
             ORDER BY r.data DESC
@@ -3383,13 +3780,18 @@ def listar_farmacias(so_ativas=True):
     try:
         where = "WHERE ativo=1" if so_ativas else ""
         rows = conn.execute(f"""
-            SELECT id, nome, endereco, telefone, whatsapp, site, app,
+            SELECT id, nome, razao_social, endereco, telefone, whatsapp, site, app,
                    delivery, preferida, observacoes, ativo
             FROM farmacias {where} ORDER BY preferida DESC, nome
         """).fetchall()
-        cols = ["id","nome","endereco","telefone","whatsapp","site","app",
+        cols = ["id","nome","razao_social","endereco","telefone","whatsapp","site","app",
                 "delivery","preferida","observacoes","ativo"]
-        return [dict(zip(cols, r)) for r in rows]
+        result = []
+        for r in [dict(zip(cols, row)) for row in rows]:
+            # nome_exibicao: fantasia se preenchido, senão razao_social
+            r["nome_exibicao"] = r["nome"] or r.get("razao_social") or ""
+            result.append(r)
+        return result
     finally:
         conn.close()
 
@@ -3399,17 +3801,21 @@ def salvar_farmacia(dados):
     try:
         cur = conn.cursor()
         if dados.get("id"):
-            cur.execute("""UPDATE farmacias SET nome=?, endereco=?, telefone=?, whatsapp=?,
-                           site=?, app=?, delivery=?, preferida=?, observacoes=?, ativo=? WHERE id=?""",
-                        (dados["nome"], dados.get("endereco"), dados.get("telefone"),
+            cur.execute("""UPDATE farmacias SET nome=?, razao_social=?, endereco=?,
+                           telefone=?, whatsapp=?, site=?, app=?,
+                           delivery=?, preferida=?, observacoes=?, ativo=? WHERE id=?""",
+                        (dados.get("nome") or "", dados.get("razao_social"),
+                         dados.get("endereco"), dados.get("telefone"),
                          dados.get("whatsapp"), dados.get("site"), dados.get("app"),
                          dados.get("delivery", 0), dados.get("preferida", 0),
                          dados.get("observacoes"), dados.get("ativo", 1), dados["id"]))
             fid = dados["id"]
         else:
-            cur.execute("""INSERT INTO farmacias (nome, endereco, telefone, whatsapp, site, app,
-                           delivery, preferida, observacoes) VALUES (?,?,?,?,?,?,?,?,?)""",
-                        (dados["nome"], dados.get("endereco"), dados.get("telefone"),
+            cur.execute("""INSERT INTO farmacias (nome, razao_social, endereco,
+                           telefone, whatsapp, site, app, delivery, preferida, observacoes)
+                           VALUES (?,?,?,?,?,?,?,?,?,?)""",
+                        (dados.get("nome") or "", dados.get("razao_social"),
+                         dados.get("endereco"), dados.get("telefone"),
                          dados.get("whatsapp"), dados.get("site"), dados.get("app"),
                          dados.get("delivery", 0), dados.get("preferida", 0),
                          dados.get("observacoes")))
@@ -3446,6 +3852,495 @@ def salvar_compra(dados):
         conn.rollback(); raise
     finally:
         conn.close()
+
+
+def registrar_mov(dados: dict) -> int:
+    """
+    Registra uma movimentacao em remedios_mov e atualiza estoque em remedios.
+
+    dados obrigatorios:
+      remedio_id, tipo ('compra'|'inicio_uso'|'tomada'|'ajuste'|'vencimento'),
+      data (YYYY-MM-DD), quantidade (positivo=entrada, negativo=saida)
+
+    dados opcionais:
+      preco_unitario, preco_total, farmacia_id, receita_id, consulta_id,
+      origem ('receita'|'manual'|'automatico'), observacoes
+    """
+    try:
+        with sqlite3.connect(DB_PATH, timeout=30) as conn:
+            # Calcula estoque apos movimentacao
+            row = conn.execute(
+                "SELECT estoque_atual FROM remedios WHERE id=?",
+                (dados["remedio_id"],)
+            ).fetchone()
+            estoque_atual = row[0] if row else 0
+            qtd = dados.get("quantidade", 0)
+            estoque_apos = estoque_atual + qtd
+
+            conn.execute("""
+                INSERT INTO remedios_mov
+                    (remedio_id, tipo, data, quantidade, estoque_apos,
+                     preco_unitario, preco_total, farmacia_id, receita_id,
+                     consulta_id, origem, observacoes,
+                     foto_nf_path, foto_nf_drive_id, qr_nfe)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            """, (
+                dados["remedio_id"],
+                dados["tipo"],
+                dados["data"],
+                qtd,
+                estoque_apos,
+                dados.get("preco_unitario"),
+                dados.get("preco_total"),
+                dados.get("farmacia_id"),
+                dados.get("receita_id"),
+                dados.get("consulta_id"),
+                dados.get("origem", "manual"),
+                dados.get("observacoes"),
+                dados.get("foto_nf_path"),
+                dados.get("foto_nf_drive_id"),
+                dados.get("qr_nfe"),
+            ))
+            mid = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+
+            # Atualiza estoque se movimento altera quantidade
+            if qtd != 0:
+                conn.execute(
+                    "UPDATE remedios SET estoque_atual = estoque_atual + ? WHERE id=?",
+                    (qtd, dados["remedio_id"])
+                )
+            return mid
+    except Exception as ex:
+        import logging as _log
+        _log.getLogger(__name__).exception("[MODEL] registrar_mov: %s", ex)
+        return -1
+
+
+def salvar_compra_nf(cabecalho: dict, itens: list[dict]) -> int:
+    """
+    Salva uma nota fiscal com seus itens.
+
+    cabecalho: {farmacia_id, data, total, foto_path, foto_drive_id, qr_nfe, observacoes}
+    itens: [{remedio_id, nome_nf, dosagem, quantidade_emb, comprimidos_emb,
+              preco_unitario, preco_total}]
+
+    Também registra movimentação de estoque em remedios_mov para cada item.
+    Retorna compra_id.
+    """
+    try:
+        with sqlite3.connect(DB_PATH, timeout=30) as conn:
+            cur = conn.cursor()
+            cur.execute("""
+                INSERT INTO compras
+                    (farmacia_id, data, total, foto_path, foto_drive_id, qr_nfe, observacoes)
+                VALUES (?,?,?,?,?,?,?)
+            """, (
+                cabecalho.get("farmacia_id"),
+                cabecalho.get("data"),
+                cabecalho.get("total", 0),
+                cabecalho.get("foto_path"),
+                cabecalho.get("foto_drive_id"),
+                cabecalho.get("qr_nfe"),
+                cabecalho.get("observacoes"),
+            ))
+            compra_id = cur.lastrowid
+
+            for it in itens:
+                cur.execute("""
+                    INSERT INTO compra_itens
+                        (compra_id, remedio_id, nome_nf, dosagem,
+                         quantidade_emb, comprimidos_emb, preco_unitario, preco_total)
+                    VALUES (?,?,?,?,?,?,?,?)
+                """, (
+                    compra_id,
+                    it.get("remedio_id"),
+                    it.get("nome_nf") or "",
+                    it.get("dosagem"),
+                    it.get("quantidade_emb", 1),
+                    it.get("comprimidos_emb"),
+                    it.get("preco_unitario", 0),
+                    it.get("preco_total", 0),
+                ))
+
+                # Atualiza estoque se tiver remedio_id
+                rid = it.get("remedio_id")
+                qtd = it.get("quantidade_emb", 1) or 1
+                if rid:
+                    cur.execute("""
+                        INSERT INTO remedios_mov
+                            (remedio_id, tipo, data, quantidade, estoque_apos,
+                             preco_unitario, preco_total, farmacia_id, origem, observacoes,
+                             foto_nf_path, foto_nf_drive_id, qr_nfe)
+                        SELECT
+                            ?, 'compra', ?, ?,
+                            COALESCE(estoque_atual, 0) + ?,
+                            ?, ?, ?, 'nota_fiscal', ?,
+                            ?, ?, ?
+                        FROM remedios WHERE id=?
+                    """, (
+                        rid,
+                        cabecalho.get("data"),
+                        qtd, qtd,
+                        it.get("preco_unitario", 0),
+                        it.get("preco_total", 0),
+                        cabecalho.get("farmacia_id"),
+                        it.get("nome_nf"),
+                        cabecalho.get("foto_path"),
+                        cabecalho.get("foto_drive_id"),
+                        cabecalho.get("qr_nfe"),
+                        rid,
+                    ))
+                    cur.execute(
+                        "UPDATE remedios SET estoque_atual = estoque_atual + ? WHERE id=?",
+                        (qtd, rid)
+                    )
+
+            return compra_id
+    except Exception as ex:
+        import logging as _log
+        _log.getLogger(__name__).exception("[MODEL] salvar_compra_nf: %s", ex)
+        raise
+
+
+def listar_compras_nf(limit: int = 50, incluir_canceladas: bool = False) -> list[dict]:
+    """Lista notas fiscais (cabeçalho) com totais e farmácia, mais recentes primeiro."""
+    try:
+        with sqlite3.connect(DB_PATH, timeout=10) as conn:
+            conn.row_factory = sqlite3.Row
+            where = "" if incluir_canceladas else "WHERE c.status != 'cancelada'"
+            rows = conn.execute(f"""
+                SELECT c.id, c.data, c.total, c.foto_path, c.foto_drive_id, c.qr_nfe,
+                       c.observacoes, c.criado_em, c.status,
+                       COALESCE(NULLIF(f.nome,''), f.razao_social) as farmacia_nome,
+                       f.id    as farmacia_id,
+                       COUNT(ci.id)                        as num_itens,
+                       GROUP_CONCAT(ci.nome_nf, ' | ')     as nomes_itens
+                FROM compras c
+                LEFT JOIN farmacias    f  ON f.id  = c.farmacia_id
+                LEFT JOIN compra_itens ci ON ci.compra_id = c.id
+                {where}
+                GROUP BY c.id
+                ORDER BY c.data DESC, c.id DESC
+                LIMIT ?
+            """, (limit,)).fetchall()
+            return [dict(r) for r in rows]
+    except Exception as ex:
+        import logging as _log
+        _log.getLogger(__name__).exception("[MODEL] listar_compras_nf: %s", ex)
+        return []
+
+
+def listar_itens_compra(compra_id: int) -> list[dict]:
+    """Lista itens de uma nota fiscal específica."""
+    try:
+        with sqlite3.connect(DB_PATH, timeout=10) as conn:
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute("""
+                SELECT ci.*, r.nome as remedio_nome
+                FROM compra_itens ci
+                LEFT JOIN remedios r ON r.id = ci.remedio_id
+                WHERE ci.compra_id = ?
+                ORDER BY ci.id
+            """, (compra_id,)).fetchall()
+            return [dict(r) for r in rows]
+    except Exception as ex:
+        import logging as _log
+        _log.getLogger(__name__).exception("[MODEL] listar_itens_compra: %s", ex)
+        return []
+
+
+def atualizar_compra_nf(compra_id: int, dados: dict) -> bool:
+    """Atualiza cabeçalho da compra (farmacia_id, data, observacoes)."""
+    try:
+        with sqlite3.connect(DB_PATH, timeout=10) as conn:
+            conn.execute("""
+                UPDATE compras SET farmacia_id=?, data=?, observacoes=?
+                WHERE id=?
+            """, (dados.get("farmacia_id"), dados.get("data"),
+                  dados.get("observacoes"), compra_id))
+        return True
+    except Exception as ex:
+        import logging as _log
+        _log.getLogger(__name__).exception("[MODEL] atualizar_compra_nf: %s", ex)
+        return False
+
+
+def cancelar_compra_nf(compra_id: int, motivo: str = "") -> bool:
+    """
+    Cancela uma nota fiscal inteira.
+    - Marca compra como 'cancelada'
+    - Reverte estoque de cada item em remedios
+    - Registra movimentação de estorno em remedios_mov
+    """
+    try:
+        with sqlite3.connect(DB_PATH, timeout=30) as conn:
+            conn.row_factory = sqlite3.Row
+            compra = conn.execute(
+                "SELECT * FROM compras WHERE id=?", (compra_id,)
+            ).fetchone()
+            if not compra or compra["status"] == "cancelada":
+                return False
+
+            itens = conn.execute(
+                "SELECT * FROM compra_itens WHERE compra_id=?", (compra_id,)
+            ).fetchall()
+
+            for it in itens:
+                rid = it["remedio_id"]
+                qtd_orig     = it["quantidade_emb"] or 0
+                qtd_devolvida = it["quantidade_devolvida"] or 0
+                qtd_estornar  = qtd_orig - qtd_devolvida
+                if rid and qtd_estornar > 0:
+                    row = conn.execute(
+                        "SELECT estoque_atual FROM remedios WHERE id=?", (rid,)
+                    ).fetchone()
+                    est_atual = row["estoque_atual"] if row else 0
+                    est_apos  = est_atual - qtd_estornar
+                    conn.execute("""
+                        INSERT INTO remedios_mov
+                            (remedio_id, tipo, data, quantidade, estoque_apos,
+                             farmacia_id, origem, observacoes)
+                        VALUES (?,?,date('now'),?,?,?,'cancelamento',?)
+                    """, (rid, "estorno", -qtd_estornar, est_apos,
+                          compra["farmacia_id"],
+                          motivo or f"Cancelamento NF #{compra_id}"))
+                    conn.execute(
+                        "UPDATE remedios SET estoque_atual = estoque_atual - ? WHERE id=?",
+                        (qtd_estornar, rid)
+                    )
+
+            conn.execute(
+                "UPDATE compras SET status=?, observacoes=? WHERE id=?",
+                ("cancelada",
+                 (compra["observacoes"] or "") + f" | Cancelado: {motivo}" if motivo else compra["observacoes"],
+                 compra_id)
+            )
+        return True
+    except Exception as ex:
+        import logging as _log
+        _log.getLogger(__name__).exception("[MODEL] cancelar_compra_nf: %s", ex)
+        return False
+
+
+def devolver_item_compra(item_id: int, quantidade: int, motivo: str = "") -> bool:
+    """
+    Registra devolução parcial de um item.
+    - Incrementa quantidade_devolvida
+    - Reverte estoque proporcional
+    - Registra movimentação de estorno
+    """
+    try:
+        with sqlite3.connect(DB_PATH, timeout=30) as conn:
+            conn.row_factory = sqlite3.Row
+            it = conn.execute(
+                """SELECT ci.*, c.farmacia_id FROM compra_itens ci
+                   JOIN compras c ON c.id = ci.compra_id WHERE ci.id=?""",
+                (item_id,)
+            ).fetchone()
+            if not it:
+                return False
+
+            qtd_disp = (it["quantidade_emb"] or 0) - (it["quantidade_devolvida"] or 0)
+            qtd_dev  = min(quantidade, qtd_disp)
+            if qtd_dev <= 0:
+                return False
+
+            rid = it["remedio_id"]
+            if rid:
+                row = conn.execute(
+                    "SELECT estoque_atual FROM remedios WHERE id=?", (rid,)
+                ).fetchone()
+                est_atual = row["estoque_atual"] if row else 0
+                est_apos  = est_atual - qtd_dev
+                conn.execute("""
+                    INSERT INTO remedios_mov
+                        (remedio_id, tipo, data, quantidade, estoque_apos,
+                         farmacia_id, origem, observacoes)
+                    VALUES (?,?,date('now'),?,?,?,'devolucao',?)
+                """, (rid, "estorno", -qtd_dev, est_apos,
+                      it["farmacia_id"],
+                      motivo or f"Devolução item #{item_id}"))
+                conn.execute(
+                    "UPDATE remedios SET estoque_atual = estoque_atual - ? WHERE id=?",
+                    (qtd_dev, rid)
+                )
+
+            conn.execute(
+                "UPDATE compra_itens SET quantidade_devolvida = quantidade_devolvida + ? WHERE id=?",
+                (qtd_dev, item_id)
+            )
+        return True
+    except Exception as ex:
+        import logging as _log
+        _log.getLogger(__name__).exception("[MODEL] devolver_item_compra: %s", ex)
+        return False
+
+
+def listar_notas_fiscais(limit: int = 50) -> list[dict]:
+    """
+    Lista compras via nota fiscal agrupadas por nota.
+    Agrupa por (data, farmacia_id, foto_nf_path) — cada grupo é uma NF.
+    Retorna lista com total da nota, farmácia, data, itens e foto.
+    """
+    try:
+        with sqlite3.connect(DB_PATH, timeout=10) as conn:
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute("""
+                SELECT
+                    m.data,
+                    m.farmacia_id,
+                    f.nome  as farmacia_nome,
+                    m.foto_nf_path,
+                    m.foto_nf_drive_id,
+                    m.qr_nfe,
+                    SUM(m.preco_total)  as total_nota,
+                    COUNT(*)            as num_itens,
+                    GROUP_CONCAT(r.nome, ' | ') as nomes_remedios,
+                    MIN(m.id)           as id_ref
+                FROM remedios_mov m
+                LEFT JOIN farmacias f ON f.id = m.farmacia_id
+                LEFT JOIN remedios  r ON r.id = m.remedio_id
+                WHERE m.origem = 'nota_fiscal'
+                GROUP BY m.data, m.farmacia_id, COALESCE(m.foto_nf_path, m.id)
+                ORDER BY m.data DESC, id_ref DESC
+                LIMIT ?
+            """, (limit,)).fetchall()
+            return [dict(r) for r in rows]
+    except Exception as ex:
+        import logging as _log
+        _log.getLogger(__name__).exception("[MODEL] listar_notas_fiscais: %s", ex)
+        return []
+
+
+def listar_mov_remedio(remedio_id: int, limit: int = 50) -> list[dict]:
+    """Retorna movimentacoes de um remedio, mais recentes primeiro."""
+    try:
+        with sqlite3.connect(DB_PATH, timeout=10) as conn:
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute("""
+                SELECT m.*, f.nome as farmacia_nome
+                FROM remedios_mov m
+                LEFT JOIN farmacias f ON f.id = m.farmacia_id
+                WHERE m.remedio_id = ?
+                ORDER BY m.data DESC, m.id DESC
+                LIMIT ?
+            """, (remedio_id, limit)).fetchall()
+            return [dict(r) for r in rows]
+    except Exception as ex:
+        import logging as _log
+        _log.getLogger(__name__).exception("[MODEL] listar_mov_remedio: %s", ex)
+        return []
+
+
+def registrar_receita_remedios(
+    remedios_extraidos: list[dict],
+    receita_id: int | None,
+    consulta_id: int | None,
+    medico_id: int | None,
+    data_consulta: str,
+) -> list[dict]:
+    """
+    Processa lista de remedios extraidos da receita:
+    - Remedio ja cadastrado  -> registrar_mov tipo='compra' + 'inicio_uso'
+    - Remedio novo           -> salvar_remedio + registrar_mov tipo='inicio_uso'
+
+    Retorna lista de dicts com resultado por remedio:
+      {nome, acao: 'cadastrado'|'atualizado', remedio_id, mov_id}
+    """
+    existentes = {
+        r["nome"].strip().upper(): r
+        for r in listar_remedios(so_ativos=False)
+    }
+    resultado = []
+
+    for med in remedios_extraidos:
+        nome = (med.get("nome") or "").strip()
+        if not nome:
+            continue
+        chave = nome.upper()
+
+        if chave in existentes:
+            rem = existentes[chave]
+            rid = rem["id"]
+            # Atualiza dados da prescricao
+            salvar_remedio({
+                "id":          rid,
+                "nome":        rem["nome"],
+                "dosagem":     med.get("dosagem") or rem.get("dosagem"),
+                "frequencia":  med.get("frequencia") or rem.get("frequencia"),
+                "data_inicio": data_consulta,
+                "data_fim":    rem.get("data_fim"),
+                "medico_id":   medico_id or rem.get("medico_id"),
+                "receita_id":  receita_id or rem.get("receita_id"),
+                "estoque_atual":  rem.get("estoque_atual", 0),
+                "estoque_minimo": rem.get("estoque_minimo", 5),
+                "observacoes": med.get("observacoes") or rem.get("observacoes"),
+                "ativo":       rem.get("ativo", 1),
+                "principio_ativo": rem.get("principio_ativo"),
+                "tipo":        rem.get("tipo", "remedio"),
+                "prescrito":   1,
+            })
+            # Registra inicio de uso na movimentacao (sem alterar estoque)
+            mid = registrar_mov({
+                "remedio_id":  rid,
+                "tipo":        "inicio_uso",
+                "data":        data_consulta,
+                "quantidade":  0,
+                "receita_id":  receita_id,
+                "consulta_id": consulta_id,
+                "origem":      "receita",
+                "observacoes": (
+                    f"Receita: {med.get('dosagem','')} {med.get('frequencia','')}".strip()
+                ),
+            })
+            resultado.append({
+                "nome": nome,
+                "acao": "atualizado",
+                "remedio_id": rid,
+                "mov_id": mid,
+                "ja_existia": True,
+            })
+        else:
+            # Cadastra remedio novo
+            rid = salvar_remedio({
+                "id":          None,
+                "nome":        nome,
+                "dosagem":     med.get("dosagem"),
+                "frequencia":  med.get("frequencia"),
+                "data_inicio": data_consulta,
+                "data_fim":    None,
+                "medico_id":   medico_id,
+                "receita_id":  receita_id,
+                "estoque_atual":  0,
+                "estoque_minimo": 5,
+                "observacoes": med.get("observacoes"),
+                "ativo":       1,
+                "principio_ativo": None,
+                "tipo":        "remedio",
+                "prescrito":   1,
+            })
+            # Registra inicio de uso
+            mid = registrar_mov({
+                "remedio_id":  rid,
+                "tipo":        "inicio_uso",
+                "data":        data_consulta,
+                "quantidade":  0,
+                "receita_id":  receita_id,
+                "consulta_id": consulta_id,
+                "origem":      "receita",
+                "observacoes": (
+                    f"Primeiro uso. {med.get('dosagem','')} {med.get('frequencia','')}".strip()
+                ),
+            })
+            resultado.append({
+                "nome": nome,
+                "acao": "cadastrado",
+                "remedio_id": rid,
+                "mov_id": mid,
+                "ja_existia": False,
+            })
+
+    return resultado
 
 
 def listar_compras_remedio(remedio_id):
@@ -3629,11 +4524,11 @@ Se não encontrar preço, coloque preco: null e disponivel: false."""
 # ══════════════════════════════════════════════════════════════
 
 def salvar_perfil(dados: dict):
-    """Upsert do perfil (sempre id=1)."""
+    """Upsert do perfil (sempre id=1). Salva em prontuario.db (backup) e espelha em koios.db."""
     import json as _json
-    conn = sqlite3.connect(CORE_DB, timeout=30)
-    try:
-        conn.execute("""
+    _migrar_campos_perfil()
+
+    _SQL = """
         INSERT INTO perfil_usuario (
             id, nome, email, data_nasc, sexo, foto_url,
             peso, altura, tipo_sanguineo, condicoes_cronicas,
@@ -3657,7 +4552,8 @@ def salvar_perfil(dados: dict):
             accent_color       = excluded.accent_color,
             tamanho_fonte      = excluded.tamanho_fonte,
             atualizado_em      = datetime('now')
-    """, (
+    """
+    _params = (
         dados.get("nome"),
         dados.get("email"),
         dados.get("data_nasc"),
@@ -3672,33 +4568,46 @@ def salvar_perfil(dados: dict):
         dados.get("tema", "dark"),
         dados.get("accent_color", "#58A6FF"),
         dados.get("tamanho_fonte", "medio"),
-    ))
-        conn.commit()
-    except Exception:
-        conn.rollback()
-        raise
-    finally:
-        conn.close()
+    )
+
+    # salva em prontuario.db (fonte do backup)
+    with _ProntuarioConn(DB_PATH, timeout=30) as conn:
+        conn.execute(_SQL, _params)
+
+    # espelha em koios.db para compatibilidade
+    try:
+        conn2 = sqlite3.connect(CORE_DB, timeout=30)
+        conn2.execute(_SQL, _params)
+        conn2.commit()
+        conn2.close()
+    except Exception as ex:
+        print(f"[PERFIL] espelho koios.db: {ex}")
 
 
 def carregar_perfil() -> dict | None:
-    """Retorna o perfil ou None se ainda não cadastrado."""
+    """Retorna o perfil ou None se ainda não cadastrado.
+    Le de prontuario.db primeiro (fonte do backup); fallback para koios.db."""
     import json as _json
-    _migrar_campos_perfil()  # garante colunas novas no banco existente
-    _migrar_status_exames()   # garante coluna status em exames
-    conn = sqlite3.connect(CORE_DB, timeout=30)
-    try:
-        cur  = conn.cursor()
-        cur.execute("""
-            SELECT nome, email, data_nasc, sexo, foto_url,
-                   peso, altura, tipo_sanguineo, condicoes_cronicas,
-                   contato_emergencia, tel_emergencia,
-                   tema, accent_color, tamanho_fonte
-            FROM perfil_usuario WHERE id = 1
-        """)
-        row = cur.fetchone()
-    finally:
-        conn.close()
+    _migrar_campos_perfil()
+    _migrar_status_exames()
+
+    _SQL_SEL = """
+        SELECT nome, email, data_nasc, sexo, foto_url,
+               peso, altura, tipo_sanguineo, condicoes_cronicas,
+               contato_emergencia, tel_emergencia,
+               tema, accent_color, tamanho_fonte
+        FROM perfil_usuario WHERE id = 1
+    """
+    row = None
+    for _db in (DB_PATH, CORE_DB):
+        try:
+            conn = sqlite3.connect(_db, timeout=30)
+            row  = conn.execute(_SQL_SEL).fetchone()
+            conn.close()
+            if row and row[0]:   # tem nome preenchido
+                break
+        except Exception:
+            pass
     if not row:
         return None
     try:
@@ -4378,13 +5287,17 @@ def listar_templates(so_ativos=True) -> list[dict]:
             where = "WHERE ativo=1" if so_ativos else ""
             rows = conn.execute(f"""
                 SELECT t.id, t.nome, t.icone, t.cor, t.tipo, t.horario, t.padrao, t.ativo,
-                       COUNT(m.id) as total_momentos
+                       COUNT(m.id) as total_momentos,
+                       t.hora_inicio, t.hora_fim,
+                       t.intensidade_fisica, t.intensidade_mental
                 FROM rotinas_templates t
                 LEFT JOIN momentos_rotina m ON m.template_id = t.id
                 {where}
-                GROUP BY t.id ORDER BY t.horario NULLS LAST, t.nome
+                GROUP BY t.id ORDER BY COALESCE(t.horario, t.hora_inicio) NULLS LAST, t.nome
             """).fetchall()
-            cols = ["id","nome","icone","cor","tipo","horario","padrao","ativo","total_momentos"]
+            cols = ["id","nome","icone","cor","tipo","horario","padrao","ativo",
+                    "total_momentos","hora_inicio","hora_fim",
+                    "intensidade_fisica","intensidade_mental"]
             return [dict(zip(cols, r)) for r in rows]
     except Exception as ex:
         print(f"[MODEL] listar_templates: {ex}")
@@ -4396,19 +5309,32 @@ def salvar_template(dados: dict) -> int:
         with sqlite3.connect(DB_PATH, timeout=10) as conn:
             if dados.get("id"):
                 conn.execute("""UPDATE rotinas_templates
-                    SET nome=?, tipo=?, horario=?, padrao=?, ativo=?
+                    SET nome=?, tipo=?, horario=?, padrao=?, ativo=?,
+                        hora_inicio=?, hora_fim=?,
+                        intensidade_fisica=?, intensidade_mental=?
                     WHERE id=?""",
                     (dados["nome"], dados.get("tipo","alimentacao"),
                      dados.get("horario") or None,
                      1 if dados.get("padrao") else 0,
-                     1 if dados.get("ativo", True) else 0, dados["id"]))
+                     1 if dados.get("ativo", True) else 0,
+                     dados.get("hora_inicio") or None,
+                     dados.get("hora_fim") or None,
+                     dados.get("intensidade_fisica") or None,
+                     dados.get("intensidade_mental") or None,
+                     dados["id"]))
                 return dados["id"]
             else:
-                cur = conn.execute("""INSERT INTO rotinas_templates (nome,tipo,horario,padrao,ativo)
-                    VALUES (?,?,?,?,?)""",
+                cur = conn.execute("""INSERT INTO rotinas_templates
+                    (nome, tipo, horario, padrao, ativo,
+                     hora_inicio, hora_fim, intensidade_fisica, intensidade_mental)
+                    VALUES (?,?,?,?,?,?,?,?,?)""",
                     (dados["nome"], dados.get("tipo","alimentacao"),
                      dados.get("horario") or None,
-                     1 if dados.get("padrao") else 0, 1))
+                     1 if dados.get("padrao") else 0, 1,
+                     dados.get("hora_inicio") or None,
+                     dados.get("hora_fim") or None,
+                     dados.get("intensidade_fisica") or None,
+                     dados.get("intensidade_mental") or None))
                 return cur.lastrowid
     except Exception as ex:
         print(f"[MODEL] salvar_template: {ex}")
@@ -4476,7 +5402,10 @@ def listar_itens(momento_id: int) -> list[dict]:
                 SELECT i.id, i.tipo, i.descricao, i.quantidade, i.unidade,
                        i.detalhe, i.horario, i.frequencia,
                        i.calorias, i.proteinas, i.vitaminas, i.ordem,
-                       r.nome as remedio_nome, r.dosagem as remedio_dosagem
+                       r.nome as remedio_nome, r.dosagem as remedio_dosagem,
+                       i.hora_inicio, i.hora_fim,
+                       i.intensidade_fisica, i.intensidade_mental,
+                       i.remedio_id
                 FROM itens_momento i
                 LEFT JOIN remedios r ON r.id = i.remedio_id
                 WHERE i.momento_id=? ORDER BY i.ordem, i.id
@@ -4484,7 +5413,10 @@ def listar_itens(momento_id: int) -> list[dict]:
             cols = ["id","tipo","descricao","quantidade","unidade",
                     "detalhe","horario","frequencia",
                     "calorias","proteinas","vitaminas","ordem",
-                    "remedio_nome","remedio_dosagem"]
+                    "remedio_nome","remedio_dosagem",
+                    "hora_inicio","hora_fim",
+                    "intensidade_fisica","intensidade_mental",
+                    "remedio_id"]
             return [dict(zip(cols, r)) for r in rows]
     except Exception as ex:
         print(f"[MODEL] listar_itens: {ex}")
@@ -4495,25 +5427,35 @@ def salvar_item(dados: dict) -> int:
     try:
         with sqlite3.connect(DB_PATH, timeout=10) as conn:
             if dados.get("id"):
-                conn.execute("""UPDATE itens_momento SET tipo=?, descricao=?,
-                    quantidade=?, unidade=?, detalhe=?,
-                    horario=?, frequencia=?, remedio_id=?, ordem=? WHERE id=?""",
-                    (dados.get("tipo","alimento"), dados["descricao"],
+                conn.execute("""UPDATE itens_momento SET
+                    tipo=?, descricao=?, quantidade=?, unidade=?, detalhe=?,
+                    horario=?, frequencia=?, remedio_id=?, ordem=?,
+                    hora_inicio=?, hora_fim=?,
+                    intensidade_fisica=?, intensidade_mental=?
+                    WHERE id=?""",
+                    (dados.get("tipo","alimento"), dados.get("descricao",""),
                      dados.get("quantidade"), dados.get("unidade","Unidade"),
                      dados.get("detalhe"), dados.get("horario"),
                      dados.get("frequencia","diario"),
-                     dados.get("remedio_id"), dados.get("ordem", 0), dados["id"]))
+                     dados.get("remedio_id"), dados.get("ordem", 0),
+                     dados.get("hora_inicio"), dados.get("hora_fim"),
+                     dados.get("intensidade_fisica"), dados.get("intensidade_mental"),
+                     dados["id"]))
                 return dados["id"]
             else:
                 cur = conn.execute("""INSERT INTO itens_momento
-                    (momento_id,tipo,descricao,quantidade,unidade,
-                     detalhe,horario,frequencia,remedio_id,ordem)
-                    VALUES (?,?,?,?,?,?,?,?,?,?)""",
-                    (dados["momento_id"], dados.get("tipo","alimento"), dados["descricao"],
+                    (momento_id, tipo, descricao, quantidade, unidade,
+                     detalhe, horario, frequencia, remedio_id, ordem,
+                     hora_inicio, hora_fim, intensidade_fisica, intensidade_mental)
+                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                    (dados["momento_id"], dados.get("tipo","alimento"),
+                     dados.get("descricao",""),
                      dados.get("quantidade"), dados.get("unidade","Unidade"),
                      dados.get("detalhe"), dados.get("horario"),
                      dados.get("frequencia","diario"),
-                     dados.get("remedio_id"), dados.get("ordem", 0)))
+                     dados.get("remedio_id"), dados.get("ordem", 0),
+                     dados.get("hora_inicio"), dados.get("hora_fim"),
+                     dados.get("intensidade_fisica"), dados.get("intensidade_mental")))
                 return cur.lastrowid
     except Exception as ex:
         print(f"[MODEL] salvar_item: {ex}")
@@ -4565,6 +5507,813 @@ def excluir_item(iid: int) -> None:
             conn.execute("DELETE FROM itens_momento WHERE id=?", (iid,))
     except Exception as ex:
         print(f"[MODEL] excluir_item: {ex}")
+
+
+# ── Ingredientes do item ───────────────────────────────────────────────
+
+def listar_ingredientes_item(item_id: int) -> list[dict]:
+    try:
+        with sqlite3.connect(DB_PATH, timeout=10) as conn:
+            rows = conn.execute("""
+                SELECT ii.id, ii.tipo, ii.descricao, ii.sub_receita_id,
+                       r.nome as receita_nome,
+                       ii.quantidade, ii.unidade, ii.calorias, ii.proteinas,
+                       ii.peso_unitario_g, ii.ordem
+                FROM item_ingredientes ii
+                LEFT JOIN receitas r ON r.id = ii.sub_receita_id
+                WHERE ii.item_id = ? ORDER BY ii.ordem, ii.id
+            """, (item_id,)).fetchall()
+            cols = ["id","tipo","descricao","sub_receita_id","receita_nome",
+                    "quantidade","unidade","calorias","proteinas","peso_unitario_g","ordem"]
+            return [dict(zip(cols, r)) for r in rows]
+    except Exception as ex:
+        print(f"[MODEL] listar_ingredientes_item: {ex}")
+        return []
+
+
+def salvar_ingrediente_item(dados: dict) -> int:
+    try:
+        with sqlite3.connect(DB_PATH, timeout=10) as conn:
+            if dados.get("id"):
+                conn.execute("""UPDATE item_ingredientes
+                    SET tipo=?, descricao=?, sub_receita_id=?,
+                        quantidade=?, unidade=?, calorias=?, proteinas=?,
+                        peso_unitario_g=?, ordem=?
+                    WHERE id=?""",
+                    (dados.get("tipo","item"), dados.get("descricao"),
+                     dados.get("sub_receita_id"),
+                     dados.get("quantidade"), dados.get("unidade","Unidade"),
+                     dados.get("calorias"), dados.get("proteinas"),
+                     dados.get("peso_unitario_g"),
+                     dados.get("ordem", 0), dados["id"]))
+                return dados["id"]
+            else:
+                cur = conn.execute("""INSERT INTO item_ingredientes
+                    (item_id, tipo, descricao, sub_receita_id,
+                     quantidade, unidade, calorias, proteinas, peso_unitario_g, ordem)
+                    VALUES (?,?,?,?,?,?,?,?,?,?)""",
+                    (dados["item_id"], dados.get("tipo","item"),
+                     dados.get("descricao"), dados.get("sub_receita_id"),
+                     dados.get("quantidade"), dados.get("unidade","Unidade"),
+                     dados.get("calorias"), dados.get("proteinas"),
+                     dados.get("peso_unitario_g"),
+                     dados.get("ordem", 0)))
+                return cur.lastrowid
+    except Exception as ex:
+        print(f"[MODEL] salvar_ingrediente_item: {ex}")
+        return 0
+
+
+def excluir_ingrediente_item(ingr_id: int) -> None:
+    try:
+        with sqlite3.connect(DB_PATH, timeout=10) as conn:
+            conn.execute("DELETE FROM item_ingredientes WHERE id=?", (ingr_id,))
+    except Exception as ex:
+        print(f"[MODEL] excluir_ingrediente_item: {ex}")
+
+
+def listar_receitas(so_ativas: bool = True) -> list[dict]:
+    try:
+        with sqlite3.connect(DB_PATH, timeout=10) as conn:
+            filtro = "WHERE r.ativo=1" if so_ativas else ""
+            rows = conn.execute(f"""
+                SELECT r.id, r.nome, r.descricao, r.rendimento_qtd, r.rendimento_unid,
+                       r.calorias_total, r.proteinas_total, r.ativo,
+                       COUNT(ri.id) as total_ingredientes
+                FROM receitas r
+                LEFT JOIN receita_ingredientes ri ON ri.receita_id = r.id
+                {filtro}
+                GROUP BY r.id ORDER BY r.nome
+            """).fetchall()
+            cols = ["id","nome","descricao","rendimento_qtd","rendimento_unid",
+                    "calorias_total","proteinas_total","ativo","total_ingredientes"]
+            return [dict(zip(cols, r)) for r in rows]
+    except Exception as ex:
+        print(f"[MODEL] listar_receitas: {ex}")
+        return []
+
+
+def salvar_receita_culinaria(dados: dict) -> int:
+    try:
+        with sqlite3.connect(DB_PATH, timeout=10) as conn:
+            if dados.get("id"):
+                conn.execute("""UPDATE receitas SET nome=?, descricao=?, modo_preparo=?,
+                    rendimento_qtd=?, rendimento_unid=?, porcao_qtd=?, porcao_unid=?, ativo=?
+                    WHERE id=?""",
+                    (dados["nome"], dados.get("descricao"), dados.get("modo_preparo"),
+                     dados.get("rendimento_qtd"), dados.get("rendimento_unid","Porcao"),
+                     dados.get("porcao_qtd"), dados.get("porcao_unid"),
+                     dados.get("ativo", 1), dados["id"]))
+                return dados["id"]
+            else:
+                cur = conn.execute("""INSERT INTO receitas
+                    (nome, descricao, modo_preparo, rendimento_qtd, rendimento_unid,
+                     porcao_qtd, porcao_unid, ativo)
+                    VALUES (?,?,?,?,?,?,?,?)""",
+                    (dados["nome"], dados.get("descricao"), dados.get("modo_preparo"),
+                     dados.get("rendimento_qtd"), dados.get("rendimento_unid","Porcao"),
+                     dados.get("porcao_qtd"), dados.get("porcao_unid"),
+                     dados.get("ativo", 1)))
+                return cur.lastrowid
+    except Exception as ex:
+        print(f"[MODEL] salvar_receita_culinaria: {ex}")
+        return 0
+
+
+def excluir_receita_culinaria(rid: int) -> None:
+    try:
+        with sqlite3.connect(DB_PATH, timeout=10) as conn:
+            conn.execute("DELETE FROM receitas WHERE id=?", (rid,))
+    except Exception as ex:
+        print(f"[MODEL] excluir_receita_culinaria: {ex}")
+
+
+def listar_ingredientes_receita(receita_id: int) -> list[dict]:
+    try:
+        with sqlite3.connect(DB_PATH, timeout=10) as conn:
+            rows = conn.execute("""
+                SELECT ri.id, ri.tipo, ri.descricao, ri.sub_receita_id,
+                       r2.nome as sub_nome,
+                       ri.quantidade, ri.unidade, ri.calorias, ri.proteinas, ri.ordem
+                FROM receita_ingredientes ri
+                LEFT JOIN receitas r2 ON r2.id = ri.sub_receita_id
+                WHERE ri.receita_id=? ORDER BY ri.ordem, ri.id
+            """, (receita_id,)).fetchall()
+            cols = ["id","tipo","descricao","sub_receita_id","sub_nome",
+                    "quantidade","unidade","calorias","proteinas","ordem"]
+            return [dict(zip(cols, r)) for r in rows]
+    except Exception as ex:
+        print(f"[MODEL] listar_ingredientes_receita: {ex}")
+        return []
+
+
+def salvar_ingrediente_receita(dados: dict) -> int:
+    try:
+        with sqlite3.connect(DB_PATH, timeout=10) as conn:
+            if dados.get("id"):
+                conn.execute("""UPDATE receita_ingredientes
+                    SET tipo=?, descricao=?, sub_receita_id=?,
+                        quantidade=?, unidade=?, calorias=?, proteinas=?, ordem=?
+                    WHERE id=?""",
+                    (dados.get("tipo","item"), dados.get("descricao"),
+                     dados.get("sub_receita_id"),
+                     dados.get("quantidade"), dados.get("unidade","Unidade"),
+                     dados.get("calorias"), dados.get("proteinas"),
+                     dados.get("ordem",0), dados["id"]))
+                return dados["id"]
+            else:
+                cur = conn.execute("""INSERT INTO receita_ingredientes
+                    (receita_id, tipo, descricao, sub_receita_id,
+                     quantidade, unidade, calorias, proteinas, ordem)
+                    VALUES (?,?,?,?,?,?,?,?,?)""",
+                    (dados["receita_id"], dados.get("tipo","item"),
+                     dados.get("descricao"), dados.get("sub_receita_id"),
+                     dados.get("quantidade"), dados.get("unidade","Unidade"),
+                     dados.get("calorias"), dados.get("proteinas"),
+                     dados.get("ordem",0)))
+                return cur.lastrowid
+    except Exception as ex:
+        print(f"[MODEL] salvar_ingrediente_receita: {ex}")
+        return 0
+
+
+def excluir_ingrediente_receita(iid: int) -> None:
+    try:
+        with sqlite3.connect(DB_PATH, timeout=10) as conn:
+            conn.execute("DELETE FROM receita_ingredientes WHERE id=?", (iid,))
+    except Exception as ex:
+        print(f"[MODEL] excluir_ingrediente_receita: {ex}")
+
+
+def salvar_nutricao(dados: dict) -> int:
+    """Salva ou atualiza tabela nutricional de uma entidade (receita, ingrediente, item)."""
+    try:
+        with sqlite3.connect(DB_PATH, timeout=10) as conn:
+            existing = conn.execute(
+                "SELECT id FROM nutricao WHERE entidade_tipo=? AND entidade_id=?",
+                (dados["entidade_tipo"], dados["entidade_id"])).fetchone()
+            if existing:
+                conn.execute("""UPDATE nutricao SET
+                    por_100g=?, kcal=?, kj=?, carboidratos=?, acucares=?,
+                    proteinas=?, gorduras=?, saturadas=?, trans=?,
+                    fibras=?, sodio=?, vitaminas_json=?, atualizado_em=datetime('now')
+                    WHERE entidade_tipo=? AND entidade_id=?""",
+                    (dados.get("por_100g",100), dados.get("kcal"),
+                     dados.get("kj"), dados.get("carboidratos"), dados.get("acucares"),
+                     dados.get("proteinas"), dados.get("gorduras"), dados.get("saturadas"),
+                     dados.get("trans"), dados.get("fibras"), dados.get("sodio"),
+                     dados.get("vitaminas_json"),
+                     dados["entidade_tipo"], dados["entidade_id"]))
+                return existing[0]
+            else:
+                cur = conn.execute("""INSERT INTO nutricao
+                    (entidade_tipo, entidade_id, por_100g, kcal, kj,
+                     carboidratos, acucares, proteinas, gorduras, saturadas,
+                     trans, fibras, sodio, vitaminas_json)
+                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                    (dados["entidade_tipo"], dados["entidade_id"],
+                     dados.get("por_100g",100), dados.get("kcal"),
+                     dados.get("kj"), dados.get("carboidratos"), dados.get("acucares"),
+                     dados.get("proteinas"), dados.get("gorduras"), dados.get("saturadas"),
+                     dados.get("trans"), dados.get("fibras"), dados.get("sodio"),
+                     dados.get("vitaminas_json")))
+                return cur.lastrowid
+    except Exception as ex:
+        print(f"[MODEL] salvar_nutricao: {ex}")
+        return 0
+
+
+def carregar_nutricao(entidade_tipo: str, entidade_id: int) -> dict | None:
+    try:
+        with sqlite3.connect(DB_PATH, timeout=10) as conn:
+            row = conn.execute("""
+                SELECT por_100g, kcal, kj, carboidratos, acucares,
+                       proteinas, gorduras, saturadas, trans, fibras, sodio, vitaminas_json
+                FROM nutricao WHERE entidade_tipo=? AND entidade_id=?
+            """, (entidade_tipo, entidade_id)).fetchone()
+            if not row:
+                return None
+            cols = ["por_100g","kcal","kj","carboidratos","acucares",
+                    "proteinas","gorduras","saturadas","trans","fibras","sodio","vitaminas_json"]
+            return dict(zip(cols, row))
+    except Exception as ex:
+        print(f"[MODEL] carregar_nutricao: {ex}")
+        return None
+
+
+def _criar_tabela_nutricao():
+    try:
+        with sqlite3.connect(DB_PATH, timeout=10) as conn:
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS nutricao (
+                    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+                    entidade_tipo  TEXT NOT NULL,
+                    entidade_id    INTEGER NOT NULL,
+                    por_100g       REAL DEFAULT 100,
+                    kcal           REAL,
+                    kj             REAL,
+                    carboidratos   REAL,
+                    acucares       REAL,
+                    proteinas      REAL,
+                    gorduras       REAL,
+                    saturadas      REAL,
+                    trans          REAL,
+                    fibras         REAL,
+                    sodio          REAL,
+                    vitaminas_json TEXT,
+                    atualizado_em  TEXT DEFAULT (datetime('now')),
+                    UNIQUE(entidade_tipo, entidade_id)
+                )
+            """)
+    except Exception as ex:
+        print(f"[MODEL] _criar_tabela_nutricao: {ex}")
+
+
+# ── Tabela de conversao medidas caseiras → gramas (padrao TACO/IBGE) ──────
+_MEDIDAS_GRAMAS: dict[str, float] = {
+    "C.Sopa":  15.0,
+    "C.Cha":    5.0,
+    "Scoop":   30.0,
+    "Xicara": 240.0,
+    "Porcao": 100.0,
+    "Fatia":   30.0,
+    "Unidade": 100.0,
+    "g":         1.0,
+    "kg":     1000.0,
+    "ml":        1.0,
+    "Litro":  1000.0,
+    "Pitada":    0.5,
+    "Ramo":      5.0,
+}
+
+
+def _porcao_em_gramas(qtd_str: str, unid: str) -> float:
+    """Converte quantidade + unidade em gramas/ml equivalentes."""
+    try:
+        qtd = float((qtd_str or "1").strip())
+    except (ValueError, TypeError):
+        qtd = 1.0
+    fator = _MEDIDAS_GRAMAS.get(unid, 100.0)
+    return qtd * fator
+
+
+def _nutricao_proporcional(n: dict, gramas: float) -> dict:
+    """Retorna valores nutricionais proporcionais a `gramas` a partir de tabela por 100g."""
+    if not n:
+        return {}
+    base = n.get("por_100g") or 100.0
+    fator = gramas / base
+    campos = ["kcal","kj","carboidratos","acucares","proteinas",
+              "gorduras","saturadas","trans","fibras","sodio"]
+    return {c: (n[c] * fator if n.get(c) is not None else None) for c in campos}
+
+
+def calcular_tmb() -> dict:
+    """
+    Calcula TMB (Taxa Metabolica Basal) pelo metodo Mifflin-St Jeor.
+    Retorna {"tmb": float, "peso": float, "altura": float,
+             "idade": int, "sexo": str, "completo": bool}
+    """
+    try:
+        from datetime import date as _date
+        with sqlite3.connect(DB_PATH, timeout=10) as conn:
+            row = conn.execute(
+                "SELECT peso, altura, data_nasc, sexo FROM perfil_usuario LIMIT 1"
+            ).fetchone()
+        if not row or not row[0] or not row[1] or not row[2]:
+            return {"tmb": None, "completo": False}
+        peso, altura, data_nasc, sexo = row
+        # calcula idade
+        try:
+            nasc = _date.fromisoformat(str(data_nasc)[:10])
+            hoje = _date.today()
+            idade = hoje.year - nasc.year - (
+                (hoje.month, hoje.day) < (nasc.month, nasc.day))
+        except Exception:
+            return {"tmb": None, "completo": False}
+        # Mifflin-St Jeor
+        base = 10 * float(peso) + 6.25 * float(altura) - 5 * idade
+        tmb = base + 5 if str(sexo).lower() in ("m", "masculino", "masc") else base - 161
+        return {
+            "tmb":     round(tmb, 0),
+            "peso":    float(peso),
+            "altura":  float(altura),
+            "idade":   idade,
+            "sexo":    sexo,
+            "completo": True,
+        }
+    except Exception as ex:
+        print(f"[MODEL] calcular_tmb: {ex}")
+        return {"tmb": None, "completo": False}
+
+
+# MET (Metabolic Equivalent of Task) por tipo e intensidade
+_MET_FISICO = {
+    "leve":     2.5,   # alongamento, caminhada lenta
+    "moderado": 5.0,   # musculacao, caminhada rapida, bike leve
+    "intenso":  9.0,   # corrida, HIIT, natacao rapida
+}
+_MET_MENTAL = {
+    "leve":     1.3,   # leitura casual, reuniao passiva
+    "moderado": 1.6,   # estudo, escrita, reuniao ativa
+    "intenso":  1.9,   # programacao concentrada, resolucao de problemas complexos
+}
+
+
+def calcular_gasto_item(hora_inicio: str, hora_fim: str,
+                        intensidade_fisica: str = None,
+                        intensidade_mental: str = None,
+                        peso_kg: float = 80.0) -> dict:
+    """
+    Calcula gasto calorico de um item de atividade/trabalho.
+    Retorna {'kcal_gasto': float, 'duracao_min': int, 'met': float}
+    """
+    try:
+        from datetime import datetime as _dt
+        fmt = "%H:%M"
+        hi = _dt.strptime((hora_inicio or "").strip(), fmt)
+        hf = _dt.strptime((hora_fim or "").strip(), fmt)
+        duracao_min = (hf - hi).seconds // 60
+        if duracao_min <= 0:
+            return {}
+        duracao_h = duracao_min / 60.0
+        met = 0.0
+        if intensidade_fisica:
+            met = _MET_FISICO.get(intensidade_fisica.lower(), 2.5)
+        elif intensidade_mental:
+            met = _MET_MENTAL.get(intensidade_mental.lower(), 1.6)
+        else:
+            met = 1.3
+        kcal = met * peso_kg * duracao_h
+        return {"kcal_gasto": round(kcal, 1), "duracao_min": duracao_min, "met": met}
+    except Exception:
+        return {}
+
+
+def calcular_gasto_template(template_id: int, peso_kg: float = 80.0) -> float:
+    """Soma o gasto calorico de todos os itens de atividade/trabalho de um template."""
+    try:
+        with sqlite3.connect(DB_PATH, timeout=10) as conn:
+            rows = conn.execute("""
+                SELECT im.hora_inicio, im.hora_fim,
+                       im.intensidade_fisica, im.intensidade_mental
+                FROM itens_momento im
+                JOIN momentos_rotina mr ON mr.id = im.momento_id
+                WHERE mr.template_id = ?
+                  AND (im.hora_inicio IS NOT NULL AND im.hora_fim IS NOT NULL)
+            """, (template_id,)).fetchall()
+        total = 0.0
+        for hi, hf, if_, im in rows:
+            r = calcular_gasto_item(hi, hf, if_, im, peso_kg)
+            total += r.get("kcal_gasto", 0.0)
+        return round(total, 1)
+    except Exception:
+        return 0.0
+
+
+def _somar_nutricao(lista: list[dict]) -> dict:
+    """Soma uma lista de dicts nutricionais, ignorando None."""
+    resultado: dict[str, float] = {}
+    campos = ["kcal","kj","carboidratos","acucares","proteinas",
+              "gorduras","saturadas","trans","fibras","sodio"]
+    for n in lista:
+        for c in campos:
+            if n.get(c) is not None:
+                resultado[c] = resultado.get(c, 0.0) + n[c]
+    return resultado
+
+
+def calcular_nutricao_item(item_id: int) -> dict:
+    """
+    Calcula a nutricao total de um item da rotina somando seus ingredientes.
+    Ingrediente simples: usa tabela nutricao(entidade_tipo='ingrediente_item').
+    Ingrediente receita: usa tabela nutricao(entidade_tipo='receita') proporcional a porcao.
+    Retorna dict com campos nutricionais ou {} se sem dados.
+    """
+    try:
+        with sqlite3.connect(DB_PATH, timeout=10) as conn:
+            ings = conn.execute("""
+                SELECT id, tipo, descricao, sub_receita_id, quantidade, unidade,
+                       calorias, proteinas, peso_unitario_g
+                FROM item_ingredientes WHERE item_id=?
+            """, (item_id,)).fetchall()
+
+        partes = []
+        for iid, tipo, desc, sub_rid, qty, unid, cal_manual, prot_manual, peso_unit in ings:
+            # Se unidade=Unidade e tem peso_unitario_g, usa peso real
+            if (unid or "").strip() == "Unidade" and peso_unit:
+                try:
+                    gramas = float(qty or 1) * peso_unit
+                except (TypeError, ValueError):
+                    gramas = peso_unit
+            else:
+                gramas = _porcao_em_gramas(qty, unid or "g")
+
+            if tipo == "receita" and sub_rid:
+                n = carregar_nutricao("receita", sub_rid)
+                if n:
+                    partes.append(_nutricao_proporcional(n, gramas))
+                elif cal_manual:
+                    partes.append({"kcal": cal_manual * gramas / 100,
+                                   "proteinas": (prot_manual or 0) * gramas / 100})
+            else:
+                n = carregar_nutricao("ingrediente_item", iid)
+                if n:
+                    partes.append(_nutricao_proporcional(n, gramas))
+                elif cal_manual:
+                    partes.append({"kcal": cal_manual * gramas / 100,
+                                   "proteinas": (prot_manual or 0) * gramas / 100})
+        return _somar_nutricao(partes)
+    except Exception as ex:
+        print(f"[MODEL] calcular_nutricao_item: {ex}")
+        return {}
+
+
+def calcular_nutricao_momento(momento_id: int) -> dict:
+    """Soma a nutricao de todos os itens de um momento da rotina."""
+    try:
+        with sqlite3.connect(DB_PATH, timeout=10) as conn:
+            ids = [r[0] for r in conn.execute(
+                "SELECT id FROM itens_momento WHERE momento_id=?",
+                (momento_id,)).fetchall()]
+        return _somar_nutricao([calcular_nutricao_item(i) for i in ids])
+    except Exception as ex:
+        print(f"[MODEL] calcular_nutricao_momento: {ex}")
+        return {}
+
+
+# Mapeamento de nomes variantes → chave canonica
+_VITS_CANON = {
+    # vitaminas
+    "vit a": ("vitamina_a", "mcg"), "vitamina a": ("vitamina_a", "mcg"),
+    "vitamina_a": ("vitamina_a", "mcg"), "vitamina_a_mcg": ("vitamina_a", "mcg"),
+    "retinol": ("vitamina_a", "mcg"),
+    "vit b1": ("vitamina_b1", "mg"), "vitamina b1": ("vitamina_b1", "mg"),
+    "tiamina": ("vitamina_b1", "mg"), "tiamina_mg": ("vitamina_b1", "mg"),
+    "vit b2": ("vitamina_b2", "mg"), "vitamina b2": ("vitamina_b2", "mg"),
+    "riboflavina": ("vitamina_b2", "mg"),
+    "vit b2 (riboflavina)": ("vitamina_b2", "mg"), "vitamina_b2_mg": ("vitamina_b2", "mg"),
+    "vit b3": ("vitamina_b3", "mg"), "vitamina b3": ("vitamina_b3", "mg"),
+    "niacina": ("vitamina_b3", "mg"), "niacina_mg": ("vitamina_b3", "mg"),
+    "vit b6": ("vitamina_b6", "mg"), "vitamina b6": ("vitamina_b6", "mg"),
+    "vitamina_b6_mg": ("vitamina_b6", "mg"), "vitamina_b6": ("vitamina_b6", "mg"),
+    "vit b9 (folato)": ("folato", "mcg"), "folato": ("folato", "mcg"),
+    "folato_mcg": ("folato", "mcg"), "acido folico": ("folato", "mcg"),
+    "vit b12": ("vitamina_b12", "mcg"), "vitamina b12": ("vitamina_b12", "mcg"),
+    "vitamina_b12": ("vitamina_b12", "mcg"), "vitamina_b12_mcg": ("vitamina_b12", "mcg"),
+    "vit c": ("vitamina_c", "mg"), "vitamina c": ("vitamina_c", "mg"),
+    "vitamina_c_mg": ("vitamina_c", "mg"),
+    "vit d": ("vitamina_d", "mcg"), "vitamina d": ("vitamina_d", "mcg"),
+    "vitamina_d": ("vitamina_d", "mcg"), "vitamina_d_mcg": ("vitamina_d", "mcg"),
+    "vit e": ("vitamina_e", "mg"), "vitamina e": ("vitamina_e", "mg"),
+    "vitamina_e_mg": ("vitamina_e", "mg"),
+    "vit k": ("vitamina_k", "mcg"), "vitamina k": ("vitamina_k", "mcg"),
+    "vitamina_k_mcg": ("vitamina_k", "mcg"),
+    "colina": ("colina", "mg"),
+    "omega-3": ("omega3", "mg"), "omega3": ("omega3", "mg"),
+    # minerais
+    "calcio": ("calcio", "mg"), "cálcio": ("calcio", "mg"),
+    "calcio_mg": ("calcio", "mg"),
+    "ferro": ("ferro", "mg"), "ferro_mg": ("ferro", "mg"),
+    "magnesio": ("magnesio", "mg"), "magnésio": ("magnesio", "mg"),
+    "magnesio_mg": ("magnesio", "mg"),
+    "fosforo": ("fosforo", "mg"), "fósforo": ("fosforo", "mg"),
+    "fosforo_mg": ("fosforo", "mg"),
+    "potassio": ("potassio", "mg"), "potássio": ("potassio", "mg"),
+    "potassio_mg": ("potassio", "mg"),
+    "zinco": ("zinco", "mg"), "zinco_mg": ("zinco", "mg"),
+    "sodio": ("sodio", "mg"), "sódio": ("sodio", "mg"), "sodio_mg": ("sodio", "mg"),
+    "selenio": ("selenio", "mcg"), "selênio": ("selenio", "mcg"),
+    "selenio_mcg": ("selenio", "mcg"),
+    "cobre": ("cobre", "mg"), "cobre_mg": ("cobre", "mg"),
+    "manganes": ("manganes", "mg"), "manganês": ("manganes", "mg"),
+    "manganes_mg": ("manganes", "mg"),
+}
+
+_VITAMINAS_KEYS = {"vitamina_a","vitamina_b1","vitamina_b2","vitamina_b3","vitamina_b6",
+                   "folato","vitamina_b12","vitamina_c","vitamina_d","vitamina_e",
+                   "vitamina_k","colina","omega3"}
+_MINERAIS_KEYS  = {"calcio","ferro","magnesio","fosforo","potassio","zinco",
+                   "sodio","selenio","cobre","manganes"}
+
+_VITS_LABEL = {
+    "vitamina_a": "Vitamina A", "vitamina_b1": "Vitamina B1",
+    "vitamina_b2": "Vitamina B2", "vitamina_b3": "Vitamina B3",
+    "vitamina_b6": "Vitamina B6", "folato": "Folato (B9)",
+    "vitamina_b12": "Vitamina B12", "vitamina_c": "Vitamina C",
+    "vitamina_d": "Vitamina D", "vitamina_e": "Vitamina E",
+    "vitamina_k": "Vitamina K", "colina": "Colina", "omega3": "Ômega-3",
+    "calcio": "Cálcio", "ferro": "Ferro", "magnesio": "Magnésio",
+    "fosforo": "Fósforo", "potassio": "Potássio", "zinco": "Zinco",
+    "sodio": "Sódio", "selenio": "Selênio", "cobre": "Cobre",
+    "manganes": "Manganês",
+}
+
+
+def _parse_vit_valor(v) -> float:
+    """Extrai numero de '4.2mg', '98', 2.5 etc."""
+    import re as _re
+    if isinstance(v, (int, float)):
+        return float(v)
+    s = str(v).strip().replace(",", ".")
+    m = _re.match(r"[-+]?(\d+\.?\d*)", s)
+    return float(m.group(1)) if m else 0.0
+
+
+def calcular_vitaminas_minerais_rotina() -> tuple[dict, dict]:
+    """
+    Soma vitaminas_json de todos os ingredientes dos templates ativos.
+    Retorna (vitaminas_dict, minerais_dict) — chaves canonicas, valores float.
+    ex: ({"vitamina_d": 3.2, "vitamina_b12": 2.4}, {"calcio": 900.0, "ferro": 18.5})
+    """
+    import json as _json
+    totais: dict[str, float] = {}
+    unids:  dict[str, str]   = {}
+    try:
+        with sqlite3.connect(DB_PATH, timeout=10) as conn:
+            # ingredientes simples
+            rows_ing = conn.execute("""
+                SELECT n.vitaminas_json
+                FROM item_ingredientes ii
+                JOIN itens_momento im ON im.id = ii.item_id
+                JOIN momentos_rotina mr ON mr.id = im.momento_id
+                JOIN rotinas_templates t ON t.id = mr.template_id
+                JOIN nutricao n ON n.entidade_tipo='ingrediente_item' AND n.entidade_id=ii.id
+                WHERE t.ativo=1 AND n.vitaminas_json IS NOT NULL AND n.vitaminas_json != ''
+            """).fetchall()
+            # receitas como ingrediente
+            rows_rec = conn.execute("""
+                SELECT n.vitaminas_json
+                FROM item_ingredientes ii
+                JOIN itens_momento im ON im.id = ii.item_id
+                JOIN momentos_rotina mr ON mr.id = im.momento_id
+                JOIN rotinas_templates t ON t.id = mr.template_id
+                JOIN nutricao n ON n.entidade_tipo='receita' AND n.entidade_id=ii.sub_receita_id
+                WHERE t.ativo=1 AND ii.sub_receita_id IS NOT NULL
+                  AND n.vitaminas_json IS NOT NULL AND n.vitaminas_json != ''
+            """).fetchall()
+
+        for (vjson,) in rows_ing + rows_rec:
+            try:
+                d = _json.loads(vjson)
+            except Exception:
+                continue
+            for k, v in d.items():
+                canon = _VITS_CANON.get(k.lower().strip())
+                if not canon:
+                    continue
+                chave, unid = canon
+                totais[chave] = totais.get(chave, 0.0) + _parse_vit_valor(v)
+                unids[chave]  = unid
+    except Exception as ex:
+        print(f"[MODEL] calcular_vitaminas_minerais_rotina: {ex}")
+
+    vitaminas = {k: (round(totais[k], 1), unids.get(k, ""))
+                 for k in sorted(totais) if k in _VITAMINAS_KEYS}
+    minerais  = {k: (round(totais[k], 1), unids.get(k, ""))
+                 for k in sorted(totais) if k in _MINERAIS_KEYS}
+    return vitaminas, minerais
+
+
+# RDA (Ingestão Diária Recomendada) — homem adulto 50+, fontes IOM/DRI 2023
+# formato: chave_canonica → (rda, unidade, descricao)
+_RDA = {
+    # vitaminas
+    "vitamina_a":   (900,  "mcg", "Vitamina A"),
+    "vitamina_b1":  (1.2,  "mg",  "Vitamina B1"),
+    "vitamina_b2":  (1.3,  "mg",  "Vitamina B2"),
+    "vitamina_b3":  (16.0, "mg",  "Vitamina B3"),
+    "vitamina_b6":  (1.7,  "mg",  "Vitamina B6"),
+    "folato":       (400,  "mcg", "Folato (B9)"),
+    "vitamina_b12": (2.4,  "mcg", "Vitamina B12"),
+    "vitamina_c":   (90.0, "mg",  "Vitamina C"),
+    "vitamina_d":   (15.0, "mcg", "Vitamina D"),
+    "vitamina_e":   (15.0, "mg",  "Vitamina E"),
+    "vitamina_k":   (120,  "mcg", "Vitamina K"),
+    "colina":       (550,  "mg",  "Colina"),
+    "omega3":       (1600, "mg",  "Ômega-3"),
+    # minerais
+    "calcio":    (1200, "mg",  "Cálcio"),
+    "ferro":     (8.0,  "mg",  "Ferro"),
+    "magnesio":  (420,  "mg",  "Magnésio"),
+    "fosforo":   (700,  "mg",  "Fósforo"),
+    "potassio":  (4700, "mg",  "Potássio"),
+    "zinco":     (11.0, "mg",  "Zinco"),
+    "sodio":     (1300, "mg",  "Sódio"),
+    "selenio":   (55.0, "mcg", "Selênio"),
+    "cobre":     (0.9,  "mg",  "Cobre"),
+    "manganes":  (2.3,  "mg",  "Manganês"),
+}
+
+# mapa: substring do nome_oficial do exame → chave_canonica da dieta
+_EXAME_PARA_NUTRIENTE = {
+    "vitamina a":       "vitamina_a",
+    "retinol":          "vitamina_a",
+    "vitamina b12":     "vitamina_b12",
+    "vitamina b1":      "vitamina_b1",
+    "vitamina b2":      "vitamina_b2",
+    "vitamina b3":      "vitamina_b3",
+    "vitamina b6":      "vitamina_b6",
+    "acido folico":     "folato",
+    "ácido fólico":     "folato",
+    "folato":           "folato",
+    "vitamina c":       "vitamina_c",
+    "vitamina d":       "vitamina_d",
+    "25-hidroxi":       "vitamina_d",
+    "vitamina e":       "vitamina_e",
+    "vitamina k":       "vitamina_k",
+    "ferro serico":     "ferro",
+    "ferro sérico":     "ferro",
+    "ferritina":        "ferro",
+    "magnesio":         "magnesio",
+    "magnésio":         "magnesio",
+    "calcio":           "calcio",
+    "cálcio":           "calcio",
+    "zinco":            "zinco",
+    "selenio":          "selenio",
+    "selênio":          "selenio",
+    "cobre":            "cobre",
+    "manganes":         "manganes",
+    "manganês":         "manganes",
+    "potassio":         "potassio",
+    "potássio":         "potassio",
+    "fosforo":          "fosforo",
+    "fósforo":          "fosforo",
+}
+
+
+def ingestao_diaria_nutriente(nome_oficial_exame: str) -> dict | None:
+    """
+    Dado o nome_oficial de um exame, retorna a ingestao diaria do nutriente
+    correspondente nas rotinas ativas, comparando com a RDA.
+    Retorna None se nao houver correspondencia.
+    Retorna dict:
+      {
+        "nutriente": "ferro",
+        "label": "Ferro",
+        "ingestao": 19.0, "unidade": "mg",
+        "rda": 8.0,
+        "pct_rda": 237.5,   # % da RDA atingida
+        "status": "adequada"|"insuficiente"|"excessiva",
+        "msg": "Ingere 19mg/dia (RDA: 8mg) — problema pode ser de absorção"
+      }
+    """
+    import unicodedata as _ud
+    def _norm(s):
+        return _ud.normalize("NFD", s.lower()).encode("ascii","ignore").decode()
+    n = _norm(nome_oficial_exame or "")
+    chave = None
+    for substr, ck in _EXAME_PARA_NUTRIENTE.items():
+        if _norm(substr) in n:
+            chave = ck
+            break
+    if not chave:
+        return None
+
+    vits, mins = calcular_vitaminas_minerais_rotina()
+    dados_dieta = {**vits, **mins}
+    if chave not in dados_dieta:
+        return None
+
+    val, unid = dados_dieta[chave]
+    rda_info = _RDA.get(chave)
+    if not rda_info:
+        return None
+
+    rda, rda_unid, label = rda_info
+    pct = round(val / rda * 100, 0) if rda else 0
+
+    # verificar se ha suplemento cadastrado com este nutriente
+    _SUPL_KEYWORDS = {
+        "vitamina_d":   ["vitamina d","colecalciferol","vit d","vitd"],
+        "vitamina_b12": ["vitamina b12","b12","cobalamina","cobalanina","cianocobalamina","metilcobalamina","cobi"],
+        "vitamina_c":   ["vitamina c","ascorbico","ascorbate"],
+        "vitamina_e":   ["vitamina e","tocoferol"],
+        "vitamina_a":   ["vitamina a","retinol"],
+        "folato":       ["acido folico","folato","folate"],
+        "ferro":        ["ferro","sulfato ferroso","fumarato ferroso"],
+        "magnesio":     ["magnesio","magnésio","citrato de magnesio"],
+        "calcio":       ["calcio","cálcio","carbonato de calcio","citrato de calcio"],
+        "zinco":        ["zinco","quelado"],
+        "omega3":       ["omega","omacor","epa","dha"],
+        "selenio":      ["selenio","selenometionina"],
+    }
+    tem_suplemento = False
+    nomes_supl = []
+    try:
+        kws = _SUPL_KEYWORDS.get(chave, [])
+        if kws:
+            with sqlite3.connect(DB_PATH, timeout=5) as _cs:
+                rem = _cs.execute("""
+                    SELECT nome, dosagem FROM remedios
+                    WHERE ativo=1
+                    AND (tipo='suplemento' OR tipo='remedio')
+                """).fetchall()
+            for rnome, rdos in rem:
+                rn = _norm((rnome or "") + " " + (rdos or ""))
+                if any(_norm(kw) in rn for kw in kws):
+                    tem_suplemento = True
+                    nomes_supl.append(rnome)
+            # verificar tambem itens de rotina tipo remedio com esse nutriente
+            with sqlite3.connect(DB_PATH, timeout=5) as _cs:
+                rot = _cs.execute("""
+                    SELECT im.descricao FROM itens_momento im
+                    JOIN momentos_rotina mr ON mr.id = im.momento_id
+                    JOIN rotinas_templates t ON t.id = mr.template_id
+                    WHERE t.ativo=1 AND im.tipo IN ('remedio','suplemento','medicamento')
+                """).fetchall()
+            for (rdesc,) in rot:
+                rn = _norm(rdesc or "")
+                if any(_norm(kw) in rn for kw in kws):
+                    tem_suplemento = True
+                    if rdesc not in nomes_supl:
+                        nomes_supl.append(rdesc)
+    except Exception:
+        pass
+
+    if pct >= 150:
+        status = "excessiva"
+        msg = f"Ingere {val}{unid}/dia (RDA: {rda}{rda_unid}) — excesso na dieta"
+    elif pct >= 80:
+        status = "adequada"
+        msg = f"Ingere {val}{unid}/dia (RDA: {rda}{rda_unid}) — ingestão adequada"
+    else:
+        status = "insuficiente"
+        msg = f"Ingere {val}{unid}/dia (RDA: {rda}{rda_unid}) — só dieta, sem suplemento cadastrado"
+
+    return {
+        "nutriente": chave, "label": label,
+        "ingestao": val, "unidade": unid,
+        "rda": rda, "rda_unid": rda_unid,
+        "pct_rda": pct, "status": status, "msg": msg,
+        "tem_suplemento": tem_suplemento,
+        "nomes_suplemento": nomes_supl,
+    }
+
+
+def _migrar_ingrediente_peso_unitario():
+    try:
+        with sqlite3.connect(DB_PATH, timeout=10) as conn:
+            cols = [r[1] for r in conn.execute(
+                "PRAGMA table_info(item_ingredientes)").fetchall()]
+            if "peso_unitario_g" not in cols:
+                conn.execute(
+                    "ALTER TABLE item_ingredientes ADD COLUMN peso_unitario_g REAL")
+    except Exception as ex:
+        print(f"[MODEL] _migrar_ingrediente_peso_unitario: {ex}")
+
+
+def _migrar_receitas_porcao():
+    """Adiciona colunas porcao_qtd e porcao_unid em receitas se nao existirem."""
+    try:
+        with sqlite3.connect(DB_PATH, timeout=10) as conn:
+            cols = [r[1] for r in conn.execute("PRAGMA table_info(receitas)").fetchall()]
+            if "porcao_qtd" not in cols:
+                conn.execute("ALTER TABLE receitas ADD COLUMN porcao_qtd TEXT")
+            if "porcao_unid" not in cols:
+                conn.execute("ALTER TABLE receitas ADD COLUMN porcao_unid TEXT")
+    except Exception as ex:
+        print(f"[MODEL] _migrar_receitas_porcao: {ex}")
 
 
 # ══════════════════════════════════════════════════════════════
@@ -4713,6 +6462,25 @@ def total_agua_dia(data: str = None) -> int:
             return int(row[0]) if row else 0
     except Exception:
         return 0
+
+
+def definir_total_agua_dia(ml: int, data: str = None) -> None:
+    """Substitui todos os registros de agua do dia por um unico com o total informado."""
+    import datetime as _dt
+    data = data or _dt.date.today().isoformat()
+    try:
+        with sqlite3.connect(DB_PATH, timeout=30) as conn:
+            conn.execute("""
+                DELETE FROM marcadores_leituras
+                WHERE LOWER(parametro) LIKE '%agua%'
+                  AND LOWER(observacoes) LIKE '%[agua]%'
+                  AND data_medicao = ?
+            """, (data,))
+        _notify()
+    except Exception:
+        pass
+    if ml > 0:
+        registrar_agua(ml, data)
 
 
 def meta_agua_template() -> int:
@@ -5335,6 +7103,90 @@ def excluir_rotina_diario(registro_id: int) -> bool:
         return True
     except Exception as ex:
         print(f"[MODEL] excluir_rotina_diario: {ex}")
+        return False
+
+
+# ══════════════════════════════════════════════════════════════
+# DIAGNOSTICOS
+# ══════════════════════════════════════════════════════════════
+
+def listar_diagnosticos(sistema: str = None, so_ativos: bool = True) -> list[dict]:
+    try:
+        with sqlite3.connect(DB_PATH, timeout=10) as conn:
+            sql = """
+                SELECT d.id, d.titulo, d.cid, d.descricao, d.sistema,
+                       d.data_diagnostico, d.data_resolucao, d.status,
+                       d.certeza, d.observacoes, d.ativo,
+                       m.nome as medico_nome
+                FROM diagnosticos d
+                LEFT JOIN medicos m ON m.id = d.medico_id
+                WHERE 1=1
+            """
+            params = []
+            if so_ativos:
+                sql += " AND d.ativo = 1"
+            if sistema:
+                sql += " AND d.sistema = ?"
+                params.append(sistema)
+            sql += " ORDER BY d.status, d.data_diagnostico DESC"
+            rows = conn.execute(sql, params).fetchall()
+            cols = ["id","titulo","cid","descricao","sistema","data_diagnostico",
+                    "data_resolucao","status","certeza","observacoes","ativo","medico_nome"]
+            return [dict(zip(cols, r)) for r in rows]
+    except Exception as ex:
+        print(f"[MODEL] listar_diagnosticos: {ex}")
+        return []
+
+
+def salvar_diagnostico(dados: dict) -> int | None:
+    try:
+        with sqlite3.connect(DB_PATH, timeout=10) as conn:
+            did = dados.get("id")
+            if did:
+                conn.execute("""
+                    UPDATE diagnosticos SET
+                        titulo=?, cid=?, descricao=?, sistema=?,
+                        data_diagnostico=?, data_resolucao=?, status=?,
+                        certeza=?, medico_id=?, observacoes=?,
+                        atualizado_em=datetime('now')
+                    WHERE id=?
+                """, (
+                    dados.get("titulo"), dados.get("cid"), dados.get("descricao"),
+                    dados.get("sistema"), dados.get("data_diagnostico"),
+                    dados.get("data_resolucao"), dados.get("status","ativo"),
+                    dados.get("certeza","confirmado"), dados.get("medico_id"),
+                    dados.get("observacoes"), did,
+                ))
+                _notify()
+                return did
+            else:
+                cur = conn.execute("""
+                    INSERT INTO diagnosticos
+                        (titulo, cid, descricao, sistema, data_diagnostico,
+                         data_resolucao, status, certeza, medico_id, observacoes)
+                    VALUES (?,?,?,?,?,?,?,?,?,?)
+                """, (
+                    dados.get("titulo"), dados.get("cid"), dados.get("descricao"),
+                    dados.get("sistema"), dados.get("data_diagnostico"),
+                    dados.get("data_resolucao"), dados.get("status","ativo"),
+                    dados.get("certeza","confirmado"), dados.get("medico_id"),
+                    dados.get("observacoes"),
+                ))
+                _notify()
+                return cur.lastrowid
+    except Exception as ex:
+        print(f"[MODEL] salvar_diagnostico: {ex}")
+        return None
+
+
+def excluir_diagnostico(did: int) -> bool:
+    try:
+        with sqlite3.connect(DB_PATH, timeout=10) as conn:
+            conn.execute("UPDATE diagnosticos SET ativo=0 WHERE id=?", (did,))
+        _notify()
+        return True
+    except Exception as ex:
+        print(f"[MODEL] excluir_diagnostico: {ex}")
         return False
 
 
