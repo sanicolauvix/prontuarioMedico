@@ -5321,6 +5321,14 @@ def criar_tela_hub(page: ft.Page, voltar_fn=None, modo_medico: bool = False) -> 
             conteudo_final = corpo
 
     # expor partes para modo_medico desktop
+    # extrair cards individuais de sistemas (primeira linha)
+    _cards_sis = []
+    if _rows_sis and hasattr(_rows_sis[0], "controls"):
+        for row in _rows_sis:
+            for c in row.controls:
+                if isinstance(c, ft.Container) and c.tooltip:
+                    _cards_sis.append(c)
+
     _hub_partes = {
         "spacer_topo":    spacer_topo,
         "header":         header,
@@ -5331,6 +5339,7 @@ def criar_tela_hub(page: ft.Page, voltar_fn=None, modo_medico: bool = False) -> 
         "monitor_widget": card_monitor_uti,
         "resumo_widget":  row_resumo,
         "sistemas_widget": row_sistemas,
+        "cards_sistemas":  _cards_sis,
     }
 
     wrapper = ft.Column(expand=True)

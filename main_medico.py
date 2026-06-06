@@ -216,6 +216,8 @@ def main(page: ft.Page):
                 clip_behavior=ft.ClipBehavior.HARD_EDGE,
             )
 
+        cards_sis = partes.get("cards_sistemas", [])
+
         grade_2x2 = ft.Column([
             ft.Row([
                 _quadrante("PACIENTE", AZUL, ft.Column([
@@ -239,13 +241,21 @@ def main(page: ft.Page):
                 _quadrante("RESUMO DO DIA", ACENTO,
                            ft.Container(content=resumo, expand=True),
                            icone="insights_rounded"),
-                _quadrante("SISTEMAS", AZUL,
-                           ft.Container(content=sistemas, expand=True),
-                           icone="category_rounded"),
+                _quadrante("MONITOR VITAL", "#FF7675",
+                           ft.Container(content=monitor, expand=True),
+                           icone="monitor_heart_rounded"),
             ], spacing=8, expand=True),
         ], spacing=8, expand=True)
 
         col_esq_content = grade_2x2
+
+        # cards de sistemas empilhados verticalmente ao lado da silhueta
+        col_sistemas = ft.Column(
+            [ft.Container(content=c, height=int(altura_util / len(cards_sis)) if cards_sis else 100,
+                          clip_behavior=ft.ClipBehavior.HARD_EDGE)
+             for c in cards_sis],
+            spacing=8, tight=True,
+        ) if cards_sis else ft.Container()
 
         # area central: esquerda=hub | direita=silhueta
         area_central = ft.Row([
@@ -258,26 +268,25 @@ def main(page: ft.Page):
                 border=ft.border.only(right=ft.BorderSide(1, BD)),
                 padding=ft.padding.only(left=16, right=16),
             ),
-            # direita: silhueta centralizada
+            # direita: silhueta + cards de sistemas ao lado
             ft.Container(
                 expand=True,
                 bgcolor=BG,
-                padding=ft.padding.symmetric(horizontal=16, vertical=8),
-                alignment=ft.alignment.top_center,
+                padding=ft.padding.symmetric(horizontal=8, vertical=8),
                 content=ft.Column([
-                    ft.Container(
-                        content=ft.Text("Clique no Órgão que Deseja Pesquisar",
-                                        size=12, color=SEC, text_align="center",
-                                        weight=ft.FontWeight.W_600),
-                        alignment=ft.alignment.center,
-                        padding=ft.padding.only(bottom=6),
-                    ),
-                    ft.Container(
-                        content=silhueta,
-                        alignment=ft.alignment.top_center,
-                        height=altura_util,
-                        clip_behavior=ft.ClipBehavior.HARD_EDGE,
-                    ),
+                    ft.Text("Clique no Órgão que Deseja Pesquisar",
+                            size=12, color=SEC, text_align="center",
+                            weight=ft.FontWeight.W_600),
+                    ft.Container(height=6),
+                    ft.Row([
+                        ft.Container(
+                            content=silhueta,
+                            alignment=ft.alignment.top_center,
+                            height=altura_util,
+                            clip_behavior=ft.ClipBehavior.HARD_EDGE,
+                        ),
+                        col_sistemas,
+                    ], spacing=8, vertical_alignment=ft.CrossAxisAlignment.START),
                 ], horizontal_alignment=ft.CrossAxisAlignment.CENTER,
                    spacing=0, tight=True),
             ),
