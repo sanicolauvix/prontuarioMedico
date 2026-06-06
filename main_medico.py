@@ -79,20 +79,38 @@ def main(page: ft.Page):
                 padding=ft.padding.only(bottom=8),
             )
         )
-        _silhueta_col.controls.append(silhueta)
-
-        layout = ft.Row([
-            ft.Container(content=_hub_widget[0], width=480),
+        _silhueta_col.controls.append(
             ft.Container(
-                content=_silhueta_col,
-                expand=True,
+                content=silhueta,
                 alignment=ft.alignment.center,
-                bgcolor=BG,
-            ),
-        ], expand=True, spacing=0,
-           vertical_alignment=ft.CrossAxisAlignment.STRETCH)
+                expand=True,
+            )
+        )
 
-        _nav(ft.Container(content=layout, expand=True, bgcolor=BG))
+        area_sil = ft.Container(
+            content=_silhueta_col,
+            expand=True,
+            bgcolor=BG,
+            alignment=ft.alignment.center,
+        )
+
+        hub_container = ft.Container(
+            content=_hub_widget[0],
+            width=480,
+            bgcolor=BG,
+        )
+
+        layout = ft.Container(
+            content=ft.Row([
+                hub_container,
+                area_sil,
+            ], expand=True, spacing=0,
+               vertical_alignment=ft.CrossAxisAlignment.STRETCH),
+            expand=True,
+            bgcolor=BG,
+        )
+
+        _nav(layout)
 
     def _abrir_hub():
         from telas.tela_hub import criar_tela_hub
