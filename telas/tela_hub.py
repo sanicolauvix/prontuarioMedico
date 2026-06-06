@@ -184,7 +184,10 @@ def criar_tela_hub(page: ft.Page, voltar_fn=None, modo_medico: bool = False,
                 padding=ft.padding.symmetric(horizontal=14, vertical=8),
                 ink=True,
             )
-            card.on_click = lambda e: _lazy_fn("tela_claudia", "criar_tela_claudia")()
+            def _abrir_claudia(e=None):
+                from telas.tela_claudia import criar_tela_claudia
+                _navegar(criar_tela_claudia, _voltar_hub)
+            card.on_click = _abrir_claudia
             return card
 
         # ── Dados do paciente (modo medico) ──────────────────
@@ -4475,7 +4478,9 @@ def criar_tela_hub(page: ft.Page, voltar_fn=None, modo_medico: bool = False,
                           _lazy_fn("tela_rotina_diaria", "criar_tela_rotina_diaria")),
                 _btn_item("psychology_rounded", "Claudia IA",
                           "Conversar com Claudia", ROXO,
-                          _lazy_fn("tela_claudia", "criar_tela_claudia")),
+                          lambda: _navegar(
+                              __import__("telas.tela_claudia", fromlist=["criar_tela_claudia"])
+                              .criar_tela_claudia, _voltar_hub)),
                 _btn_item("biotech_rounded", "Marcadores",
                           "Sinais vitais e historico", "#4ECDC4",
                           _lazy_fn("tela_marcadores", "criar_tela_marcadores")),
