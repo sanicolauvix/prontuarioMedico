@@ -59,11 +59,9 @@ def main(page: ft.Page):
 
         from telas.silhueta_orgaos import criar_silhueta, ORGAOS
 
-        # proporcao 644:551 — altura maxima util ~680px -> largura ideal ~795px
-        altura_util = 680
-        larg_prop   = int(altura_util * 644 / 551)  # ~795px
-        larg_max    = pw - 500  # espaco disponivel apos hub
-        larg_sil    = min(larg_prop, max(larg_max, 300))
+        # reduzir para 1/3 do espaco disponivel apos hub
+        larg_max = pw - 500
+        larg_sil = max(int(larg_max / 3), 200)
 
         def _on_orgao(oid):
             pass  # TODO: navegar para tela do orgao
