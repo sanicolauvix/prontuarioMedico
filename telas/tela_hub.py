@@ -5278,40 +5278,61 @@ def criar_tela_hub(page: ft.Page, voltar_fn=None, modo_medico: bool = False) -> 
         height=58,
     )
 
-    corpo = ft.Column([
-        ft.Container(height=28, bgcolor=BG),
-        header,
-        ft.Container(content=area_conteudo, expand=True, bgcolor=BG),
-        row_sync,
-        ft.Container(
-            content=ft.Text(f"v{APP_VERSAO}", size=10, color=MUT,
-                            text_align="center"),
-            alignment=ft.Alignment(0, 0),
-            padding=ft.padding.symmetric(vertical=2),
-        ),
-        nav_bar,
-    ], spacing=0, expand=True)
+    spacer_topo = ft.Container(height=28, bgcolor=BG)
+    versao_txt  = ft.Container(
+        content=ft.Text(f"v{APP_VERSAO}", size=10, color=MUT, text_align="center"),
+        alignment=ft.Alignment(0, 0),
+        padding=ft.padding.symmetric(vertical=2),
+    )
 
-    try:
-        larg = page.width or 0
-    except Exception:
-        larg = 0
-
-    if larg > 500 and not modo_medico:
-        # app normal: centralizado em 480px
-        conteudo_final = ft.Row([
-            ft.Container(expand=True),
-            ft.Container(content=corpo, width=480),
-            ft.Container(expand=True),
-        ], expand=True)
-    elif larg > 500 and modo_medico:
-        # modo medico web: tela cheia sem restricao de largura
+    if modo_medico:
+        # modo medico: expor partes separadas para main_medico montar o layout
+        corpo = ft.Column([
+            spacer_topo,
+            header,
+            ft.Container(content=area_conteudo, expand=True, bgcolor=BG),
+            row_sync,
+            versao_txt,
+            nav_bar,
+        ], spacing=0, expand=True)
         conteudo_final = corpo
     else:
-        conteudo_final = corpo
+        corpo = ft.Column([
+            spacer_topo,
+            header,
+            ft.Container(content=area_conteudo, expand=True, bgcolor=BG),
+            row_sync,
+            versao_txt,
+            nav_bar,
+        ], spacing=0, expand=True)
+
+        try:
+            larg = page.width or 0
+        except Exception:
+            larg = 0
+
+        if larg > 500:
+            conteudo_final = ft.Row([
+                ft.Container(expand=True),
+                ft.Container(content=corpo, width=480),
+                ft.Container(expand=True),
+            ], expand=True)
+        else:
+            conteudo_final = corpo
+
+    # expor partes para modo_medico desktop
+    _hub_partes = {
+        "spacer_topo": spacer_topo,
+        "header":      header,
+        "area":        area_conteudo,
+        "row_sync":    row_sync,
+        "versao":      versao_txt,
+        "nav_bar":     nav_bar,
+    }
 
     wrapper = ft.Column(expand=True)
     wrapper.controls.append(ft.Container(bgcolor=BG, expand=True, content=conteudo_final))
+    wrapper._hub_partes = _hub_partes
 
     _montado[0] = True
 

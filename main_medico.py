@@ -12,11 +12,7 @@ if _HERE not in sys.path:
 ACENTO = "#BC8CFF"
 BG     = "#0D1117"
 MUT    = "#8B949E"
-CARD   = "#161B22"
-BD     = "#21262D"
-TXT    = "#E6EDF3"
 SEC    = "#8B949E"
-AZUL   = "#58A6FF"
 
 
 def main(page: ft.Page):
@@ -26,8 +22,7 @@ def main(page: ft.Page):
     page.padding    = 0
     page.window_maximized = True
 
-    _hub_widget    = [None]
-    _silhueta_col  = ft.Column(expand=True, spacing=0)
+    _hub_wrapper   = [None]
     _layout_feito  = [False]
 
     def _nav(tela):
@@ -53,14 +48,29 @@ def main(page: ft.Page):
     _nav(_splash())
 
     def _montar_layout_desktop(pw: int):
-        """Monta layout lado a lado: hub (esq) + silhueta (dir)."""
-        if _hub_widget[0] is None:
+        """
+        Layout:
+        ┌─────────────────────────────────────────┐
+        │  CABEÇALHO (tela toda)                  │
+        ├──────────────────┬──────────────────────┤
+        │  CONTEÚDO HUB   │    SILHUETA           │
+        │  (esquerda)      │    (centralizada)     │
+        ├──────────────────┴──────────────────────┤
+        │  RODAPÉ (tela toda)                     │
+        └─────────────────────────────────────────┘
+        """
+        wrapper = _hub_wrapper[0]
+        if wrapper is None:
             return
 
-        from telas.silhueta_orgaos import criar_silhueta, ORGAOS
+        partes = getattr(wrapper, "_hub_partes", None)
+        if partes is None:
+            _nav(wrapper)
+            return
 
-        # reduzir para 1/3 do espaco disponivel apos hub
-        larg_max = pw - 500
+        from telas.silhueta_orgaos import criar_silhueta
+
+        larg_max = pw - 480
         larg_sil = max(int(larg_max / 3) * 2, 300)
 
         def _on_orgao(oid):
@@ -69,59 +79,60 @@ def main(page: ft.Page):
         silhueta = criar_silhueta(page, on_orgao_click=_on_orgao,
                                   largura=larg_sil, mostrar_borda=False)
 
-        _silhueta_col.controls.clear()
-        _silhueta_col.controls.append(
+        # area central: col esquerda (hub) + col direita (silhueta)
+        area_central = ft.Row([
+            # esquerda: so area de conteudo do hub
             ft.Container(
-                content=ft.Text("Clique no Órgão que Deseja Pesquisar",
-                                size=12, color=SEC, text_align="center",
-                                weight=ft.FontWeight.W_600),
-                alignment=ft.alignment.center,
-                padding=ft.padding.only(bottom=8),
-            )
-        )
-        _silhueta_col.controls.append(
+                content=partes["area"],
+                width=480,
+                expand=False,
+                bgcolor=BG,
+            ),
+            # direita: silhueta centralizada
             ft.Container(
-                content=silhueta,
-                alignment=ft.alignment.center,
                 expand=True,
-            )
-        )
+                bgcolor=BG,
+                alignment=ft.alignment.center,
+                content=ft.Column([
+                    ft.Container(
+                        content=ft.Text("Clique no Órgão que Deseja Pesquisar",
+                                        size=12, color=SEC, text_align="center",
+                                        weight=ft.FontWeight.W_600),
+                        alignment=ft.alignment.center,
+                        padding=ft.padding.only(bottom=8),
+                    ),
+                    ft.Container(
+                        content=silhueta,
+                        alignment=ft.alignment.center,
+                    ),
+                ], horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+                   spacing=0),
+            ),
+        ], expand=True, spacing=0,
+           vertical_alignment=ft.CrossAxisAlignment.START)
 
-        area_sil = ft.Container(
-            content=_silhueta_col,
-            expand=True,
-            bgcolor=BG,
-            alignment=ft.alignment.center,
-        )
+        # layout completo: cabeçalho + area central + rodapé
+        layout = ft.Column([
+            partes["spacer_topo"],
+            partes["header"],
+            ft.Container(content=area_central, expand=True, bgcolor=BG),
+            partes["row_sync"],
+            partes["versao"],
+            partes["nav_bar"],
+        ], spacing=0, expand=True)
 
-        hub_container = ft.Container(
-            content=_hub_widget[0],
-            width=480,
-            bgcolor=BG,
-        )
-
-        layout = ft.Container(
-            content=ft.Row([
-                hub_container,
-                area_sil,
-            ], expand=True, spacing=0,
-               vertical_alignment=ft.CrossAxisAlignment.STRETCH),
-            expand=True,
-            bgcolor=BG,
-        )
-
-        _nav(layout)
+        _nav(ft.Container(content=layout, expand=True, bgcolor=BG))
 
     def _abrir_hub():
         from telas.tela_hub import criar_tela_hub
-        hub = criar_tela_hub(page, voltar_fn=None, modo_medico=True)
-        _hub_widget[0] = hub
+        wrapper = criar_tela_hub(page, voltar_fn=None, modo_medico=True)
+        _hub_wrapper[0] = wrapper
 
         pw = int(page.width or 0)
         if pw >= 600:
             _montar_layout_desktop(pw)
         else:
-            _nav(hub)
+            _nav(wrapper)
 
     def _on_resized(e=None):
         pw = int(page.width or 0)
@@ -130,7 +141,7 @@ def main(page: ft.Page):
         if _layout_feito[0]:
             return
         _layout_feito[0] = True
-        if _hub_widget[0] is not None:
+        if _hub_wrapper[0] is not None:
             _montar_layout_desktop(pw)
 
     page.on_resized = _on_resized
