@@ -4362,18 +4362,23 @@ def criar_tela_hub(page: ft.Page, voltar_fn=None, modo_medico: bool = False) -> 
                 row_sistemas,
             ], spacing=8, width=300, scroll=ft.ScrollMode.AUTO)
 
+            col_esq.border = ft.border.all(2, "#58A6FF")  # azul = coluna esquerda
             return [
-                ft.Row([
-                    col_esq,
-                    ft.Container(
-                        content=_widget_silhueta,
-                        expand=True,
-                        alignment=ft.alignment.center,
-                        border=ft.border.all(2, "#FF4444"),
-                    ),
-                ], spacing=16,
-                   vertical_alignment=ft.CrossAxisAlignment.START,
-                   expand=True),
+                ft.Container(
+                    border=ft.border.all(2, "#3FB950"),  # verde = row principal
+                    content=ft.Row([
+                        col_esq,
+                        ft.Container(
+                            content=_widget_silhueta,
+                            expand=True,
+                            alignment=ft.alignment.center,
+                            border=ft.border.all(2, "#FF4444"),  # vermelho = container silhueta
+                        ),
+                    ], spacing=16,
+                       vertical_alignment=ft.CrossAxisAlignment.START,
+                       expand=True),
+                    expand=True,
+                ),
             ]
 
         # layout mobile: empilhado
