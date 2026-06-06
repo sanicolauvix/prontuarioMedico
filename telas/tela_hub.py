@@ -4231,7 +4231,10 @@ def criar_tela_hub(page: ft.Page, voltar_fn=None, modo_medico: bool = False) -> 
     def _criar_widget_silhueta():
         try:
             from telas.silhueta_orgaos import criar_silhueta
-            larg = min(int((page.width or 380) - 32), 580)
+            _pw = page.width or 0
+            # web sem width definido: usar 360 (viewport mobile seguro)
+            _pw = _pw if _pw > 100 else 360
+            larg = min(int(_pw - 32), 580)
 
             # Mapa orgao -> (label, icone, cor, cfg_sistema)
             def _cfg(label):

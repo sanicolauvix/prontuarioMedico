@@ -107,8 +107,18 @@ def criar_silhueta(
     escala = largura / IMG_W
     altura = int(IMG_H * escala)
 
+    # path relativo para web/Android, absoluto para desktop
+    import os as _os
+    _here = _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__)))
+    _img_abs = _os.path.join(_here, "assets", "silueta_anatomia.png")
+    try:
+        import tkinter  # noqa
+        _img_src = _img_abs if _os.path.isfile(_img_abs) else "assets/silueta_anatomia.png"
+    except ModuleNotFoundError:
+        _img_src = "assets/silueta_anatomia.png"
+
     fundo = ft.Image(
-        src="assets/silueta_anatomia.png",
+        src=_img_src,
         width=largura,
         height=altura,
         fit=ft.ImageFit.FILL,
