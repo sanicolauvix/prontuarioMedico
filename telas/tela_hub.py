@@ -4210,7 +4210,7 @@ def criar_tela_hub(page: ft.Page, voltar_fn=None, modo_medico: bool = False) -> 
             _pw = page.width or 0
             _pw = _pw if _pw > 100 else 360
             # desktop: silhueta ocupa o espaco restante apos coluna esq (300px) + padding
-            if _pw >= 600:
+            if modo_medico and _pw >= 600:
                 larg = min(int(_pw - 300 - 48), 600)
                 larg = max(larg, 280)
             else:
@@ -4351,7 +4351,8 @@ def criar_tela_hub(page: ft.Page, voltar_fn=None, modo_medico: bool = False) -> 
         _pw = page.width or 0
 
         # layout desktop: coluna esquerda (conteudo) + silhueta direita
-        if _pw >= 600:
+        # apenas no modo_medico (web) -- no app normal fica sempre empilhado
+        if modo_medico and _pw >= 600:
             col_esq = ft.Column([
                 *topo,
                 _header_monitor,
