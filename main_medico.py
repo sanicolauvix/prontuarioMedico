@@ -9,6 +9,8 @@ _HERE = os.path.dirname(os.path.abspath(__file__))
 if _HERE not in sys.path:
     sys.path.insert(0, _HERE)
 
+from versao import APP_VERSAO
+
 ACENTO = "#BC8CFF"
 BG     = "#0D1117"
 CARD   = "#161B22"
@@ -303,14 +305,23 @@ def main(page: ft.Page):
 
         rodape = ft.Column([
             partes["row_sync"],
-            partes["versao"],
             partes["nav_bar"],
         ], spacing=0)
+
+        # versao no lado direito do cabecalho
+        partes["versao"].visible = False
+        header = partes["header"]
+        try:
+            header.content.controls.append(
+                ft.Text(f"v{APP_VERSAO}", size=10, color=MUT)
+            )
+        except Exception:
+            pass
 
         # layout completo: cabeçalho + area central + rodapé
         layout = ft.Column([
             partes["spacer_topo"],
-            partes["header"],
+            header,
             ft.Container(content=area_central, expand=True, bgcolor=BG),
             rodape,
         ], spacing=0, expand=True)
