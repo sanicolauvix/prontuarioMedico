@@ -4624,6 +4624,9 @@ def criar_tela_hub(page: ft.Page, voltar_fn=None, modo_medico: bool = False,
             return
         aba_ativa[0] = idx
         _rebuild_abas()
+        area_conteudo.controls.clear()
+        try: page.update()
+        except Exception: pass
         _rebuild_conteudo()
         _atualizar_ui()
 
