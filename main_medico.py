@@ -11,8 +11,12 @@ if _HERE not in sys.path:
 
 ACENTO = "#BC8CFF"
 BG     = "#0D1117"
+CARD   = "#161B22"
+BD     = "#21262D"
+TXT    = "#E6EDF3"
 MUT    = "#8B949E"
 SEC    = "#8B949E"
+AZUL   = "#58A6FF"
 
 
 def main(page: ft.Page):
@@ -84,14 +88,106 @@ def main(page: ft.Page):
         silhueta = criar_silhueta(page, on_orgao_click=_on_orgao,
                                   largura=larg_sil, mostrar_borda=False)
 
+        # card do paciente com foto
+        try:
+            from dados.model_prontuario import carregar_perfil
+            pac = carregar_perfil() or {}
+        except Exception:
+            pac = {}
+
+        nome_pac  = pac.get("nome") or "Paciente"
+        nasc      = pac.get("data_nasc") or ""
+        sexo      = pac.get("sexo") or ""
+        tipo_sang = pac.get("tipo_sanguineo") or ""
+        peso      = pac.get("peso")
+        altura_p  = pac.get("altura")
+        foto      = pac.get("foto_url") or ""
+
+        try:
+            from datetime import date
+            nasc_d    = date.fromisoformat(nasc[:10])
+            hoje      = date.today()
+            anos      = hoje.year - nasc_d.year - (
+                (hoje.month, hoje.day) < (nasc_d.month, nasc_d.day))
+            idade_str = f"{anos} anos"
+            nasc_fmt  = nasc_d.strftime("%d/%m/%Y")
+        except Exception:
+            idade_str = ""
+            nasc_fmt  = nasc
+
+        sexo_label = {"M": "Masculino", "F": "Feminino"}.get(sexo, sexo)
+
+        import os as _os
+        if foto and _os.path.isfile(foto):
+            avatar = ft.Container(
+                content=ft.Image(src=foto, width=72, height=72,
+                                 fit=ft.ImageFit.COVER),
+                width=72, height=72, border_radius=36,
+                clip_behavior=ft.ClipBehavior.HARD_EDGE,
+                border=ft.border.all(2, AZUL),
+            )
+        else:
+            initials = "".join(w[0].upper() for w in nome_pac.split()[:2] if w)
+            avatar = ft.Container(
+                content=ft.Text(initials or "P", size=24,
+                                weight=ft.FontWeight.W_700, color=AZUL),
+                width=72, height=72, border_radius=36,
+                bgcolor=ft.Colors.with_opacity(0.12, AZUL),
+                border=ft.border.all(2, ft.Colors.with_opacity(0.40, AZUL)),
+                alignment=ft.alignment.center,
+            )
+
+        def _linha_pac(label, valor):
+            if not valor:
+                return ft.Container(height=0)
+            return ft.Row([
+                ft.Text(label, size=10, color=SEC, width=70),
+                ft.Text(str(valor), size=11, color=TXT,
+                        weight=ft.FontWeight.W_600),
+            ], spacing=6)
+
+        card_paciente = ft.Container(
+            content=ft.Column([
+                ft.Row([
+                    avatar,
+                    ft.Column([
+                        ft.Text(nome_pac, size=14, color=TXT,
+                                weight=ft.FontWeight.W_700),
+                        ft.Text(idade_str, size=11, color=SEC) if idade_str
+                        else ft.Container(height=0),
+                    ], spacing=2, tight=True, expand=True),
+                ], spacing=12),
+                ft.Container(height=8),
+                ft.Container(height=1, bgcolor="#21262D"),
+                ft.Container(height=8),
+                _linha_pac("Nascimento", nasc_fmt),
+                _linha_pac("Sexo",       sexo_label),
+                _linha_pac("Sangue",     tipo_sang),
+                _linha_pac("Peso",       f"{peso} kg" if peso else ""),
+                _linha_pac("Altura",     f"{altura_p} cm" if altura_p else ""),
+            ], spacing=4, tight=True),
+            bgcolor="#161B22",
+            border_radius=10,
+            padding=ft.padding.all(14),
+            margin=ft.margin.only(bottom=8),
+        )
+
+        col_esq_content = ft.Column([
+            card_paciente,
+            partes["area"],
+        ], spacing=0, expand=True,
+           scroll=ft.ScrollMode.HIDDEN)
+
         # area central: col esquerda (hub) + col direita (silhueta)
         area_central = ft.Row([
-            # esquerda: so area de conteudo do hub
+            # esquerda: card paciente + area de conteudo do hub
             ft.Container(
-                content=partes["area"],
+                content=col_esq_content,
                 width=480,
                 expand=False,
                 bgcolor=BG,
+                border=ft.border.only(right=ft.BorderSide(1, "#21262D")),
+                padding=ft.padding.only(right=0),
             ),
             # direita: silhueta centralizada
             ft.Container(
