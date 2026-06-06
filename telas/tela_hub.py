@@ -36,8 +36,9 @@ def criar_tela_hub(page: ft.Page, voltar_fn=None, modo_medico: bool = False,
     import sqlite3 as _sq
     from dados.model_prontuario import carregar_perfil
 
-    aba_ativa = [0]
-    _montado  = [False]
+    aba_ativa     = [0]
+    _montado      = [False]
+    _self_wrapper = [None]  # referencia ao proprio wrapper para restaurar ao voltar
 
     def _atualizar_ui():
         if _montado[0]:
@@ -83,8 +84,17 @@ def criar_tela_hub(page: ft.Page, voltar_fn=None, modo_medico: bool = False,
             except Exception: pass
 
     def _voltar_hub(*_):
-        from telas.tela_hub import criar_tela_hub as _hub
-        _navegar(_hub, voltar_fn)
+        if navegar_sub_fn:
+            # web: restaurar hub original via page.controls sem recriar
+            try:
+                page.controls.clear()
+                page.controls.append(_self_wrapper[0])
+                page.update()
+            except Exception:
+                voltar_fn() if voltar_fn else None
+        else:
+            from telas.tela_hub import criar_tela_hub as _hub
+            _navegar(_hub, voltar_fn)
 
     def _ir(tela_fn):
         if navegar_sub_fn:
@@ -5370,6 +5380,7 @@ def criar_tela_hub(page: ft.Page, voltar_fn=None, modo_medico: bool = False,
     wrapper = ft.Column(expand=True)
     wrapper.controls.append(ft.Container(bgcolor=BG, expand=True, content=conteudo_final))
     wrapper._hub_partes = _hub_partes
+    _self_wrapper[0] = wrapper
 
     _montado[0] = True
 
