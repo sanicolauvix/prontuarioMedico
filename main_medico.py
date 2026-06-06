@@ -61,7 +61,7 @@ def main(page: ft.Page):
 
         # reduzir para 1/3 do espaco disponivel apos hub
         larg_max = pw - 500
-        larg_sil = max(int(larg_max / 3), 200)
+        larg_sil = max(int(larg_max / 3) * 2, 300)
 
         def _on_orgao(oid):
             pass  # TODO: navegar para tela do orgao
