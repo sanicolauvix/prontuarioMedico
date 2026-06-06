@@ -122,8 +122,15 @@ def main(page: ft.Page):
         from dados.model_prontuario import criar_tabelas
         restaurar_backup_completo()
         criar_tabelas()
-        from app import criar_tela_prontuario
-        _nav(criar_tela_prontuario(page, voltar_fn=_voltar_escolha))
+        from telas.tela_hub import criar_tela_hub
+        wrapper = criar_tela_hub(page, voltar_fn=_voltar_escolha, modo_medico=False)
+        _hub_wrapper[0]  = wrapper
+        _layout_feito[0] = False
+        pw = int(page.width or 0)
+        if pw >= 600:
+            _montar_hub_medico(pw)
+        else:
+            _nav(wrapper)
 
     # ── Fluxo Médico ──────────────────────────────────────────────────────────
     def _ir_medico():
