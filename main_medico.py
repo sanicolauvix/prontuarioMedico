@@ -197,36 +197,37 @@ def main(page: ft.Page):
 
         # area central: esquerda=silhueta | direita=hub
         area_central = ft.Row([
-            # esquerda: espaço + silhueta centralizada
+            # esquerda: silhueta
             ft.Container(
                 expand=True,
                 bgcolor=BG,
-                padding=ft.padding.only(left=24),
-                alignment=ft.alignment.center,
+                padding=ft.padding.only(left=8, top=8),
+                alignment=ft.alignment.top_center,
                 content=ft.Column([
                     ft.Container(
                         content=ft.Text("Clique no Órgão que Deseja Pesquisar",
                                         size=12, color=SEC, text_align="center",
                                         weight=ft.FontWeight.W_600),
                         alignment=ft.alignment.center,
-                        padding=ft.padding.only(bottom=8),
+                        padding=ft.padding.only(bottom=6),
                     ),
                     ft.Container(
                         content=silhueta,
-                        alignment=ft.alignment.center,
+                        alignment=ft.alignment.top_center,
                         height=altura_util,
                         clip_behavior=ft.ClipBehavior.HARD_EDGE,
                     ),
                 ], horizontal_alignment=ft.CrossAxisAlignment.CENTER,
-                   spacing=0),
+                   spacing=0, tight=True),
             ),
             # direita: card paciente + conteudo hub
             ft.Container(
                 content=col_esq_content,
-                width=480,
+                width=460,
                 expand=False,
                 bgcolor=BG,
                 border=ft.border.only(left=ft.BorderSide(1, BD)),
+                padding=ft.padding.only(left=8, right=8),
             ),
         ], expand=True, spacing=0,
            vertical_alignment=ft.CrossAxisAlignment.START)
