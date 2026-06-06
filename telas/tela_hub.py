@@ -4174,7 +4174,9 @@ def criar_tela_hub(page: ft.Page, voltar_fn=None, modo_medico: bool = False) -> 
         ("Mais",    "grid_view_rounded",         SEC),
     ]
     barra_abas_row = ft.Row(spacing=0)
-    area_conteudo  = ft.Column(spacing=12, scroll=ft.ScrollMode.AUTO, expand=True)
+    # modo_medico desktop: sem scroll para permitir expand=True no layout lado a lado
+    _scroll_modo = ft.ScrollMode.HIDDEN if modo_medico else ft.ScrollMode.AUTO
+    area_conteudo  = ft.Column(spacing=12, scroll=_scroll_modo, expand=True)
 
     def _rebuild_abas():
         barra_abas_row.controls.clear()
