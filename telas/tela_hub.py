@@ -267,21 +267,8 @@ def criar_tela_hub(page: ft.Page, voltar_fn=None, modo_medico: bool = False) -> 
                         ], alignment=ft.MainAxisAlignment.END),
                         ft.Row([
                             _mk_avatar(72, 24, 36),
-                            ft.Column([
-                                ft.Text(nome_pac, size=15, color=TXT,
-                                        weight=ft.FontWeight.W_700),
-                                ft.Container(
-                                    content=ft.Text("Visao Medico", size=9,
-                                                    color=AZUL,
-                                                    weight=ft.FontWeight.W_700),
-                                    bgcolor=ft.Colors.with_opacity(0.12, AZUL),
-                                    border=ft.border.all(
-                                        1, ft.Colors.with_opacity(0.35, AZUL)),
-                                    border_radius=6,
-                                    padding=ft.padding.symmetric(
-                                        horizontal=6, vertical=2),
-                                ),
-                            ], spacing=6, tight=True),
+                            ft.Text(nome_pac, size=15, color=TXT,
+                                    weight=ft.FontWeight.W_700),
                         ], spacing=14),
                         ft.Divider(color=BD, height=16),
                         _linha("Nascimento", nasc_fmt),
@@ -310,19 +297,8 @@ def criar_tela_hub(page: ft.Page, voltar_fn=None, modo_medico: bool = False) -> 
             content=ft.Row([
                 _mk_avatar(44, 16, 22),
                 ft.Column([
-                    ft.Row([
-                        ft.Text(nome_pac, size=13, weight=ft.FontWeight.W_700,
-                                color=TXT, expand=True),
-                        ft.Container(
-                            content=ft.Text("Visao Medico", size=9, color=AZUL,
-                                            weight=ft.FontWeight.W_700),
-                            bgcolor=ft.Colors.with_opacity(0.12, AZUL),
-                            border=ft.border.all(
-                                1, ft.Colors.with_opacity(0.35, AZUL)),
-                            border_radius=6,
-                            padding=ft.padding.symmetric(horizontal=6, vertical=2),
-                        ),
-                    ], spacing=8),
+                    ft.Text(nome_pac, size=13, weight=ft.FontWeight.W_700,
+                            color=TXT, expand=True),
                     ft.Text(info_line, size=10, color=SEC) if info_line
                     else ft.Container(),
                 ], spacing=2, expand=True, tight=True),
