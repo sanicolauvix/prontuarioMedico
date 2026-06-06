@@ -4384,7 +4384,7 @@ def criar_tela_hub(page: ft.Page, voltar_fn=None, modo_medico: bool = False) -> 
                             border=ft.border.all(2, "#FF4444"),  # vermelho = silhueta
                         ),
                     ], spacing=16,
-                       vertical_alignment=ft.CrossAxisAlignment.START,
+                       vertical_alignment=ft.CrossAxisAlignment.STRETCH,
                        expand=True),
                 ),
             ]
@@ -5299,7 +5299,8 @@ def criar_tela_hub(page: ft.Page, voltar_fn=None, modo_medico: bool = False) -> 
     except Exception:
         larg = 0
 
-    if larg > 500:
+    # modo_medico web: tela cheia sem limitacao de largura
+    if larg > 500 and not modo_medico:
         conteudo_final = ft.Row([
             ft.Container(expand=True),
             ft.Container(content=corpo, width=480),
