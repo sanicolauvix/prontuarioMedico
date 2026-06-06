@@ -241,9 +241,9 @@ def main(page: ft.Page):
                 _quadrante("RESUMO DO DIA", ACENTO,
                            ft.Container(content=resumo, expand=True),
                            icone="insights_rounded"),
-                _quadrante("MONITOR VITAL", "#FF7675",
-                           ft.Container(content=monitor, expand=True),
-                           icone="monitor_heart_rounded"),
+                _quadrante("SISTEMAS", AZUL,
+                           ft.Container(content=sistemas, expand=True),
+                           icone="category_rounded"),
             ], spacing=8, expand=True),
         ], spacing=8, expand=True)
 

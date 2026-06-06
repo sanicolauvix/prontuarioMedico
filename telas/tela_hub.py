@@ -4032,17 +4032,20 @@ def criar_tela_hub(page: ft.Page, voltar_fn=None, modo_medico: bool = False) -> 
     # sistemas que NAO estao na silhueta + resumo + checkup em rows de 4
     _SISTEMAS_SILHUETA = {"Cardiaco", "Visceral", "Psiquiatria", "Visão & Audição"}
     _todos = [s for s in _SISTEMAS if s[0] not in _SISTEMAS_SILHUETA] + [None, "checkup"]
+    _todos_cards = []  # lista plana de todos os cards para expor no _hub_partes
     _rows_sis = []
     for i in range(0, len(_todos), 4):
         grupo = _todos[i:i+4]
         cards = []
         for s in grupo:
             if s is None:
-                cards.append(card_resumo_hub)
+                c = card_resumo_hub
             elif s == "checkup":
-                cards.append(card_checkup_hub)
+                c = card_checkup_hub
             else:
-                cards.append(_build_card(s))
+                c = _build_card(s)
+            cards.append(c)
+            _todos_cards.append(c)
         # preencher linha se menos de 4
         while len(cards) < 4:
             cards.append(ft.Container(expand=True))
@@ -5321,13 +5324,7 @@ def criar_tela_hub(page: ft.Page, voltar_fn=None, modo_medico: bool = False) -> 
             conteudo_final = corpo
 
     # expor partes para modo_medico desktop
-    # extrair cards individuais de sistemas (primeira linha)
-    _cards_sis = []
-    if _rows_sis and hasattr(_rows_sis[0], "controls"):
-        for row in _rows_sis:
-            for c in row.controls:
-                if isinstance(c, ft.Container) and c.tooltip:
-                    _cards_sis.append(c)
+    _cards_sis = _todos_cards  # lista plana de cards de sistemas
 
     _hub_partes = {
         "spacer_topo":    spacer_topo,
