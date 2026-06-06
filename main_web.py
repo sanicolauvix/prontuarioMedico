@@ -163,7 +163,7 @@ def main(page: ft.Page):
                 try: page.update()
                 except Exception: pass
                 return
-            _abrir_hub_medico(medico)
+            _tela_boas_vindas(medico)
 
         btn_entrar.on_click = _validar
         f_codigo.on_submit  = _validar
@@ -186,6 +186,116 @@ def main(page: ft.Page):
                 btn_entrar,
                 ft.Container(height=12),
                 btn_voltar,
+                ft.Container(expand=True),
+            ], expand=True, horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+               spacing=4),
+        ))
+
+    # ── Boas-vindas médico ────────────────────────────────────────────────────
+    def _tela_boas_vindas(medico: dict):
+        nome = medico.get("nome_medico", "Doutor(a)")
+
+        # numero do whatsapp do usuario (Sebastiao)
+        WHATSAPP = "5519999999999"  # substituir pelo numero real
+        WHATSAPP_MSG = (
+            "Olá! Acessei seu prontuário digital e gostaria de deixar "
+            "uma sugestão / elogio / crítica."
+        )
+        wpp_url = (
+            f"https://wa.me/{WHATSAPP}"
+            f"?text={WHATSAPP_MSG.replace(' ', '%20')}"
+        )
+
+        btn_entrar = ft.Container(
+            content=ft.Row([
+                ft.Icon("login_rounded", size=16, color=BG),
+                ft.Text("Acessar Prontuário", size=14, color=BG,
+                        weight=ft.FontWeight.W_700),
+            ], spacing=8, tight=True),
+            bgcolor=VERD, border_radius=12, ink=True,
+            padding=ft.padding.symmetric(horizontal=32, vertical=16),
+        )
+        btn_entrar.on_click = lambda e: _abrir_hub_medico(medico)
+
+        btn_wpp = ft.Container(
+            content=ft.Row([
+                ft.Image(src="assets/whatsapp.png", width=20, height=20)
+                if False else  # usar icone texto pois svg pode nao carregar
+                ft.Container(
+                    content=ft.Text("💬", size=18),
+                ),
+                ft.Text("Enviar mensagem ao paciente",
+                        size=13, color="#25D366"),
+            ], spacing=8, tight=True),
+            bgcolor=ft.Colors.with_opacity(0.08, "#25D366"),
+            border=ft.border.all(1, ft.Colors.with_opacity(0.35, "#25D366")),
+            border_radius=10, ink=True,
+            padding=ft.padding.symmetric(horizontal=20, vertical=12),
+        )
+        btn_wpp.on_click = lambda e: page.launch_url(wpp_url)
+
+        _nav(ft.Container(
+            bgcolor=BG, expand=True,
+            content=ft.Column([
+                ft.Container(expand=True),
+
+                # saudacao
+                ft.Text(f"Bem-vindo(a), {nome}",
+                        size=20, color=TXT, weight=ft.FontWeight.W_700,
+                        text_align="center"),
+                ft.Container(height=24),
+
+                # card com a mensagem
+                ft.Container(
+                    content=ft.Column([
+                        ft.Row([
+                            ft.Icon("info_outline_rounded", size=20, color=AZUL),
+                            ft.Text("Sobre este prontuário", size=14,
+                                    color=AZUL, weight=ft.FontWeight.W_700),
+                        ], spacing=8),
+                        ft.Container(height=12),
+                        ft.Text(
+                            "Este sistema foi desenvolvido com o único objetivo de "
+                            "organizar e centralizar informações de saúde — "
+                            "não para substituir seu julgamento clínico nem "
+                            "orientar decisões médicas.",
+                            size=13, color=TXT, text_align="center",
+                        ),
+                        ft.Container(height=8),
+                        ft.Text(
+                            "Você, como profissional, é o único capaz de interpretar "
+                            "estes dados no contexto do paciente. "
+                            "Aqui você encontrará histórico de exames, medicamentos, "
+                            "consultas e marcadores de saúde organizados para "
+                            "facilitar sua consulta.",
+                            size=13, color=SEC, text_align="center",
+                        ),
+                        ft.Container(height=16),
+                        ft.Container(
+                            content=ft.Row([
+                                ft.Icon("favorite_rounded", size=14, color=VERM),
+                                ft.Text(
+                                    "Críticas, sugestões e elogios são muito bem-vindos!",
+                                    size=12, color=TXT,
+                                    weight=ft.FontWeight.W_600,
+                                ),
+                                ft.Icon("favorite_rounded", size=14, color=VERM),
+                            ], spacing=8, tight=True,
+                               alignment=ft.MainAxisAlignment.CENTER),
+                            alignment=ft.alignment.center,
+                        ),
+                    ], spacing=0, horizontal_alignment=ft.CrossAxisAlignment.CENTER),
+                    bgcolor=CARD,
+                    border=ft.border.all(1, f"{AZUL}33"),
+                    border_radius=16,
+                    padding=ft.padding.all(24),
+                    width=520,
+                ),
+
+                ft.Container(height=28),
+                btn_wpp,
+                ft.Container(height=20),
+                btn_entrar,
                 ft.Container(expand=True),
             ], expand=True, horizontal_alignment=ft.CrossAxisAlignment.CENTER,
                spacing=4),
