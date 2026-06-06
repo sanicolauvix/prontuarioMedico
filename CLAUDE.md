@@ -103,6 +103,18 @@ prontuario/
 git add -A && git commit -m "feat: ..." && git push
 ```
 
+## Padrao de espacamento web (definido 2026-06-06)
+
+Todas as telas abertas no web (via `_navegar_sub` ou `_navegar`) devem usar:
+
+```python
+# Padding da area de conteudo principal
+padding=ft.padding.only(left=20, right=20, top=12, bottom=12)
+```
+
+Aplicar no container que envolve a `area` (Column de scroll) antes do `lay.criar_corpo()`.
+Nao aplicar no cabecalho nem na nav bar — apenas na area de conteudo.
+
 ## Diferenca vs Prestanista
 
 - **COM**: extracao de PDF, IA (Claudia), remedios, dieta, parecer medico

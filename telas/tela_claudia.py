@@ -233,12 +233,12 @@ def criar_tela_claudia(page: ft.Page, voltar_fn, prompt_inicial=None) -> ft.Cont
     area_msgs = ft.Container(
         content=msgs_col,
         expand=True,
-        padding=ft.padding.symmetric(horizontal=16, vertical=8),
+        padding=ft.padding.only(left=20, right=20, top=12, bottom=12),
     )
 
     barra_input = ft.Container(
         content=ft.Row([campo, btn_enviar], spacing=8),
-        padding=ft.padding.symmetric(horizontal=16, vertical=10),
+        padding=ft.padding.only(left=20, right=20, top=10, bottom=10),
         bgcolor=CARD,
         border=ft.Border(top=ft.BorderSide(1, BD)),
     )
