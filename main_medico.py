@@ -296,7 +296,7 @@ def main(page: ft.Page):
                             clip_behavior=ft.ClipBehavior.HARD_EDGE,
                         ),
                         col_sistemas,
-                    ], spacing=4, vertical_alignment=ft.CrossAxisAlignment.START),
+                    ], spacing=0, vertical_alignment=ft.CrossAxisAlignment.START),
                 ], horizontal_alignment=ft.CrossAxisAlignment.START,
                    spacing=0, tight=True),
             ),
