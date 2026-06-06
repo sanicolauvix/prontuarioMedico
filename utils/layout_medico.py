@@ -11,7 +11,8 @@ AZUL  = "#58A6FF"; VERD  = "#3FB950"; VERM = "#FF4444"
 ROXO  = "#BC8CFF"; AMAR  = "#D29922"
 
 
-def montar_layout_desktop(page: ft.Page, pw: int, wrapper, nav_fn) -> None:
+def montar_layout_desktop(page: ft.Page, pw: int, wrapper, nav_fn,
+                          modo_medico: bool = True) -> None:
     """
     Monta o layout desktop do hub medico:
     - Coluna esquerda: grade 2x2 (paciente | monitor vital / resumo | monitor vital)
@@ -128,20 +129,51 @@ def montar_layout_desktop(page: ft.Page, pw: int, wrapper, nav_fn) -> None:
             clip_behavior=ft.ClipBehavior.HARD_EDGE,
         )
 
+    # quadrante 1: PACIENTE (medico) ou CLAUDIA (paciente) — troca por visibilidade
+    q_paciente = _quadrante("PACIENTE", AZUL, ft.Column([
+        ft.Row([avatar, ft.Column([
+            ft.Text(nome_pac, size=12, color=TXT, weight=ft.FontWeight.W_700),
+            ft.Text(idade_str, size=10, color=SEC) if idade_str else ft.Container(),
+        ], spacing=2, tight=True, expand=True)], spacing=8),
+        ft.Container(height=4),
+        _linha("Nascimento", nasc_fmt),
+        _linha("Sexo",       sexo_label),
+        _linha("Sangue",     tipo_sang),
+        _linha("Peso",       f"{peso} kg" if peso else ""),
+        _linha("Altura",     f"{altura_p} cm" if altura_p else ""),
+    ], spacing=3, tight=True, scroll=ft.ScrollMode.AUTO),
+    icone="person_rounded")
+    q_paciente.visible = modo_medico
+
+    # card Claudia para o paciente
+    claudia_widget = partes.get("claudia_card")
+    q_claudia = _quadrante("CLAUDIA", ROXO,
+        claudia_widget if claudia_widget else ft.Column([
+            ft.Row([
+                ft.Container(
+                    content=ft.Text("C", size=20, weight=ft.FontWeight.W_900, color=ROXO),
+                    width=44, height=44, border_radius=22,
+                    bgcolor=ft.Colors.with_opacity(0.10, ROXO),
+                    border=ft.border.all(2, ROXO),
+                    alignment=ft.alignment.center,
+                ),
+                ft.Column([
+                    ft.Text("Claudia", size=13, color=TXT, weight=ft.FontWeight.W_700),
+                    ft.Text("Toque para conversar", size=10, color=MUT),
+                ], spacing=2, tight=True, expand=True),
+            ], spacing=10),
+        ], spacing=0, tight=True),
+    icone="psychology_rounded")
+    q_claudia.visible = not modo_medico
+
+    # container que exibe um ou outro no mesmo espaco
+    q1 = ft.Container(
+        content=ft.Stack([q_paciente, q_claudia]),
+        expand=True, height=h_quad,
+    )
+
     col_pac_resumo = ft.Column([
-        _quadrante("PACIENTE", AZUL, ft.Column([
-            ft.Row([avatar, ft.Column([
-                ft.Text(nome_pac, size=12, color=TXT, weight=ft.FontWeight.W_700),
-                ft.Text(idade_str, size=10, color=SEC) if idade_str else ft.Container(),
-            ], spacing=2, tight=True, expand=True)], spacing=8),
-            ft.Container(height=4),
-            _linha("Nascimento", nasc_fmt),
-            _linha("Sexo",       sexo_label),
-            _linha("Sangue",     tipo_sang),
-            _linha("Peso",       f"{peso} kg" if peso else ""),
-            _linha("Altura",     f"{altura_p} cm" if altura_p else ""),
-        ], spacing=3, tight=True, scroll=ft.ScrollMode.AUTO),
-        icone="person_rounded"),
+        q1,
         _quadrante("RESUMO DO DIA", AMAR,
                    ft.Container(content=resumo, expand=True),
                    icone="insights_rounded"),

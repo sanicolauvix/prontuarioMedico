@@ -339,7 +339,10 @@ def main(page: ft.Page):
 
     def _montar_hub_medico(pw: int):
         from utils.layout_medico import montar_layout_desktop
-        montar_layout_desktop(page, pw, _hub_wrapper[0], _nav)
+        partes = getattr(_hub_wrapper[0], "_hub_partes", {})
+        eh_medico = partes.get("modo_medico", False)
+        montar_layout_desktop(page, pw, _hub_wrapper[0], _nav,
+                              modo_medico=eh_medico)
 
     def _on_resized(e=None):
         pw = int(page.width or 0)

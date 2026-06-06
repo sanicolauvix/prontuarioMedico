@@ -5341,6 +5341,8 @@ def criar_tela_hub(page: ft.Page, voltar_fn=None, modo_medico: bool = False) -> 
         "resumo_widget":  row_resumo,
         "sistemas_widget": row_sistemas,
         "cards_sistemas":  _cards_sis,
+        "claudia_card":    card_claudia,
+        "modo_medico":     modo_medico,
     }
 
     wrapper = ft.Column(expand=True)
