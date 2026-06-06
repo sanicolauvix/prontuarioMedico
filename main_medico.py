@@ -218,42 +218,50 @@ def main(page: ft.Page):
 
         cards_sis = partes.get("cards_sistemas", [])
 
-        grade_2x2 = ft.Column([
-            ft.Row([
-                _quadrante("PACIENTE", AZUL, ft.Column([
-                    ft.Row([avatar, ft.Column([
-                        ft.Text(nome_pac, size=13, color=TXT, weight=ft.FontWeight.W_700),
-                        ft.Text(idade_str, size=10, color=SEC) if idade_str else ft.Container(),
-                    ], spacing=2, tight=True, expand=True)], spacing=10),
-                    ft.Container(height=6),
-                    _linha_pac("Nascimento", nasc_fmt),
-                    _linha_pac("Sexo",       sexo_label),
-                    _linha_pac("Sangue",     tipo_sang),
-                    _linha_pac("Peso",       f"{peso} kg" if peso else ""),
-                    _linha_pac("Altura",     f"{altura_p} cm" if altura_p else ""),
-                ], spacing=4, tight=True, scroll=ft.ScrollMode.AUTO),
-                icone="person_rounded"),
-                _quadrante("MONITOR VITAL", "#FF7675",
-                           ft.Container(content=monitor, expand=True),
-                           icone="monitor_heart_rounded"),
-            ], spacing=8, expand=True),
-            ft.Row([
-                _quadrante("RESUMO DO DIA", ACENTO,
-                           ft.Container(content=resumo, expand=True),
-                           icone="insights_rounded"),
-                _quadrante("SISTEMAS", AZUL,
-                           ft.Container(content=sistemas, expand=True),
-                           icone="category_rounded"),
-            ], spacing=8, expand=True),
+        # coluna esquerda: PACIENTE (topo) + RESUMO (baixo)
+        col_pac_resumo = ft.Column([
+            _quadrante("PACIENTE", AZUL, ft.Column([
+                ft.Row([avatar, ft.Column([
+                    ft.Text(nome_pac, size=13, color=TXT, weight=ft.FontWeight.W_700),
+                    ft.Text(idade_str, size=10, color=SEC) if idade_str else ft.Container(),
+                ], spacing=2, tight=True, expand=True)], spacing=10),
+                ft.Container(height=6),
+                _linha_pac("Nascimento", nasc_fmt),
+                _linha_pac("Sexo",       sexo_label),
+                _linha_pac("Sangue",     tipo_sang),
+                _linha_pac("Peso",       f"{peso} kg" if peso else ""),
+                _linha_pac("Altura",     f"{altura_p} cm" if altura_p else ""),
+            ], spacing=4, tight=True, scroll=ft.ScrollMode.AUTO),
+            icone="person_rounded"),
+            _quadrante("RESUMO DO DIA", ACENTO,
+                       ft.Container(content=resumo, expand=True),
+                       icone="insights_rounded"),
+        ], spacing=8, expand=True)
+
+        # coluna direita: MONITOR VITAL expandido (ocupa tudo)
+        col_monitor = ft.Column([
+            _quadrante("MONITOR VITAL", "#FF7675",
+                       ft.Container(content=monitor, expand=True),
+                       icone="monitor_heart_rounded"),
+        ], spacing=0, expand=True)
+
+        grade_2x2 = ft.Row([
+            col_pac_resumo,
+            col_monitor,
         ], spacing=8, expand=True)
 
         col_esq_content = grade_2x2
 
         # cards de sistemas empilhados verticalmente ao lado da silhueta
+        h_card_sis = int((altura_util - 8 * (len(cards_sis) - 1)) / len(cards_sis)) if cards_sis else 100
         col_sistemas = ft.Column(
-            [ft.Container(content=c, height=int(altura_util / len(cards_sis)) if cards_sis else 100,
-                          clip_behavior=ft.ClipBehavior.HARD_EDGE)
-             for c in cards_sis],
+            [ft.Container(
+                content=c,
+                height=h_card_sis,
+                width=120,
+                clip_behavior=ft.ClipBehavior.HARD_EDGE,
+                border_radius=8,
+             ) for c in cards_sis],
             spacing=8, tight=True,
         ) if cards_sis else ft.Container()
 
