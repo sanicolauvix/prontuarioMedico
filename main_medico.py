@@ -74,9 +74,9 @@ def main(page: ft.Page):
 
         from telas.silhueta_orgaos import criar_silhueta
 
-        # altura util = altura total - cabecalho(28+56) - backup(30) - versao(20) - navbar(58)
+        # altura util = altura total - cabecalho(28+56) - backup(24) - versao(18) - navbar(58) - margem(16)
         ph = int(page.height or 700)
-        altura_util = ph - 28 - 56 - 30 - 20 - 58  # ~508px para ph=700
+        altura_util = ph - 28 - 56 - 24 - 18 - 58 - 16
         # largura proporcional 644:551 para caber na altura util
         larg_prop = int(altura_util * 644 / 551)
         larg_max  = pw - 480
@@ -280,12 +280,12 @@ def main(page: ft.Page):
             ft.Container(
                 expand=True,
                 bgcolor=BG,
-                padding=ft.padding.symmetric(horizontal=8, vertical=8),
+                padding=ft.padding.only(left=4, right=4, top=4, bottom=0),
                 content=ft.Column([
                     ft.Text("Clique no Órgão que Deseja Pesquisar",
-                            size=12, color=SEC, text_align="center",
+                            size=11, color=SEC, text_align="center",
                             weight=ft.FontWeight.W_600),
-                    ft.Container(height=6),
+                    ft.Container(height=4),
                     ft.Row([
                         ft.Container(
                             content=silhueta,
@@ -294,8 +294,8 @@ def main(page: ft.Page):
                             clip_behavior=ft.ClipBehavior.HARD_EDGE,
                         ),
                         col_sistemas,
-                    ], spacing=8, vertical_alignment=ft.CrossAxisAlignment.START),
-                ], horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+                    ], spacing=4, vertical_alignment=ft.CrossAxisAlignment.START),
+                ], horizontal_alignment=ft.CrossAxisAlignment.START,
                    spacing=0, tight=True),
             ),
         ], expand=True, spacing=0,
