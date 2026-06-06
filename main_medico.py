@@ -195,13 +195,22 @@ def main(page: ft.Page):
         ], spacing=0, expand=True,
            scroll=ft.ScrollMode.HIDDEN)
 
-        # area central: esquerda=silhueta | direita=hub
+        # area central: esquerda=hub | direita=silhueta
         area_central = ft.Row([
-            # esquerda: silhueta
+            # esquerda: card paciente + conteudo hub
+            ft.Container(
+                content=col_esq_content,
+                width=460,
+                expand=False,
+                bgcolor=BG,
+                border=ft.border.only(right=ft.BorderSide(1, BD)),
+                padding=ft.padding.only(left=8, right=8),
+            ),
+            # direita: silhueta
             ft.Container(
                 expand=True,
                 bgcolor=BG,
-                padding=ft.padding.only(left=8, top=8),
+                padding=ft.padding.only(right=8, top=8),
                 alignment=ft.alignment.top_center,
                 content=ft.Column([
                     ft.Container(
@@ -219,15 +228,6 @@ def main(page: ft.Page):
                     ),
                 ], horizontal_alignment=ft.CrossAxisAlignment.CENTER,
                    spacing=0, tight=True),
-            ),
-            # direita: card paciente + conteudo hub
-            ft.Container(
-                content=col_esq_content,
-                width=460,
-                expand=False,
-                bgcolor=BG,
-                border=ft.border.only(left=ft.BorderSide(1, BD)),
-                padding=ft.padding.only(left=8, right=8),
             ),
         ], expand=True, spacing=0,
            vertical_alignment=ft.CrossAxisAlignment.START)
