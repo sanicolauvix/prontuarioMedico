@@ -31,6 +31,7 @@ _HERE_MODEL = _os.path.dirname(_os.path.abspath(__file__))  # prontuario/dados/
 
 # Banco do MÓDULO Prontuário: fica junto ao módulo em prontuario/dados/
 DB_PATH = _os.path.join(_HERE_MODEL, "prontuario.db")     # prontuario/dados/prontuario.db
+CORE_DB = DB_PATH  # alias — tudo no mesmo banco
 _os.makedirs(_HERE_MODEL, exist_ok=True)
 
 
