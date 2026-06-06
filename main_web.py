@@ -196,7 +196,7 @@ def main(page: ft.Page):
         nome = medico.get("nome_medico", "Doutor(a)")
 
         # numero do whatsapp do usuario (Sebastiao)
-        WHATSAPP = "5519999999999"  # substituir pelo numero real
+        WHATSAPP = "5527999898737"
         WHATSAPP_MSG = (
             "Olá! Acessei seu prontuário digital e gostaria de deixar "
             "uma sugestão / elogio / crítica."
