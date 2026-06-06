@@ -437,6 +437,13 @@ def criar_tela_historico_clinico(page: ft.Page, voltar_fn):
             icone_titulo="history_rounded", cor_titulo=AZUL,
             acoes=[btn_novo])
 
+        rodape = ft.Container(
+            content=ft.Text("Histórico Clínico — Prontuário Médico",
+                            size=10, color="#30363D", text_align="center"),
+            padding=ft.padding.symmetric(horizontal=20, vertical=12),
+            border=ft.Border(top=ft.BorderSide(1, "#21262D")),
+        )
+
         wrapper.controls.clear()
         wrapper.controls.append(ft.Container(
             bgcolor=BG, expand=True,
@@ -446,6 +453,7 @@ def criar_tela_historico_clinico(page: ft.Page, voltar_fn):
                 ft.Container(content=area,
                              padding=ft.padding.only(left=20, right=20, top=12, bottom=12),
                              expand=True),
+                rodape,
             ], spacing=0, expand=True)))
         if _montado[0]:
             try: page.update()

@@ -117,12 +117,21 @@ Padding da area de conteudo: `left=20, right=20, top=12, bottom=12`
 ```python
 area = ft.Column(spacing=8, scroll=ft.ScrollMode.AUTO, expand=True)
 # ...popular area...
+
+rodape = ft.Container(
+    content=ft.Text("Nome da Tela — Prontuário Médico",
+                    size=10, color="#30363D", text_align="center"),
+    padding=ft.padding.symmetric(horizontal=20, vertical=12),
+    border=ft.Border(top=ft.BorderSide(1, "#21262D")),
+)
+
 corpo = ft.Column([
     ft.Container(height=lay.spacer_topo, bgcolor=BG),
     cabecalho,
     ft.Container(content=area,
                  padding=ft.padding.only(left=20, right=20, top=12, bottom=12),
                  expand=True),
+    rodape,
 ], spacing=0, expand=True)
 return ft.Container(bgcolor=BG, expand=True, content=corpo)
 ```
