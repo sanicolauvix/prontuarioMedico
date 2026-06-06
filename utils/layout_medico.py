@@ -251,6 +251,4 @@ def montar_layout_desktop(page: ft.Page, pw: int, wrapper, nav_fn,
         rodape,
     ], spacing=0, expand=True)
 
-    container = ft.Container(content=layout, expand=True, bgcolor=BG)
-    nav_fn(container)
-    return container
+    nav_fn(ft.Container(content=layout, expand=True, bgcolor=BG))

@@ -25,9 +25,8 @@ def main(page: ft.Page):
     page.padding    = 0
     page.window_maximized = True
 
-    _hub_wrapper    = [None]
-    _layout_desktop = [None]   # container ja montado — reutilizado ao voltar
-    _layout_feito   = [False]
+    _hub_wrapper  = [None]
+    _layout_feito = [False]
 
     def _nav(tela):
         page.controls.clear()
@@ -126,9 +125,8 @@ def main(page: ft.Page):
         from telas.tela_hub import criar_tela_hub
         wrapper = criar_tela_hub(page, voltar_fn=_voltar_escolha,
                                  modo_medico=False, navegar_sub_fn=_navegar_sub)
-        _hub_wrapper[0]    = wrapper
-        _layout_desktop[0] = None
-        _layout_feito[0]   = False
+        _hub_wrapper[0]  = wrapper
+        _layout_feito[0] = False
         pw = int(page.width or 0)
         if pw >= 600:
             _montar_hub_medico(pw)
@@ -315,39 +313,36 @@ def main(page: ft.Page):
                spacing=4),
         ))
 
-    # ── Navegacao web: sub-telas centralizadas em 80% da largura ─────────────
+    # ── Navegacao web: sub-telas como overlay sobre o hub fixo ───────────────
+    _ov_sub = [None]   # overlay atual da sub-tela
+
+    def _fechar_sub():
+        """Remove o overlay da sub-tela — hub continua visivel embaixo."""
+        if _ov_sub[0] is not None and _ov_sub[0] in page.overlay:
+            page.overlay.remove(_ov_sub[0])
+            _ov_sub[0] = None
+        try: page.update()
+        except Exception: pass
+
     def _navegar_sub(tela_fn, voltar_hub_fn):
-        """Versao web de _navegar: envolve sub-tela em container 80% centralizado."""
-        import traceback
+        """Abre a sub-tela em overlay de 80% sobre o hub — hub nao e trocado."""
+        import traceback as tb
         nome = getattr(tela_fn, "__name__", str(tela_fn))
+
+        def _voltar():
+            _fechar_sub()
+
         try:
-            nova_tela = tela_fn(page, voltar_hub_fn)
-            pw = int(page.width or 0)
-            w = int(pw * 0.80) if pw >= 600 else pw
-            container = ft.Container(
-                content=ft.Row([
-                    ft.Container(expand=True, bgcolor="#0D1117"),
-                    ft.Container(content=nova_tela, width=w, bgcolor=BG,
-                                 border=ft.border.only(
-                                     left=ft.BorderSide(1, "#21262D"),
-                                     right=ft.BorderSide(1, "#21262D")),
-                                 expand=False),
-                    ft.Container(expand=True, bgcolor="#0D1117"),
-                ], spacing=0, expand=True,
-                   vertical_alignment=ft.CrossAxisAlignment.STRETCH),
-                expand=True, bgcolor="#0D1117",
-            )
-            _nav(container)
+            nova_tela = tela_fn(page, _voltar)
         except Exception as ex:
-            import traceback as tb
             log_txt = tb.format_exc()
             btn_v = ft.Container(
-                content=ft.Text("Voltar", size=13, color=MUT),
+                content=ft.Text("Fechar", size=13, color=MUT),
                 padding=ft.padding.symmetric(horizontal=16, vertical=10),
                 border_radius=8, bgcolor=f"{MUT}22", ink=True,
             )
-            btn_v.on_click = lambda e: voltar_hub_fn()
-            _nav(ft.Container(
+            btn_v.on_click = lambda e: _fechar_sub()
+            nova_tela = ft.Container(
                 content=ft.Column([
                     ft.Icon("error_outline_rounded", size=40, color=VERM),
                     ft.Text(f"Erro: {nome}", size=14, color=TXT,
@@ -361,19 +356,36 @@ def main(page: ft.Page):
                     btn_v,
                 ], spacing=10, scroll=ft.ScrollMode.AUTO),
                 bgcolor=BG, expand=True, padding=20,
-            ))
+            )
+
+        pw = int(page.width or 0)
+        w = int(pw * 0.80) if pw >= 600 else pw
+
+        ov = ft.Container(
+            content=ft.Row([
+                ft.Container(expand=True, bgcolor="#88000000"),
+                ft.Container(content=nova_tela, width=w, bgcolor=BG,
+                             expand=False),
+                ft.Container(expand=True, bgcolor="#88000000"),
+            ], spacing=0, expand=True,
+               vertical_alignment=ft.CrossAxisAlignment.STRETCH),
+            expand=True,
+        )
+        # fechar clicando nas laterais escuras
+        ov.on_click = lambda e: _fechar_sub()
+
+        # remover overlay anterior se existir
+        if _ov_sub[0] is not None and _ov_sub[0] in page.overlay:
+            page.overlay.remove(_ov_sub[0])
+        _ov_sub[0] = ov
+        page.overlay.append(ov)
+        try: page.update()
+        except Exception: pass
 
     # ── Hub médico ────────────────────────────────────────────────────────────
     def _voltar_para_hub():
-        """Restaura o layout desktop ja montado — sem remontar nada."""
-        if _layout_desktop[0] is not None:
-            _nav(_layout_desktop[0])
-        elif _hub_wrapper[0]:
-            pw = int(page.width or 0)
-            if pw >= 600:
-                _montar_hub_medico(pw)
-            else:
-                _nav(_hub_wrapper[0])
+        """Sem uso direto agora — hub nunca sai de page.controls."""
+        pass
 
     def _abrir_hub_medico(medico: dict):
         _nav(_splash(f"Bem-vindo, {medico.get('nome_medico', 'Médico')}"))
@@ -383,9 +395,8 @@ def main(page: ft.Page):
             from telas.tela_hub import criar_tela_hub
             wrapper = criar_tela_hub(page, voltar_fn=_voltar_para_hub,
                                      modo_medico=True, navegar_sub_fn=_navegar_sub)
-            _hub_wrapper[0]    = wrapper
-            _layout_desktop[0] = None
-            _layout_feito[0]   = False
+            _hub_wrapper[0]  = wrapper
+            _layout_feito[0] = False
             pw = int(page.width or 0)
             if pw >= 600:
                 _montar_hub_medico(pw)
@@ -397,9 +408,8 @@ def main(page: ft.Page):
         from utils.layout_medico import montar_layout_desktop
         partes = getattr(_hub_wrapper[0], "_hub_partes", {})
         eh_medico = partes.get("modo_medico", False)
-        container = montar_layout_desktop(page, pw, _hub_wrapper[0], _nav,
-                                          modo_medico=eh_medico)
-        _layout_desktop[0] = container
+        montar_layout_desktop(page, pw, _hub_wrapper[0], _nav,
+                              modo_medico=eh_medico)
 
     def _on_resized(e=None):
         pw = int(page.width or 0)
