@@ -459,12 +459,11 @@ def criar_tela_hub(page: ft.Page, voltar_fn=None, modo_medico: bool = False,
 
     def _abrir_grafico_canal(lbl, termos, cor):
         from telas.tela_grafico_marcador import criar_tela_grafico_marcador
-        _navegar(lambda p, v: criar_tela_grafico_marcador(p, v, lbl, termos, cor),
-                 _voltar_hub)
+        _ir(lambda p, v: criar_tela_grafico_marcador(p, v, lbl, termos, cor))
 
     def _abrir_glicemia():
         from telas.tela_glicemia import criar_tela_glicemia
-        _navegar(criar_tela_glicemia, _voltar_hub)
+        _ir(criar_tela_glicemia)
 
     def _overlay_glicemia_padrao():
         import sqlite3 as _sqg
@@ -556,15 +555,15 @@ def criar_tela_hub(page: ft.Page, voltar_fn=None, modo_medico: bool = False,
 
     def _abrir_acido_urico():
         from telas.tela_acido_urico import criar_tela_acido_urico
-        _navegar(criar_tela_acido_urico, _voltar_hub)
+        _ir(criar_tela_acido_urico)
 
     def _abrir_pressao():
         from telas.tela_pressao import criar_tela_pressao
-        _navegar(criar_tela_pressao, _voltar_hub)
+        _ir(criar_tela_pressao)
 
     def _abrir_bioimpedancia():
         from telas.tela_bioimpedancia import criar_tela_bioimpedancia
-        _navegar(criar_tela_bioimpedancia, _voltar_hub)
+        _ir(criar_tela_bioimpedancia)
 
     def _abrir_overlay_canal(ref_dict):
         """Overlay ampliado do card UTI — mostra detalhes e botao Abrir tela completa."""
