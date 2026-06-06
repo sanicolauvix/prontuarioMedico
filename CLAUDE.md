@@ -103,7 +103,31 @@ prontuario/
 git add -A && git commit -m "feat: ..." && git push
 ```
 
-## Padrao de espacamento web (definido 2026-06-06)
+## Padrao de layout web (definido 2026-06-06)
+
+### Espacamento
+Padding da area de conteudo: `left=20, right=20, top=12, bottom=12`
+
+### Scroll e altura
+- A area de conteudo SEMPRE usa `scroll=ft.ScrollMode.AUTO` e `expand=True`
+- O overlay fullscreen tem `height=page.height` para respeitar o fim da pagina
+- NUNCA deixar conteudo sem scroll em tela web — usuario nao pode ver o que passa da altura
+
+### Padrao obrigatorio para novas telas web
+```python
+area = ft.Column(spacing=8, scroll=ft.ScrollMode.AUTO, expand=True)
+# ...popular area...
+corpo = ft.Column([
+    ft.Container(height=lay.spacer_topo, bgcolor=BG),
+    cabecalho,
+    ft.Container(content=area,
+                 padding=ft.padding.only(left=20, right=20, top=12, bottom=12),
+                 expand=True),
+], spacing=0, expand=True)
+return ft.Container(bgcolor=BG, expand=True, content=corpo)
+```
+
+## Padrao de espacamento web (DEPRECATED — ver acima)
 
 Todas as telas abertas no web (via `_navegar_sub` ou `_navegar`) devem usar:
 

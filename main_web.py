@@ -364,10 +364,12 @@ def main(page: ft.Page):
         pw = int(page.width or 0)
 
         if fullscreen:
+            ph = int(page.height or 800)
             ov = ft.Container(
                 content=nova_tela,
                 expand=True,
                 bgcolor=BG,
+                height=ph,
             )
         else:
             w = int(pw * 0.80) if pw >= 600 else pw
