@@ -124,7 +124,8 @@ def main(page: ft.Page):
         restaurar_backup_completo()
         criar_tabelas()
         from telas.tela_hub import criar_tela_hub
-        wrapper = criar_tela_hub(page, voltar_fn=_voltar_escolha, modo_medico=False)
+        wrapper = criar_tela_hub(page, voltar_fn=_voltar_escolha,
+                                 modo_medico=False, navegar_sub_fn=_navegar_sub)
         _hub_wrapper[0]    = wrapper
         _layout_desktop[0] = None
         _layout_feito[0]   = False
@@ -314,6 +315,54 @@ def main(page: ft.Page):
                spacing=4),
         ))
 
+    # ── Navegacao web: sub-telas centralizadas em 80% da largura ─────────────
+    def _navegar_sub(tela_fn, voltar_hub_fn):
+        """Versao web de _navegar: envolve sub-tela em container 80% centralizado."""
+        import traceback
+        nome = getattr(tela_fn, "__name__", str(tela_fn))
+        try:
+            nova_tela = tela_fn(page, voltar_hub_fn)
+            pw = int(page.width or 0)
+            w = int(pw * 0.80) if pw >= 600 else pw
+            container = ft.Container(
+                content=ft.Row([
+                    ft.Container(expand=True, bgcolor="#0D1117"),
+                    ft.Container(content=nova_tela, width=w, bgcolor=BG,
+                                 border=ft.border.only(
+                                     left=ft.BorderSide(1, "#21262D"),
+                                     right=ft.BorderSide(1, "#21262D")),
+                                 expand=False),
+                    ft.Container(expand=True, bgcolor="#0D1117"),
+                ], spacing=0, expand=True,
+                   vertical_alignment=ft.CrossAxisAlignment.STRETCH),
+                expand=True, bgcolor="#0D1117",
+            )
+            _nav(container)
+        except Exception as ex:
+            import traceback as tb
+            log_txt = tb.format_exc()
+            btn_v = ft.Container(
+                content=ft.Text("Voltar", size=13, color=MUT),
+                padding=ft.padding.symmetric(horizontal=16, vertical=10),
+                border_radius=8, bgcolor=f"{MUT}22", ink=True,
+            )
+            btn_v.on_click = lambda e: voltar_hub_fn()
+            _nav(ft.Container(
+                content=ft.Column([
+                    ft.Icon("error_outline_rounded", size=40, color=VERM),
+                    ft.Text(f"Erro: {nome}", size=14, color=TXT,
+                            weight=ft.FontWeight.W_700),
+                    ft.Text(str(ex), size=12, color=AMAR),
+                    ft.Container(
+                        content=ft.Text(log_txt[-600:], size=10, color=SEC,
+                                        selectable=True),
+                        bgcolor=CARD, border_radius=8, padding=12,
+                    ),
+                    btn_v,
+                ], spacing=10, scroll=ft.ScrollMode.AUTO),
+                bgcolor=BG, expand=True, padding=20,
+            ))
+
     # ── Hub médico ────────────────────────────────────────────────────────────
     def _voltar_para_hub():
         """Restaura o layout desktop ja montado — sem remontar nada."""
@@ -333,7 +382,7 @@ def main(page: ft.Page):
             criar_tabelas()
             from telas.tela_hub import criar_tela_hub
             wrapper = criar_tela_hub(page, voltar_fn=_voltar_para_hub,
-                                     modo_medico=True)
+                                     modo_medico=True, navegar_sub_fn=_navegar_sub)
             _hub_wrapper[0]    = wrapper
             _layout_desktop[0] = None
             _layout_feito[0]   = False
