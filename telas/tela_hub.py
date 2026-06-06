@@ -5303,6 +5303,27 @@ def criar_tela_hub(page: ft.Page, voltar_fn=None, modo_medico: bool = False) -> 
     wrapper.controls.append(ft.Container(bgcolor=BG, expand=True, content=conteudo_final))
 
     _montado[0] = True
+
+    # no modo_medico web: recriar silhueta com page.width real apos primeiro render
+    if modo_medico:
+        _resized_feito = [False]
+        _prev_resized  = [page.on_resized]
+
+        def _on_resized(e=None):
+            if _resized_feito[0]:
+                return
+            if (page.width or 0) < 100:
+                return
+            _resized_feito[0] = True
+            _widget_silhueta[0] = None  # força recriar com width real
+            if aba_ativa[0] == 0:
+                area_conteudo.controls.clear()
+                area_conteudo.controls.extend(_conteudo_inicio())
+                try: page.update()
+                except Exception: pass
+
+        page.on_resized = _on_resized
+
     threading.Thread(target=_carregar_tudo_sync, daemon=True,
                      name="HubCarregar").start()
     return wrapper
