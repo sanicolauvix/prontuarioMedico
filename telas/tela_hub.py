@@ -4208,9 +4208,12 @@ def criar_tela_hub(page: ft.Page, voltar_fn=None, modo_medico: bool = False) -> 
         try:
             from telas.silhueta_orgaos import criar_silhueta
             _pw = page.width or 0
-            # web sem width definido: usar 360 (viewport mobile seguro)
             _pw = _pw if _pw > 100 else 360
-            larg = min(int(_pw - 32), 580)
+            # desktop: silhueta ocupa ~40% da largura ao lado do conteudo
+            if _pw >= 600:
+                larg = min(int(_pw * 0.40), 280)
+            else:
+                larg = min(int(_pw - 32), 400)
 
             # Mapa orgao -> (label, icone, cor, cfg_sistema)
             def _cfg(label):
@@ -4344,6 +4347,28 @@ def criar_tela_hub(page: ft.Page, voltar_fn=None, modo_medico: bool = False) -> 
 
     def _conteudo_inicio():
         topo = [card_claudia] if modo_medico else [_header_claudia, _claudia_corpo]
+        _pw = page.width or 0
+
+        # layout desktop: coluna esquerda (conteudo) + silhueta direita
+        if _pw >= 600:
+            col_esq = ft.Column([
+                *topo,
+                _header_monitor,
+                _monitor_corpo,
+                _header_resumo,
+                _resumo_corpo,
+                _secao_titulo("SISTEMAS", "category_rounded", AZUL),
+                row_sistemas,
+            ], spacing=8, expand=True)
+
+            return [
+                ft.Row([
+                    col_esq,
+                    _widget_silhueta,
+                ], spacing=16, vertical_alignment=ft.CrossAxisAlignment.START),
+            ]
+
+        # layout mobile: empilhado
         return [
             *topo,
             _header_monitor,
