@@ -15,6 +15,20 @@ TXT      = "#E6EDF3"; SEC  = "#8B949E"; MUT = "#484F58"
 ROXO     = "#BC8CFF"; AZUL = "#58A6FF"; VERD = "#3FB950"
 AMAR     = "#D29922"; VERM = "#F85149"; VERM_INT = "#CC1111"
 
+_ASSETS_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "assets")
+
+
+def _asset(nome: str) -> str:
+    """Retorna path absoluto no desktop, relativo no web/Android."""
+    caminho_abs = os.path.join(_ASSETS_DIR, nome)
+    if os.path.isfile(caminho_abs):
+        try:
+            import tkinter  # noqa
+            return caminho_abs  # desktop
+        except ModuleNotFoundError:
+            pass
+    return f"assets/{nome}"  # web / Android
+
 
 def criar_tela_hub(page: ft.Page, voltar_fn=None, modo_medico: bool = False) -> ft.Column:
     from datetime import datetime
@@ -3504,8 +3518,8 @@ def criar_tela_hub(page: ft.Page, voltar_fn=None, modo_medico: bool = False) -> 
         return sc
 
     _CARD_IMAGENS = {
-        "Ortopedia": ("assets/imagens.jpg", ft.ImageFit.COVER),
-        "Sangue":    ("assets/sangue.jpg",  ft.ImageFit.COVER),
+        "Ortopedia": (_asset("imagens.jpg"), ft.ImageFit.COVER),
+        "Sangue":    (_asset("sangue.jpg"),  ft.ImageFit.COVER),
     }
 
     def _build_card(s):
@@ -3534,7 +3548,7 @@ def criar_tela_hub(page: ft.Page, voltar_fn=None, modo_medico: bool = False) -> 
 
     # card Resumo do Dia
     _res_hub_content = ft.Image(
-            src="assets/resumo.png", fit=ft.ImageFit.COVER,
+            src=_asset("resumo.png"), fit=ft.ImageFit.COVER,
             width=float("inf"), expand=True)
 
     card_resumo_hub = ft.Container(
@@ -4021,7 +4035,7 @@ def criar_tela_hub(page: ft.Page, voltar_fn=None, modo_medico: bool = False) -> 
     # card Checkup com imagem
     card_checkup_hub = ft.Container(
         content=ft.Image(
-            src="assets/checkup.jpg", fit=ft.ImageFit.COVER,
+            src=_asset("checkup.jpg"), fit=ft.ImageFit.COVER,
             width=float("inf"), height=float("inf"),
         ),
         bgcolor=CARD,

@@ -1073,8 +1073,17 @@ def criar_tela_rotina_diaria(page: ft.Page, voltar_fn, navegar_fn=None) -> ft.Co
     # ── Botao Receitas ─────────────────────────────────────────────
 
     def _mk_btn_receitas() -> ft.Row:
-        _img_rec   = "assets/receitas.png"
-        _img_nutr  = "assets/nutricional.png"
+        import os as _os
+        _assets_dir = _os.path.join(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))), "assets")
+        def _asset_local(n):
+            p = _os.path.join(_assets_dir, n)
+            if _os.path.isfile(p):
+                try:
+                    import tkinter; return p  # noqa
+                except ModuleNotFoundError: pass
+            return f"assets/{n}"
+        _img_rec   = _asset_local("receitas.png")
+        _img_nutr  = _asset_local("nutricional.png")
 
         def _voltar_rotina():
             page.controls.clear()
@@ -1097,7 +1106,7 @@ def criar_tela_rotina_diaria(page: ft.Page, voltar_fn, navegar_fn=None) -> ft.Co
             try: page.update()
             except Exception: pass
 
-        _img_res   = "assets/resumo.png"
+        _img_res   = _asset_local("resumo.png")
 
         def _ir_resumo_dia(e=None):
             _abrir_resumo_dia()
