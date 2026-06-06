@@ -4204,11 +4204,12 @@ def criar_tela_hub(page: ft.Page, voltar_fn=None, modo_medico: bool = False) -> 
             barra_abas_row.controls.append(tab)
 
     # ── Silhueta anatomica ───────────────────────────────────
-    def _criar_widget_silhueta():
+    def _criar_widget_silhueta(pw: int = 0):
         try:
             from telas.silhueta_orgaos import criar_silhueta
-            _pw = page.width or 0
+            _pw = pw or page.width or 0
             _pw = _pw if _pw > 100 else 360
+            log.info("[SILHUETA] page.width=%s pw_arg=%s _pw=%s", page.width, pw, _pw)
             # desktop: usar espaco disponivel apos coluna esquerda (300px)
             if modo_medico and _pw >= 600:
                 larg = max(int(_pw - 300 - 48), 400)
@@ -4353,7 +4354,7 @@ def criar_tela_hub(page: ft.Page, voltar_fn=None, modo_medico: bool = False) -> 
         # apenas no modo_medico (web) -- no app normal fica sempre empilhado
         if modo_medico and _pw >= 600:
             # recriar silhueta sempre com pw correto
-            _widget_silhueta[0] = _criar_widget_silhueta()
+            _widget_silhueta[0] = _criar_widget_silhueta(pw=_pw)
             silhueta = _widget_silhueta[0]
 
             col_esq = ft.Column([
