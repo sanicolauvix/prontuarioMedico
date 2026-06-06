@@ -61,8 +61,12 @@ def main(page: ft.Page):
 
 
 if __name__ == "__main__":
+    import os as _os
+    # no servidor Linux headless: nao abrir browser, so servir web
+    _view = None if _os.name != "nt" else ft.AppView.WEB_BROWSER
     ft.app(
         target=main,
         port=8553,
-        view=ft.AppView.WEB_BROWSER,
+        host="0.0.0.0",
+        view=_view,
     )
