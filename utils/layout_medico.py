@@ -26,7 +26,7 @@ def montar_layout_desktop(page: ft.Page, pw: int, wrapper, nav_fn,
     from telas.silhueta_orgaos import criar_silhueta
 
     ph = int(page.height or 700)
-    altura_util = ph - 28 - 56 - 24 - 18 - 58 - 8
+    altura_util = ph - 28 - 56 - 24 - 18 - 58 - 8 - 40
 
     larg_prop = int(altura_util * 644 / 551)
     larg_max  = pw - int(pw / 2)
