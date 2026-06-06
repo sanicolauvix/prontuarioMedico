@@ -5308,13 +5308,8 @@ def criar_tela_hub(page: ft.Page, voltar_fn=None, modo_medico: bool = False) -> 
             ft.Container(expand=True),
         ], expand=True)
     elif larg > 500 and modo_medico:
-        # modo medico web: 80% da tela centralizado
-        largura_80 = int(larg * 0.80)
-        conteudo_final = ft.Row([
-            ft.Container(expand=True),
-            ft.Container(content=corpo, width=largura_80),
-            ft.Container(expand=True),
-        ], expand=True)
+        # modo medico web: tela cheia sem restricao de largura
+        conteudo_final = corpo
     else:
         conteudo_final = corpo
 
@@ -5323,23 +5318,25 @@ def criar_tela_hub(page: ft.Page, voltar_fn=None, modo_medico: bool = False) -> 
 
     _montado[0] = True
 
-    # no modo_medico web: recriar silhueta com page.width real apos primeiro render
+    # no modo_medico web: pegar largura real do browser via JS e recriar silhueta
     if modo_medico:
-        _resized_feito = [False]
-        _prev_resized  = [page.on_resized]
-
-        def _on_resized(e=None):
-            if _resized_feito[0]:
+        def _aplicar_largura_real(largura_real: int):
+            print(f"[RESIZED] largura_real={largura_real}", flush=True)
+            if largura_real < 600:
                 return
-            if (page.width or 0) < 100:
-                return
-            _resized_feito[0] = True
-            _widget_silhueta[0] = None  # força recriar com width real
+            _widget_silhueta[0] = None
             if aba_ativa[0] == 0:
                 area_conteudo.controls.clear()
-                area_conteudo.controls.extend(_conteudo_inicio(pw_override=page.width or 0))
+                area_conteudo.controls.extend(_conteudo_inicio(pw_override=largura_real))
                 try: page.update()
                 except Exception: pass
+
+        def _on_resized(e=None):
+            try:
+                w = int(page.width or 0)
+                _aplicar_largura_real(w)
+            except Exception as ex:
+                print(f"[RESIZED] erro: {ex}", flush=True)
 
         page.on_resized = _on_resized
 
