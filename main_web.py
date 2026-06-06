@@ -324,8 +324,11 @@ def main(page: ft.Page):
         try: page.update()
         except Exception: pass
 
-    def _navegar_sub(tela_fn, voltar_hub_fn):
-        """Abre a sub-tela em overlay de 80% sobre o hub — hub nao e trocado."""
+    def _navegar_sub(tela_fn, voltar_hub_fn, fullscreen=False):
+        """Abre a sub-tela em overlay sobre o hub — hub nao e trocado.
+        fullscreen=True: ocupa 100% da largura (ex: Claudia).
+        fullscreen=False: ocupa 80% com laterais escuras (padrao).
+        """
         import traceback as tb
         nome = getattr(tela_fn, "__name__", str(tela_fn))
 
@@ -359,20 +362,27 @@ def main(page: ft.Page):
             )
 
         pw = int(page.width or 0)
-        w = int(pw * 0.80) if pw >= 600 else pw
 
-        ov = ft.Container(
-            content=ft.Row([
-                ft.Container(expand=True, bgcolor="#88000000"),
-                ft.Container(content=nova_tela, width=w, bgcolor=BG,
-                             expand=False),
-                ft.Container(expand=True, bgcolor="#88000000"),
-            ], spacing=0, expand=True,
-               vertical_alignment=ft.CrossAxisAlignment.STRETCH),
-            expand=True,
-        )
-        # fechar clicando nas laterais escuras
-        ov.on_click = lambda e: _fechar_sub()
+        if fullscreen:
+            ov = ft.Container(
+                content=nova_tela,
+                expand=True,
+                bgcolor=BG,
+            )
+        else:
+            w = int(pw * 0.80) if pw >= 600 else pw
+            ov = ft.Container(
+                content=ft.Row([
+                    ft.Container(expand=True, bgcolor="#88000000"),
+                    ft.Container(content=nova_tela, width=w, bgcolor=BG,
+                                 expand=False),
+                    ft.Container(expand=True, bgcolor="#88000000"),
+                ], spacing=0, expand=True,
+                   vertical_alignment=ft.CrossAxisAlignment.STRETCH),
+                expand=True,
+            )
+            # fechar clicando nas laterais escuras
+            ov.on_click = lambda e: _fechar_sub()
 
         # remover overlay anterior se existir
         if _ov_sub[0] is not None and _ov_sub[0] in page.overlay:
