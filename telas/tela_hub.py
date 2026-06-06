@@ -4367,9 +4367,9 @@ def criar_tela_hub(page: ft.Page, voltar_fn=None, modo_medico: bool = False) -> 
     _header_resumo.on_click = _toggle_resumo
 
     def _conteudo_inicio():
+        topo = [card_claudia] if modo_medico else [_header_claudia, _claudia_corpo]
         return [
-            _header_claudia,
-            _claudia_corpo,
+            *topo,
             _header_monitor,
             _monitor_corpo,
             _header_resumo,
