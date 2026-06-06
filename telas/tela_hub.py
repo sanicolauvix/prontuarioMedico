@@ -3536,15 +3536,6 @@ def criar_tela_hub(page: ft.Page, voltar_fn=None, modo_medico: bool = False) -> 
     _res_hub_content = ft.Image(
             src="assets/resumo.png", fit=ft.ImageFit.COVER,
             width=float("inf"), expand=True)
-    if False:
-    else:
-        _res_hub_content = ft.Column([
-            ft.Icon("balance_rounded", size=18, color=AZUL),
-            ft.Text("Resumo", size=9, color=AZUL,
-                    weight=ft.FontWeight.W_600, text_align=ft.TextAlign.CENTER),
-        ], alignment=ft.MainAxisAlignment.CENTER,
-           horizontal_alignment=ft.CrossAxisAlignment.CENTER,
-           spacing=3, tight=True)
 
     card_resumo_hub = ft.Container(
         content=_res_hub_content,
