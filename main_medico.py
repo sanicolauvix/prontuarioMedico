@@ -70,8 +70,13 @@ def main(page: ft.Page):
 
         from telas.silhueta_orgaos import criar_silhueta
 
-        larg_max = pw - 480
-        larg_sil = max(int(larg_max / 3) * 2, 300)
+        # altura util = altura total - cabecalho(28+56) - backup(30) - versao(20) - navbar(58)
+        ph = int(page.height or 700)
+        altura_util = ph - 28 - 56 - 30 - 20 - 58  # ~508px para ph=700
+        # largura proporcional 644:551 para caber na altura util
+        larg_prop = int(altura_util * 644 / 551)
+        larg_max  = pw - 480
+        larg_sil  = min(larg_prop, max(larg_max, 300))
 
         def _on_orgao(oid):
             pass  # TODO: navegar para tela do orgao
@@ -104,6 +109,8 @@ def main(page: ft.Page):
                     ft.Container(
                         content=silhueta,
                         alignment=ft.alignment.center,
+                        height=altura_util,
+                        clip_behavior=ft.ClipBehavior.HARD_EDGE,
                     ),
                 ], horizontal_alignment=ft.CrossAxisAlignment.CENTER,
                    spacing=0),
