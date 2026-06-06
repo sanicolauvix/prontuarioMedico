@@ -74,9 +74,9 @@ def main(page: ft.Page):
 
         from telas.silhueta_orgaos import criar_silhueta
 
-        # altura util = altura total - cabecalho(28+56) - backup(24) - versao(18) - navbar(58) - margem(16)
+        # altura util = altura total - spacer(28) - header(56) - backup(24) - versao(18) - navbar(58) - margem(8)
         ph = int(page.height or 700)
-        altura_util = ph - 28 - 56 - 24 - 18 - 58 - 16
+        altura_util = ph - 28 - 56 - 24 - 18 - 58 - 8
         # largura proporcional 644:551 para caber na altura util
         larg_prop = int(altura_util * 644 / 551)
         larg_max  = pw - 480
@@ -301,14 +301,18 @@ def main(page: ft.Page):
         ], expand=True, spacing=0,
            vertical_alignment=ft.CrossAxisAlignment.START)
 
+        rodape = ft.Column([
+            partes["row_sync"],
+            partes["versao"],
+            partes["nav_bar"],
+        ], spacing=0)
+
         # layout completo: cabeçalho + area central + rodapé
         layout = ft.Column([
             partes["spacer_topo"],
             partes["header"],
             ft.Container(content=area_central, expand=True, bgcolor=BG),
-            partes["row_sync"],
-            partes["versao"],
-            partes["nav_bar"],
+            rodape,
         ], spacing=0, expand=True)
 
         _nav(ft.Container(content=layout, expand=True, bgcolor=BG))
