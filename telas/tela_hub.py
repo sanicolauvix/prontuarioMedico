@@ -4211,8 +4211,8 @@ def criar_tela_hub(page: ft.Page, voltar_fn=None, modo_medico: bool = False) -> 
             _pw = _pw if _pw > 100 else 360
             # desktop: silhueta ocupa o espaco restante apos coluna esq (300px) + padding
             if modo_medico and _pw >= 600:
-                larg = min(int(_pw - 300 - 48), 900)
-                larg = max(larg, 380)
+                larg = min(int((_pw - 300 - 48) * 2), 1800)
+                larg = max(larg, 760)
             else:
                 larg = min(int(_pw - 32), 400)
 
