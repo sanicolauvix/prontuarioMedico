@@ -4209,7 +4209,7 @@ def criar_tela_hub(page: ft.Page, voltar_fn=None, modo_medico: bool = False) -> 
             from telas.silhueta_orgaos import criar_silhueta
             _pw = pw or page.width or 0
             _pw = _pw if _pw > 100 else 360
-            log.info("[SILHUETA] page.width=%s pw_arg=%s _pw=%s", page.width, pw, _pw)
+            print(f"[SILHUETA] page.width={page.width} pw_arg={pw} _pw={_pw}", flush=True)
             # desktop: usar espaco disponivel apos coluna esquerda (300px)
             if modo_medico and _pw >= 600:
                 larg = max(int(_pw - 300 - 48), 400)
@@ -4349,8 +4349,7 @@ def criar_tela_hub(page: ft.Page, voltar_fn=None, modo_medico: bool = False) -> 
     def _conteudo_inicio(pw_override: int = 0):
         topo = [card_claudia] if modo_medico else [_header_claudia, _claudia_corpo]
         _pw = pw_override or page.width or 0
-        log.info("[INICIO] modo_medico=%s pw_override=%s page.width=%s _pw=%s",
-                 modo_medico, pw_override, page.width, _pw)
+        print(f"[INICIO] modo_medico={modo_medico} pw_override={pw_override} page.width={page.width} _pw={_pw}", flush=True)
 
         # layout desktop: coluna esquerda (conteudo) + silhueta direita
         # apenas no modo_medico (web) -- no app normal fica sempre empilhado
