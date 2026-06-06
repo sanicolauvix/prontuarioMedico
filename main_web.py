@@ -98,6 +98,10 @@ def main(page: ft.Page):
         )
 
     # ── Fluxo Paciente ────────────────────────────────────────────────────────
+    def _voltar_escolha():
+        """Volta para tela de escolha — usado como voltar_fn do hub usuario."""
+        _nav(_tela_escolha())
+
     def _ir_usuario():
         _nav(_splash("Verificando sessão..."))
         def _iniciar():
@@ -119,7 +123,7 @@ def main(page: ft.Page):
         restaurar_backup_completo()
         criar_tabelas()
         from app import criar_tela_prontuario
-        _nav(criar_tela_prontuario(page, voltar_fn=None))
+        _nav(criar_tela_prontuario(page, voltar_fn=_voltar_escolha))
 
     # ── Fluxo Médico ──────────────────────────────────────────────────────────
     def _ir_medico():
