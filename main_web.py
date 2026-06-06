@@ -25,8 +25,9 @@ def main(page: ft.Page):
     page.padding    = 0
     page.window_maximized = True
 
-    _hub_wrapper  = [None]
-    _layout_feito = [False]
+    _hub_wrapper    = [None]
+    _layout_desktop = [None]   # container ja montado — reutilizado ao voltar
+    _layout_feito   = [False]
 
     def _nav(tela):
         page.controls.clear()
@@ -124,8 +125,9 @@ def main(page: ft.Page):
         criar_tabelas()
         from telas.tela_hub import criar_tela_hub
         wrapper = criar_tela_hub(page, voltar_fn=_voltar_escolha, modo_medico=False)
-        _hub_wrapper[0]  = wrapper
-        _layout_feito[0] = False
+        _hub_wrapper[0]    = wrapper
+        _layout_desktop[0] = None
+        _layout_feito[0]   = False
         pw = int(page.width or 0)
         if pw >= 600:
             _montar_hub_medico(pw)
@@ -314,11 +316,15 @@ def main(page: ft.Page):
 
     # ── Hub médico ────────────────────────────────────────────────────────────
     def _voltar_para_hub():
-        pw = int(page.width or 0)
-        if pw >= 600 and _hub_wrapper[0]:
-            _montar_hub_medico(pw)
+        """Restaura o layout desktop ja montado — sem remontar nada."""
+        if _layout_desktop[0] is not None:
+            _nav(_layout_desktop[0])
         elif _hub_wrapper[0]:
-            _nav(_hub_wrapper[0])
+            pw = int(page.width or 0)
+            if pw >= 600:
+                _montar_hub_medico(pw)
+            else:
+                _nav(_hub_wrapper[0])
 
     def _abrir_hub_medico(medico: dict):
         _nav(_splash(f"Bem-vindo, {medico.get('nome_medico', 'Médico')}"))
@@ -328,8 +334,9 @@ def main(page: ft.Page):
             from telas.tela_hub import criar_tela_hub
             wrapper = criar_tela_hub(page, voltar_fn=_voltar_para_hub,
                                      modo_medico=True)
-            _hub_wrapper[0]  = wrapper
-            _layout_feito[0] = False
+            _hub_wrapper[0]    = wrapper
+            _layout_desktop[0] = None
+            _layout_feito[0]   = False
             pw = int(page.width or 0)
             if pw >= 600:
                 _montar_hub_medico(pw)
@@ -341,8 +348,9 @@ def main(page: ft.Page):
         from utils.layout_medico import montar_layout_desktop
         partes = getattr(_hub_wrapper[0], "_hub_partes", {})
         eh_medico = partes.get("modo_medico", False)
-        montar_layout_desktop(page, pw, _hub_wrapper[0], _nav,
-                              modo_medico=eh_medico)
+        container = montar_layout_desktop(page, pw, _hub_wrapper[0], _nav,
+                                          modo_medico=eh_medico)
+        _layout_desktop[0] = container
 
     def _on_resized(e=None):
         pw = int(page.width or 0)
