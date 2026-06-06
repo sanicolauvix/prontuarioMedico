@@ -75,7 +75,6 @@ def _renovar_token(client_id, client_secret, refresh_token, creds_atual) -> str:
         "refresh_token": refresh_token,
         "grant_type":    "refresh_token",
     }).encode()
-    import urllib.parse
     req = urllib.request.Request(
         "https://oauth2.googleapis.com/token",
         data=dados,
@@ -113,14 +112,14 @@ def _encontrar_pasta(token: str, nome: str, pai_id: str = None) -> str | None:
         "https://www.googleapis.com/drive/v3/files"
         f"?q={urllib.parse.quote(q)}&fields=files(id,name)&pageSize=1"
     )
-    import urllib.parse
+
     data = _drive_get(token, url)
     files = data.get("files", [])
     return files[0]["id"] if files else None
 
 
 def _encontrar_arquivo(token: str, nome: str, pasta_id: str) -> str | None:
-    import urllib.parse
+
     q = f"name='{nome}' and '{pasta_id}' in parents and trashed=false"
     url = (
         "https://www.googleapis.com/drive/v3/files"
@@ -146,7 +145,7 @@ def _baixar_arquivo(token: str, file_id: str, destino: str) -> bool:
 
 def sincronizar() -> bool:
     """Baixa prontuario.db do Drive se houver versao mais nova. Retorna True se atualizou."""
-    import urllib.parse
+
     try:
         token = _obter_token()
 
