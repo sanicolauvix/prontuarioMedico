@@ -1439,7 +1439,8 @@ def criar_tabelas():
     # ══════════════════════════════════════════════════════════
     # BANCO CORE (koios.db) — perfil, auth, sessões
     # ══════════════════════════════════════════════════════════
-    conn_core = sqlite3.connect(CORE_DB, timeout=30)
+    # isolation_level=None necessario para executescript funcionar corretamente
+    conn_core = _orig_sqlite3_connect(CORE_DB, timeout=30, isolation_level=None)
     try:
         conn_core.executescript("""
 
