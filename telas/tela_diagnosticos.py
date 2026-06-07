@@ -407,53 +407,130 @@ def criar_tela_diagnosticos(page: ft.Page, voltar_fn=None,
         titulo  = diag.get("titulo", "")
         origem  = diag.get("origem", "diagnosticos")
 
-        # campos
-        dd_medico = ft.Dropdown(
-            label="Médico responsável",
+        # --- médico: busca padrão Koios ---
+        _medico_sel = [None]  # {"id": ..., "nome": ...}
+        # pre-selecionar se já tem médico
+        if diag.get("medico_id"):
+            _m = next((m for m in medicos if m["id"] == diag["medico_id"]), None)
+            if _m:
+                _medico_sel[0] = _m
+
+        txt_medico_sel = ft.Text(
+            _medico_sel[0]["nome"] if _medico_sel[0] else "Nenhum selecionado",
+            size=11, color=AZUL if _medico_sel[0] else MUT,
+        )
+
+        f_busca_med = ft.TextField(
+            label="Buscar médico",
+            prefix_icon="search_rounded",
             bgcolor=CARD, border_color=BD2, focused_border_color=AZUL,
             label_style=ft.TextStyle(color=SEC, size=11),
             text_style=ft.TextStyle(color=TXT),
             border_radius=8,
-            options=[ft.dropdown.Option(str(m["id"]), m["nome"]) for m in medicos],
-            value=str(diag.get("medico_id") or "") or None,
         )
-        dd_medico.on_change = lambda e: None
+        lista_med_col = ft.Column([], spacing=4)
 
-        # remédios vinculados (multiselect via chips)
-        _remedios_sel = set()
-        chips_row = ft.Row([], wrap=True, spacing=6)
-
-        def _toggle_rem(rid):
-            if rid in _remedios_sel:
-                _remedios_sel.discard(rid)
-            else:
-                _remedios_sel.add(rid)
-            _rebuild_chips()
-
-        def _rebuild_chips():
-            chips_row.controls.clear()
-            for rem in remedios:
-                rid = str(rem.get("id",""))
-                sel = rid in _remedios_sel
-                chip = ft.Container(
+        def _filtrar_medicos(e=None):
+            q = (f_busca_med.value or "").lower()
+            lista_med_col.controls.clear()
+            for m in medicos:
+                if q and q not in m["nome"].lower():
+                    continue
+                _m = dict(m)
+                sel = _medico_sel[0] and _medico_sel[0]["id"] == m["id"]
+                item = ft.Container(
                     content=ft.Row([
-                        ft.Icon("check_rounded" if sel else "add_rounded",
-                                size=12, color=BG if sel else AZUL),
-                        ft.Text(rem.get("nome",""), size=11,
-                                color=BG if sel else TXT),
-                    ], spacing=4, tight=True),
-                    bgcolor=AZUL if sel else CARD,
-                    border=ft.border.all(1, AZUL),
-                    border_radius=20,
-                    padding=ft.padding.symmetric(horizontal=10, vertical=5),
+                        ft.Icon("check_circle_rounded" if sel else "person_rounded",
+                                size=14, color=AZUL if sel else SEC),
+                        ft.Text(m["nome"], size=12,
+                                color=AZUL if sel else TXT, expand=True),
+                    ], spacing=8),
+                    bgcolor=f"{AZUL}18" if sel else CARD,
+                    border_radius=8,
+                    padding=ft.padding.symmetric(horizontal=12, vertical=8),
+                    border=ft.border.all(1, AZUL if sel else BD),
                     ink=True,
                 )
-                chip.on_click = lambda e, r=rid: (_toggle_rem(r), None)
-                chips_row.controls.append(chip)
+                item.on_click = lambda e, x=_m: _sel_medico(x)
+                lista_med_col.controls.append(item)
             try: page.update()
             except Exception: pass
 
-        _rebuild_chips()
+        def _sel_medico(m):
+            _medico_sel[0] = m
+            txt_medico_sel.value = m["nome"]
+            txt_medico_sel.color = AZUL
+            _filtrar_medicos()
+
+        f_busca_med.on_change = _filtrar_medicos
+        _filtrar_medicos()
+
+        # --- remédios: busca + seleção ---
+        _remedios_sel = set()
+        f_busca_rem = ft.TextField(
+            label="Buscar remédio",
+            prefix_icon="search_rounded",
+            bgcolor=CARD, border_color=BD2, focused_border_color=AZUL,
+            label_style=ft.TextStyle(color=SEC, size=11),
+            text_style=ft.TextStyle(color=TXT),
+            border_radius=8,
+        )
+        lista_rem_col = ft.Column([], spacing=4)
+        selecionados_col = ft.Column([], spacing=4)
+
+        def _rebuild_selecionados():
+            selecionados_col.controls.clear()
+            for rid in list(_remedios_sel):
+                rem = next((r for r in remedios if str(r.get("id","")) == rid), None)
+                if not rem:
+                    continue
+                chip = ft.Container(
+                    content=ft.Row([
+                        ft.Text(rem.get("nome",""), size=11, color=BG, expand=True),
+                        ft.Icon("close_rounded", size=12, color=BG),
+                    ], spacing=6),
+                    bgcolor=AZUL, border_radius=20,
+                    padding=ft.padding.symmetric(horizontal=10, vertical=5),
+                    ink=True,
+                )
+                chip.on_click = lambda e, r=rid: (_remedios_sel.discard(r),
+                                                   _rebuild_selecionados(),
+                                                   _filtrar_remedios())
+                selecionados_col.controls.append(chip)
+            try: page.update()
+            except Exception: pass
+
+        def _filtrar_remedios(e=None):
+            q = (f_busca_rem.value or "").lower()
+            lista_rem_col.controls.clear()
+            for rem in remedios:
+                rid = str(rem.get("id",""))
+                if rid in _remedios_sel:
+                    continue
+                if q and q not in rem.get("nome","").lower():
+                    continue
+                item = ft.Container(
+                    content=ft.Row([
+                        ft.Icon("add_rounded", size=14, color=VERD),
+                        ft.Text(rem.get("nome",""), size=12,
+                                color=TXT, expand=True),
+                    ], spacing=8),
+                    bgcolor=CARD, border_radius=8,
+                    padding=ft.padding.symmetric(horizontal=12, vertical=8),
+                    border=ft.border.all(1, BD),
+                    ink=True,
+                )
+                item.on_click = lambda e, r=rid: (
+                    _remedios_sel.add(r),
+                    setattr(f_busca_rem, "value", ""),
+                    _rebuild_selecionados(),
+                    _filtrar_remedios(),
+                )
+                lista_rem_col.controls.append(item)
+            try: page.update()
+            except Exception: pass
+
+        _filtrar_remedios()
 
         f_obs = ft.TextField(
             label="Observações do tratamento",
@@ -466,14 +543,13 @@ def criar_tela_diagnosticos(page: ft.Page, voltar_fn=None,
         )
 
         def _salvar_tratamento(e=None):
-            # salvar observacoes se for da tabela diagnosticos
             if origem == "diagnosticos" and diag.get("id"):
                 try:
                     from dados.model_prontuario import salvar_diagnostico
                     dados_upd = dict(diag)
                     dados_upd["observacoes"] = f_obs.value
-                    if dd_medico.value:
-                        dados_upd["medico_id"] = int(dd_medico.value)
+                    if _medico_sel[0]:
+                        dados_upd["medico_id"] = _medico_sel[0]["id"]
                     salvar_diagnostico(dados_upd)
                 except Exception as ex:
                     log.warning("salvar_tratamento: %s", ex)
@@ -525,14 +601,34 @@ def criar_tela_diagnosticos(page: ft.Page, voltar_fn=None,
                 ft.Text("Médico Responsável", size=11, color=SEC,
                         weight=ft.FontWeight.W_600),
                 ft.Container(height=4),
-                dd_medico,
+                ft.Row([
+                    ft.Icon("person_rounded", size=14, color=AZUL),
+                    txt_medico_sel,
+                ], spacing=6),
+                ft.Container(height=6),
+                f_busca_med,
+                ft.Container(
+                    content=lista_med_col,
+                    height=140,
+                    clip_behavior=ft.ClipBehavior.HARD_EDGE,
+                ),
                 ft.Container(height=16),
                 # remedios
                 ft.Text("Remédios Vinculados", size=11, color=SEC,
                         weight=ft.FontWeight.W_600),
                 ft.Container(height=4),
-                chips_row if remedios else ft.Text("Nenhum remédio cadastrado",
-                                                    size=11, color=MUT),
+                ft.Container(
+                    content=selecionados_col,
+                    visible=True,
+                ),
+                ft.Container(height=6),
+                f_busca_rem,
+                ft.Container(
+                    content=lista_rem_col,
+                    height=140,
+                    clip_behavior=ft.ClipBehavior.HARD_EDGE,
+                ) if remedios else ft.Text("Nenhum remédio cadastrado",
+                                           size=11, color=MUT),
                 ft.Container(height=16),
                 # observacoes
                 ft.Text("Observações do Tratamento", size=11, color=SEC,
