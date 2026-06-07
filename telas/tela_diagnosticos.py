@@ -427,14 +427,20 @@ def criar_tela_diagnosticos(page: ft.Page, voltar_fn=None,
             label_style=ft.TextStyle(color=SEC, size=11),
             text_style=ft.TextStyle(color=TXT),
             border_radius=8,
+            value="",
+            autofocus=False,
         )
         lista_med_col = ft.Column([], spacing=4)
 
         def _filtrar_medicos(e=None):
             q = (f_busca_med.value or "").lower()
             lista_med_col.controls.clear()
+            if not q:
+                try: page.update()
+                except Exception: pass
+                return
             for m in medicos:
-                if q and q not in m["nome"].lower():
+                if q not in m["nome"].lower():
                     continue
                 _m = dict(m)
                 sel = _medico_sel[0] and _medico_sel[0]["id"] == m["id"]
@@ -474,6 +480,8 @@ def criar_tela_diagnosticos(page: ft.Page, voltar_fn=None,
             label_style=ft.TextStyle(color=SEC, size=11),
             text_style=ft.TextStyle(color=TXT),
             border_radius=8,
+            value="",
+            autofocus=False,
         )
         lista_rem_col = ft.Column([], spacing=4)
         selecionados_col = ft.Column([], spacing=4)
@@ -503,11 +511,15 @@ def criar_tela_diagnosticos(page: ft.Page, voltar_fn=None,
         def _filtrar_remedios(e=None):
             q = (f_busca_rem.value or "").lower()
             lista_rem_col.controls.clear()
+            if not q:
+                try: page.update()
+                except Exception: pass
+                return
             for rem in remedios:
                 rid = str(rem.get("id",""))
                 if rid in _remedios_sel:
                     continue
-                if q and q not in rem.get("nome","").lower():
+                if q not in rem.get("nome","").lower():
                     continue
                 item = ft.Container(
                     content=ft.Row([
