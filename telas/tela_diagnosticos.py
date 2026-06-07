@@ -466,10 +466,12 @@ def criar_tela_diagnosticos(page: ft.Page, voltar_fn=None,
             _medico_sel[0] = m
             txt_medico_sel.value = m["nome"]
             txt_medico_sel.color = AZUL
-            _filtrar_medicos()
+            f_busca_med.value = ""
+            lista_med_col.controls.clear()
+            try: page.update()
+            except Exception: pass
 
         f_busca_med.on_change = _filtrar_medicos
-        _filtrar_medicos()
 
         # --- remédios: busca + seleção ---
         _remedios_sel = set()
@@ -501,9 +503,11 @@ def criar_tela_diagnosticos(page: ft.Page, voltar_fn=None,
                     padding=ft.padding.symmetric(horizontal=10, vertical=5),
                     ink=True,
                 )
-                chip.on_click = lambda e, r=rid: (_remedios_sel.discard(r),
-                                                   _rebuild_selecionados(),
-                                                   _filtrar_remedios())
+                def _rem_chip(e, r=rid):
+                    _remedios_sel.discard(r)
+                    _rebuild_selecionados()
+                    _filtrar_remedios()
+                chip.on_click = _rem_chip
                 selecionados_col.controls.append(chip)
             try: page.update()
             except Exception: pass
@@ -532,12 +536,12 @@ def criar_tela_diagnosticos(page: ft.Page, voltar_fn=None,
                     border=ft.border.all(1, BD),
                     ink=True,
                 )
-                item.on_click = lambda e, r=rid: (
-                    _remedios_sel.add(r),
-                    setattr(f_busca_rem, "value", ""),
-                    _rebuild_selecionados(),
-                    _filtrar_remedios(),
-                )
+                def _add_rem(e, r=rid):
+                    _remedios_sel.add(r)
+                    f_busca_rem.value = ""
+                    _rebuild_selecionados()
+                    _filtrar_remedios()
+                item.on_click = _add_rem
                 lista_rem_col.controls.append(item)
             try: page.update()
             except Exception: pass
