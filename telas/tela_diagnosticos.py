@@ -320,7 +320,7 @@ def criar_tela_diagnosticos(page: ft.Page, voltar_fn=None,
                     btn_del.on_click  = lambda e, x=_d: _confirmar_excluir(
                         x["id"], x["titulo"])
 
-                    area.controls.append(ft.Container(
+                    _card = ft.Container(
                         content=ft.Column([
                             ft.Row([
                                 ft.Column([
@@ -364,7 +364,10 @@ def criar_tela_diagnosticos(page: ft.Page, voltar_fn=None,
                             bottom=ft.BorderSide(1, BD),
                             right=ft.BorderSide(1, BD),
                         ),
-                    ))
+                        ink=True,
+                    )
+                    _card.on_click = lambda e, x=_d: _abrir_tratamento(x)
+                    area.controls.append(_card)
 
         if _montado[0]:
             try: page.update()
@@ -381,6 +384,189 @@ def criar_tela_diagnosticos(page: ft.Page, voltar_fn=None,
         border_radius=8, ink=True,
     )
     btn_novo.on_click = lambda e: _abrir_form()
+
+    def _abrir_tratamento(diag: dict):
+        ref = [None]
+
+        def _fechar(e=None):
+            if ref[0] in page.overlay:
+                page.overlay.remove(ref[0])
+            try: page.update()
+            except Exception: pass
+
+        # buscar médicos e remédios para os dropdowns
+        try:
+            from dados.model_prontuario import listar_medicos, listar_remedios
+            medicos  = listar_medicos() or []
+            remedios = listar_remedios() or []
+        except Exception:
+            medicos  = []
+            remedios = []
+
+        cor_d   = _STATUS_COR.get(diag.get("status", ""), MUT)
+        titulo  = diag.get("titulo", "")
+        origem  = diag.get("origem", "diagnosticos")
+
+        # campos
+        dd_medico = ft.Dropdown(
+            label="Médico responsável",
+            bgcolor=CARD, border_color=BD2, focused_border_color=AZUL,
+            label_style=ft.TextStyle(color=SEC, size=11),
+            text_style=ft.TextStyle(color=TXT),
+            border_radius=8,
+            options=[ft.dropdown.Option(str(m["id"]), m["nome"]) for m in medicos],
+            value=str(diag.get("medico_id") or "") or None,
+        )
+        dd_medico.on_change = lambda e: None
+
+        # remédios vinculados (multiselect via chips)
+        _remedios_sel = set()
+        chips_row = ft.Row([], wrap=True, spacing=6)
+
+        def _toggle_rem(rid):
+            if rid in _remedios_sel:
+                _remedios_sel.discard(rid)
+            else:
+                _remedios_sel.add(rid)
+            _rebuild_chips()
+
+        def _rebuild_chips():
+            chips_row.controls.clear()
+            for rem in remedios:
+                rid = str(rem.get("id",""))
+                sel = rid in _remedios_sel
+                chip = ft.Container(
+                    content=ft.Row([
+                        ft.Icon("check_rounded" if sel else "add_rounded",
+                                size=12, color=BG if sel else AZUL),
+                        ft.Text(rem.get("nome",""), size=11,
+                                color=BG if sel else TXT),
+                    ], spacing=4, tight=True),
+                    bgcolor=AZUL if sel else CARD,
+                    border=ft.border.all(1, AZUL),
+                    border_radius=20,
+                    padding=ft.padding.symmetric(horizontal=10, vertical=5),
+                    ink=True,
+                )
+                chip.on_click = lambda e, r=rid: (_toggle_rem(r), None)
+                chips_row.controls.append(chip)
+            try: page.update()
+            except Exception: pass
+
+        _rebuild_chips()
+
+        f_obs = ft.TextField(
+            label="Observações do tratamento",
+            multiline=True, min_lines=3, max_lines=6,
+            bgcolor=CARD, border_color=BD2, focused_border_color=AZUL,
+            label_style=ft.TextStyle(color=SEC, size=11),
+            text_style=ft.TextStyle(color=TXT),
+            border_radius=8,
+            value=diag.get("observacoes") or "",
+        )
+
+        def _salvar_tratamento(e=None):
+            # salvar observacoes se for da tabela diagnosticos
+            if origem == "diagnosticos" and diag.get("id"):
+                try:
+                    from dados.model_prontuario import salvar_diagnostico
+                    dados_upd = dict(diag)
+                    dados_upd["observacoes"] = f_obs.value
+                    if dd_medico.value:
+                        dados_upd["medico_id"] = int(dd_medico.value)
+                    salvar_diagnostico(dados_upd)
+                except Exception as ex:
+                    log.warning("salvar_tratamento: %s", ex)
+            _fechar()
+            _carregar()
+
+        btn_salvar = ft.Container(
+            content=ft.Row([
+                ft.Icon("save_rounded", size=16, color=BG),
+                ft.Text("Salvar", size=13, color=BG, weight=ft.FontWeight.W_600),
+            ], spacing=6, tight=True),
+            bgcolor=VERD, border_radius=8, ink=True,
+            padding=ft.padding.symmetric(horizontal=16, vertical=10),
+        )
+        btn_salvar.on_click = _salvar_tratamento
+
+        btn_fechar = ft.Container(
+            content=ft.Text("Fechar", size=13, color=SEC),
+            border_radius=8, ink=True,
+            padding=ft.padding.symmetric(horizontal=16, vertical=10),
+            bgcolor=f"{SEC}22",
+        )
+        btn_fechar.on_click = _fechar
+
+        conteudo = ft.Container(
+            content=ft.Column([
+                # cabecalho
+                ft.Container(
+                    content=ft.Row([
+                        ft.Container(width=4, height=40, bgcolor=cor_d,
+                                     border_radius=2),
+                        ft.Column([
+                            ft.Text(titulo, size=15, color=TXT,
+                                    weight=ft.FontWeight.W_700),
+                            ft.Text("Plano de Tratamento", size=10, color=SEC),
+                        ], spacing=0, tight=True, expand=True),
+                        ft.Container(
+                            content=ft.Icon("close_rounded", size=18, color=SEC),
+                            ink=True, border_radius=8,
+                            padding=ft.padding.all(6),
+                            on_click=_fechar,
+                        ),
+                    ], spacing=10),
+                    padding=ft.padding.only(bottom=12),
+                    border=ft.Border(bottom=ft.BorderSide(1, BD)),
+                ),
+                ft.Container(height=12),
+                # medico
+                ft.Text("Médico Responsável", size=11, color=SEC,
+                        weight=ft.FontWeight.W_600),
+                ft.Container(height=4),
+                dd_medico,
+                ft.Container(height=16),
+                # remedios
+                ft.Text("Remédios Vinculados", size=11, color=SEC,
+                        weight=ft.FontWeight.W_600),
+                ft.Container(height=4),
+                chips_row if remedios else ft.Text("Nenhum remédio cadastrado",
+                                                    size=11, color=MUT),
+                ft.Container(height=16),
+                # observacoes
+                ft.Text("Observações do Tratamento", size=11, color=SEC,
+                        weight=ft.FontWeight.W_600),
+                ft.Container(height=4),
+                f_obs,
+                ft.Container(height=20),
+                # botoes
+                ft.Row([btn_fechar, btn_salvar],
+                       alignment=ft.MainAxisAlignment.END, spacing=10),
+            ], spacing=0, scroll=ft.ScrollMode.AUTO),
+            bgcolor=CARD, border_radius=14,
+            padding=ft.padding.all(20),
+            width=520,
+        )
+
+        ref[0] = ft.Container(
+            content=ft.Row([
+                ft.Container(expand=True),
+                ft.Container(
+                    content=conteudo,
+                    alignment=ft.alignment.center,
+                ),
+                ft.Container(expand=True),
+            ], alignment=ft.MainAxisAlignment.CENTER,
+               vertical_alignment=ft.CrossAxisAlignment.CENTER,
+               expand=True),
+            bgcolor="#CC000000", expand=True,
+            alignment=ft.alignment.center,
+        )
+        ref[0].on_click = _fechar
+        page.overlay.append(ref[0])
+        try: page.update()
+        except Exception: pass
 
     titulo_tela = f"Diagnósticos — {sistema_filtro}" if sistema_filtro \
                   else "Diagnósticos"
