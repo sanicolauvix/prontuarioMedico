@@ -7297,6 +7297,38 @@ def salvar_tratamento_diagnostico(origem: str, origem_id: int,
                         (tratamento_id, remedio_id, dosagem, frequencia)
                     VALUES (?, ?, ?, ?)
                 """, (tid, rem["remedio_id"], rem.get("dosagem"), rem.get("frequencia")))
+
+            # criar compromisso de revisão se data_revisao informada
+            if data_revisao:
+                # buscar titulo do diagnostico para a observacao
+                try:
+                    if origem == "diagnosticos":
+                        row_d = conn.execute(
+                            "SELECT titulo FROM diagnosticos WHERE id=?",
+                            (origem_id,)).fetchone()
+                    else:
+                        row_d = conn.execute(
+                            "SELECT titulo FROM historico_medico WHERE id=?",
+                            (origem_id,)).fetchone()
+                    titulo_diag = row_d[0] if row_d else "Diagnóstico"
+                except Exception:
+                    titulo_diag = "Diagnóstico"
+
+                obs_comp = f"Revisão: {titulo_diag}"
+                # verificar se já existe compromisso de revisão para este tratamento
+                comp_exist = conn.execute("""
+                    SELECT id FROM consultas
+                    WHERE observacoes=? AND data=? AND tipo='agendada'
+                """, (obs_comp, data_revisao)).fetchone()
+
+                if not comp_exist:
+                    conn.execute("""
+                        INSERT INTO consultas
+                            (medico_id, data, tipo, observacoes,
+                             tipo_compromisso, criado_em)
+                        VALUES (?, ?, 'agendada', ?, 'consulta', datetime('now'))
+                    """, (medico_id, data_revisao, obs_comp))
+
         _notify()
         return True
     except Exception as ex:
