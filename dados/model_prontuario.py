@@ -2092,6 +2092,25 @@ def criar_tabelas():
             atualizado_em   TEXT DEFAULT (datetime('now'))
         );
 
+        -- tratamento por diagnostico (funciona para historico_medico e diagnosticos)
+        CREATE TABLE IF NOT EXISTS diagnostico_tratamento (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            origem          TEXT NOT NULL,
+            origem_id       INTEGER NOT NULL,
+            medico_id       INTEGER REFERENCES medicos(id),
+            observacoes     TEXT,
+            data_revisao    TEXT,
+            criado_em       TEXT DEFAULT (datetime('now')),
+            atualizado_em   TEXT DEFAULT (datetime('now'))
+        );
+        CREATE TABLE IF NOT EXISTS diagnostico_tratamento_remedios (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            tratamento_id   INTEGER NOT NULL REFERENCES diagnostico_tratamento(id),
+            remedio_id      INTEGER NOT NULL REFERENCES remedios(id),
+            dosagem         TEXT,
+            frequencia      TEXT
+        );
+
         -- ────────────────────────────────────────────────────────
         -- INTERNACOES
         -- ────────────────────────────────────────────────────────
@@ -2255,6 +2274,16 @@ def criar_tabelas():
                 """, ("seed_versao", _SEED_VER))
         except Exception:
             pass
+
+
+    # migração segura: data_revisao em diagnostico_tratamento
+    try:
+        import sqlite3 as _sq_mig
+        with _sq_mig.connect(DB_PATH, timeout=10) as _cm:
+            _cm.execute(
+                "ALTER TABLE diagnostico_tratamento ADD COLUMN data_revisao TEXT")
+    except Exception:
+        pass  # coluna já existe
 
 
 # ══════════════════════════════════════════════════════════════
@@ -7228,6 +7257,84 @@ def excluir_diagnostico(did: int) -> bool:
     except Exception as ex:
         print(f"[MODEL] excluir_diagnostico: {ex}")
         return False
+
+
+# ── Tratamento por diagnóstico ───────────────────────────────────────────────
+
+def salvar_tratamento_diagnostico(origem: str, origem_id: int,
+                                   medico_id=None, observacoes=None,
+                                   remedios=None, data_revisao=None) -> bool:
+    """
+    Salva ou atualiza o plano de tratamento de um diagnóstico.
+    remedios: lista de {"remedio_id": int, "dosagem": str, "frequencia": str}
+    """
+    try:
+        with sqlite3.connect(DB_PATH, timeout=10) as conn:
+            row = conn.execute(
+                "SELECT id FROM diagnostico_tratamento WHERE origem=? AND origem_id=?",
+                (origem, origem_id)
+            ).fetchone()
+            if row:
+                tid = row[0]
+                conn.execute("""
+                    UPDATE diagnostico_tratamento
+                    SET medico_id=?, observacoes=?, data_revisao=?, atualizado_em=datetime('now')
+                    WHERE id=?
+                """, (medico_id, observacoes, data_revisao, tid))
+                conn.execute(
+                    "DELETE FROM diagnostico_tratamento_remedios WHERE tratamento_id=?",
+                    (tid,))
+            else:
+                cur = conn.execute("""
+                    INSERT INTO diagnostico_tratamento
+                        (origem, origem_id, medico_id, observacoes, data_revisao)
+                    VALUES (?, ?, ?, ?, ?)
+                """, (origem, origem_id, medico_id, observacoes, data_revisao))
+                tid = cur.lastrowid
+            for rem in (remedios or []):
+                conn.execute("""
+                    INSERT INTO diagnostico_tratamento_remedios
+                        (tratamento_id, remedio_id, dosagem, frequencia)
+                    VALUES (?, ?, ?, ?)
+                """, (tid, rem["remedio_id"], rem.get("dosagem"), rem.get("frequencia")))
+        _notify()
+        return True
+    except Exception as ex:
+        print(f"[MODEL] salvar_tratamento_diagnostico: {ex}")
+        return False
+
+
+def carregar_tratamento_diagnostico(origem: str, origem_id: int) -> dict:
+    """
+    Retorna {"medico_id", "observacoes", "remedios": [{"remedio_id","nome","dosagem","frequencia"}]}
+    """
+    try:
+        with sqlite3.connect(DB_PATH, timeout=10) as conn:
+            row = conn.execute(
+                "SELECT id, medico_id, observacoes, data_revisao FROM diagnostico_tratamento WHERE origem=? AND origem_id=?",
+                (origem, origem_id)
+            ).fetchone()
+            if not row:
+                return {"medico_id": None, "observacoes": "", "data_revisao": "", "remedios": []}
+            tid, medico_id, obs, data_revisao = row
+            rems = conn.execute("""
+                SELECT r.id, r.nome, dtr.dosagem, dtr.frequencia
+                FROM diagnostico_tratamento_remedios dtr
+                JOIN remedios r ON r.id = dtr.remedio_id
+                WHERE dtr.tratamento_id=?
+            """, (tid,)).fetchall()
+            return {
+                "medico_id": medico_id,
+                "observacoes": obs or "",
+                "remedios": [
+                    {"remedio_id": r[0], "nome": r[1],
+                     "dosagem": r[2] or "", "frequencia": r[3] or ""}
+                    for r in rems
+                ],
+            }
+    except Exception as ex:
+        print(f"[MODEL] carregar_tratamento_diagnostico: {ex}")
+        return {"medico_id": None, "observacoes": "", "remedios": []}
 
 
 # ── Códigos de acesso médico ─────────────────────────────────────────────────

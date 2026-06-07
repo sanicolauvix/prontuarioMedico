@@ -1,2 +1,2 @@
 # -*- coding: utf-8 -*-
-APP_VERSAO = "1.1.291"
+APP_VERSAO = "1.1.292"
