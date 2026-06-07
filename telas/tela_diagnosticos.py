@@ -392,6 +392,22 @@ def criar_tela_diagnosticos(page: ft.Page, voltar_fn=None,
         cor_titulo=AZUL,
         acoes=[btn_novo],
     )
-    corpo = lay.criar_corpo(cabecalho, area)
+
+    rodape = ft.Container(
+        content=ft.Text("Diagnósticos — Prontuário Médico",
+                        size=10, color="#30363D", text_align="center"),
+        padding=ft.padding.symmetric(horizontal=20, vertical=12),
+        border=ft.Border(top=ft.BorderSide(1, "#21262D")),
+    )
+
+    corpo = ft.Column([
+        ft.Container(height=lay.spacer_topo, bgcolor=BG),
+        cabecalho,
+        ft.Container(content=area,
+                     padding=ft.padding.only(left=20, right=20, top=12, bottom=12),
+                     expand=True),
+        rodape,
+    ], spacing=0, expand=True)
+
     _montado[0] = True
     return ft.Container(bgcolor=BG, expand=True, content=corpo)
