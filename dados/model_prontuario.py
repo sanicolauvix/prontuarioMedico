@@ -2100,6 +2100,8 @@ def criar_tabelas():
             medico_id       INTEGER REFERENCES medicos(id),
             observacoes     TEXT,
             data_revisao    TEXT,
+            periodicidade   TEXT,
+            repeticoes      INTEGER DEFAULT 1,
             criado_em       TEXT DEFAULT (datetime('now')),
             atualizado_em   TEXT DEFAULT (datetime('now'))
         );
@@ -2276,14 +2278,19 @@ def criar_tabelas():
             pass
 
 
-    # migração segura: data_revisao em diagnostico_tratamento
+    # migração segura: colunas diagnostico_tratamento
     try:
         import sqlite3 as _sq_mig
         with _sq_mig.connect(DB_PATH, timeout=10) as _cm:
-            _cm.execute(
-                "ALTER TABLE diagnostico_tratamento ADD COLUMN data_revisao TEXT")
+            for _col_sql in [
+                "ALTER TABLE diagnostico_tratamento ADD COLUMN data_revisao TEXT",
+                "ALTER TABLE diagnostico_tratamento ADD COLUMN periodicidade TEXT",
+                "ALTER TABLE diagnostico_tratamento ADD COLUMN repeticoes INTEGER DEFAULT 1",
+            ]:
+                try: _cm.execute(_col_sql)
+                except Exception: pass
     except Exception:
-        pass  # coluna já existe
+        pass
 
 
 # ══════════════════════════════════════════════════════════════
@@ -7263,10 +7270,13 @@ def excluir_diagnostico(did: int) -> bool:
 
 def salvar_tratamento_diagnostico(origem: str, origem_id: int,
                                    medico_id=None, observacoes=None,
-                                   remedios=None, data_revisao=None) -> bool:
+                                   remedios=None, data_revisao=None,
+                                   periodicidade=None, repeticoes=1) -> bool:
     """
     Salva ou atualiza o plano de tratamento de um diagnóstico.
     remedios: lista de {"remedio_id": int, "dosagem": str, "frequencia": str}
+    periodicidade: "semanal"|"quinzenal"|"mensal"|"bimestral"|"trimestral"|"semestral"|"anual"
+    repeticoes: quantas vezes gerar o compromisso (incluindo o primeiro)
     """
     try:
         with sqlite3.connect(DB_PATH, timeout=10) as conn:
@@ -7278,18 +7288,22 @@ def salvar_tratamento_diagnostico(origem: str, origem_id: int,
                 tid = row[0]
                 conn.execute("""
                     UPDATE diagnostico_tratamento
-                    SET medico_id=?, observacoes=?, data_revisao=?, atualizado_em=datetime('now')
+                    SET medico_id=?, observacoes=?, data_revisao=?,
+                        periodicidade=?, repeticoes=?, atualizado_em=datetime('now')
                     WHERE id=?
-                """, (medico_id, observacoes, data_revisao, tid))
+                """, (medico_id, observacoes, data_revisao,
+                      periodicidade, repeticoes or 1, tid))
                 conn.execute(
                     "DELETE FROM diagnostico_tratamento_remedios WHERE tratamento_id=?",
                     (tid,))
             else:
                 cur = conn.execute("""
                     INSERT INTO diagnostico_tratamento
-                        (origem, origem_id, medico_id, observacoes, data_revisao)
-                    VALUES (?, ?, ?, ?, ?)
-                """, (origem, origem_id, medico_id, observacoes, data_revisao))
+                        (origem, origem_id, medico_id, observacoes,
+                         data_revisao, periodicidade, repeticoes)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                """, (origem, origem_id, medico_id, observacoes,
+                      data_revisao, periodicidade, repeticoes or 1))
                 tid = cur.lastrowid
             for rem in (remedios or []):
                 conn.execute("""
@@ -7298,9 +7312,9 @@ def salvar_tratamento_diagnostico(origem: str, origem_id: int,
                     VALUES (?, ?, ?, ?)
                 """, (tid, rem["remedio_id"], rem.get("dosagem"), rem.get("frequencia")))
 
-            # criar compromisso de revisão se data_revisao informada
+            # criar compromissos de revisão se data_revisao informada
             if data_revisao:
-                # buscar titulo do diagnostico para a observacao
+                from datetime import date, timedelta
                 try:
                     if origem == "diagnosticos":
                         row_d = conn.execute(
@@ -7314,20 +7328,46 @@ def salvar_tratamento_diagnostico(origem: str, origem_id: int,
                 except Exception:
                     titulo_diag = "Diagnóstico"
 
-                obs_comp = f"Revisão: {titulo_diag}"
-                # verificar se já existe compromisso de revisão para este tratamento
-                comp_exist = conn.execute("""
-                    SELECT id FROM consultas
-                    WHERE observacoes=? AND data=? AND tipo='agendada'
-                """, (obs_comp, data_revisao)).fetchone()
+                # calcular delta entre repetições
+                _DELTAS = {
+                    "semanal":     timedelta(weeks=1),
+                    "quinzenal":   timedelta(weeks=2),
+                    "mensal":      timedelta(days=30),
+                    "bimestral":   timedelta(days=60),
+                    "trimestral":  timedelta(days=90),
+                    "semestral":   timedelta(days=180),
+                    "anual":       timedelta(days=365),
+                }
+                delta = _DELTAS.get(periodicidade or "", None)
+                n_rep = int(repeticoes or 1)
 
-                if not comp_exist:
+                try:
+                    data_base = date.fromisoformat(data_revisao[:10])
+                except Exception:
+                    data_base = None
+
+                if data_base:
+                    # remover compromissos anteriores desta revisão
                     conn.execute("""
-                        INSERT INTO consultas
-                            (medico_id, data, tipo, observacoes,
-                             tipo_compromisso, criado_em)
-                        VALUES (?, ?, 'agendada', ?, 'consulta', datetime('now'))
-                    """, (medico_id, data_revisao, obs_comp))
+                        DELETE FROM consultas
+                        WHERE observacoes LIKE ? AND tipo='agendada'
+                    """, (f"Revisão: {titulo_diag}%",))
+
+                    for i in range(n_rep):
+                        if i == 0:
+                            data_comp = data_base
+                        elif delta:
+                            data_comp = data_base + delta * i
+                        else:
+                            break
+                        per_txt = f" ({periodicidade})" if periodicidade and n_rep > 1 else ""
+                        obs_comp = f"Revisão: {titulo_diag}{per_txt}"
+                        conn.execute("""
+                            INSERT INTO consultas
+                                (medico_id, data, tipo, observacoes,
+                                 tipo_compromisso, criado_em)
+                            VALUES (?, ?, 'agendada', ?, 'consulta', datetime('now'))
+                        """, (medico_id, data_comp.isoformat(), obs_comp))
 
         _notify()
         return True
@@ -7343,12 +7383,15 @@ def carregar_tratamento_diagnostico(origem: str, origem_id: int) -> dict:
     try:
         with sqlite3.connect(DB_PATH, timeout=10) as conn:
             row = conn.execute(
-                "SELECT id, medico_id, observacoes, data_revisao FROM diagnostico_tratamento WHERE origem=? AND origem_id=?",
+                """SELECT id, medico_id, observacoes, data_revisao,
+                          periodicidade, repeticoes
+                   FROM diagnostico_tratamento WHERE origem=? AND origem_id=?""",
                 (origem, origem_id)
             ).fetchone()
             if not row:
-                return {"medico_id": None, "observacoes": "", "data_revisao": "", "remedios": []}
-            tid, medico_id, obs, data_revisao = row
+                return {"medico_id": None, "observacoes": "", "data_revisao": "",
+                        "periodicidade": None, "repeticoes": 1, "remedios": []}
+            tid, medico_id, obs, data_revisao, periodicidade, repeticoes = row
             rems = conn.execute("""
                 SELECT r.id, r.nome, dtr.dosagem, dtr.frequencia
                 FROM diagnostico_tratamento_remedios dtr
@@ -7356,8 +7399,11 @@ def carregar_tratamento_diagnostico(origem: str, origem_id: int) -> dict:
                 WHERE dtr.tratamento_id=?
             """, (tid,)).fetchall()
             return {
-                "medico_id": medico_id,
-                "observacoes": obs or "",
+                "medico_id":    medico_id,
+                "observacoes":  obs or "",
+                "data_revisao": data_revisao or "",
+                "periodicidade": periodicidade,
+                "repeticoes":   repeticoes or 1,
                 "remedios": [
                     {"remedio_id": r[0], "nome": r[1],
                      "dosagem": r[2] or "", "frequencia": r[3] or ""}

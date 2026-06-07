@@ -265,10 +265,15 @@ def criar_tela_diagnosticos(page: ft.Page, voltar_fn=None, sistema_filtro: str =
                             size=11, color=TXT),
                 ], spacing=6))
             rev = _para_display(trat.get("data_revisao",""))
+            per = trat.get("periodicidade") or ""
+            rep = trat.get("repeticoes") or 1
             if rev:
+                per_txt = f" · {per}" if per else ""
+                rep_txt = f" · {rep}x" if per and rep > 1 else ""
                 col.controls.append(ft.Row([
                     ft.Icon("event_rounded", size=12, color=AMAR),
-                    ft.Text(f"Revisão: {rev}", size=11, color=AMAR),
+                    ft.Text(f"Revisão: {rev}{per_txt}{rep_txt}",
+                            size=11, color=AMAR),
                 ], spacing=6))
             obs = trat.get("observacoes","")
             if obs:
@@ -485,11 +490,34 @@ def criar_tela_diagnosticos(page: ft.Page, voltar_fn=None, sistema_filtro: str =
             f_rem.on_change = _filtrar_rem
             _rebuild_sel()
 
-            # data revisão
+            # data revisão + periodicidade + repetições
             row_rev, f_rev = campo_data(
                 page, label="Data de revisão",
                 value=trat.get("data_revisao","") or "",
                 cor_acento=AMAR,
+            )
+            _PERIODOS = ["semanal","quinzenal","mensal","bimestral",
+                         "trimestral","semestral","anual"]
+            dd_periodo = ft.Dropdown(
+                label="Periodicidade",
+                value=trat.get("periodicidade") or None,
+                bgcolor=BG, border_color=BD2, focused_border_color=AMAR,
+                label_style=ft.TextStyle(color=SEC, size=11),
+                text_style=ft.TextStyle(color=TXT, size=11),
+                border_radius=6, dense=True,
+                options=[ft.dropdown.Option("", "Sem repetição")] +
+                        [ft.dropdown.Option(p) for p in _PERIODOS],
+            )
+            dd_periodo.on_change = lambda e: None
+            f_rep = ft.TextField(
+                label="Repetições",
+                value=str(trat.get("repeticoes") or 1),
+                bgcolor=BG, border_color=BD2, focused_border_color=AMAR,
+                label_style=ft.TextStyle(color=SEC, size=11),
+                text_style=ft.TextStyle(color=TXT, size=11),
+                border_radius=6, dense=True,
+                keyboard_type=ft.KeyboardType.NUMBER,
+                width=100,
             )
 
             # observações
@@ -508,12 +536,18 @@ def criar_tela_diagnosticos(page: ft.Page, voltar_fn=None, sistema_filtro: str =
                     {"remedio_id": int(rid), **dados}
                     for rid, dados in _rem_sel.items()
                 ]
+                try:
+                    n_rep = max(1, int(f_rep.value or 1))
+                except Exception:
+                    n_rep = 1
                 salvar_tratamento_diagnostico(
                     origem=origem,
                     origem_id=origem_id,
                     medico_id=_med_sel[0]["id"] if _med_sel[0] else None,
                     observacoes=f_obs.value.strip() or None,
                     data_revisao=normalizar_data(f_rev.value) or None,
+                    periodicidade=dd_periodo.value or None,
+                    repeticoes=n_rep,
                     remedios=rems_list,
                 )
                 _editando[0] = False
@@ -561,7 +595,8 @@ def criar_tela_diagnosticos(page: ft.Page, voltar_fn=None, sistema_filtro: str =
                     ft.Text("Data de Revisão", size=10, color=SEC,
                             weight=ft.FontWeight.W_600),
                     row_rev,
-                    ft.Container(height=8),
+                    ft.Row([dd_periodo, f_rep], spacing=8),
+                    ft.Container(height=4),
                     f_obs,
                     ft.Container(height=8),
                     ft.Row([btn_cancelar, btn_salvar], spacing=8,
