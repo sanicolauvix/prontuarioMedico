@@ -7118,11 +7118,13 @@ def excluir_rotina_diario(registro_id: int) -> bool:
 def listar_diagnosticos(sistema: str = None, so_ativos: bool = True) -> list[dict]:
     try:
         with sqlite3.connect(DB_PATH, timeout=10) as conn:
+            # tabela diagnosticos (formal)
             sql = """
                 SELECT d.id, d.titulo, d.cid, d.descricao, d.sistema,
                        d.data_diagnostico, d.data_resolucao, d.status,
                        d.certeza, d.observacoes, d.ativo,
-                       m.nome as medico_nome
+                       m.nome as medico_nome,
+                       'diagnosticos' as origem
                 FROM diagnosticos d
                 LEFT JOIN medicos m ON m.id = d.medico_id
                 WHERE 1=1
@@ -7133,11 +7135,44 @@ def listar_diagnosticos(sistema: str = None, so_ativos: bool = True) -> list[dic
             if sistema:
                 sql += " AND d.sistema = ?"
                 params.append(sistema)
-            sql += " ORDER BY d.status, d.data_diagnostico DESC"
+
             rows = conn.execute(sql, params).fetchall()
             cols = ["id","titulo","cid","descricao","sistema","data_diagnostico",
-                    "data_resolucao","status","certeza","observacoes","ativo","medico_nome"]
-            return [dict(zip(cols, r)) for r in rows]
+                    "data_resolucao","status","certeza","observacoes","ativo",
+                    "medico_nome","origem"]
+            resultado = [dict(zip(cols, r)) for r in rows]
+
+            # historico_medico com tipo diagnostico/condicao_cronica
+            # so inclui se nao filtrar por sistema (historico nao tem sistema)
+            if not sistema:
+                sql_hist = """
+                    SELECT id, titulo, NULL, descricao, NULL,
+                           data_aprox, NULL, tipo,
+                           NULL, sequela, 1,
+                           medico, 'historico_medico'
+                    FROM historico_medico
+                    WHERE tipo IN ('diagnostico', 'condicao_cronica', 'alergia_risco')
+                    ORDER BY data_aprox DESC
+                """
+                rows_hist = conn.execute(sql_hist).fetchall()
+                for r in rows_hist:
+                    d = dict(zip(cols, r))
+                    # mapear tipo para status legivel
+                    tipo_map = {
+                        "diagnostico":     "ativo",
+                        "condicao_cronica": "cronico",
+                        "alergia_risco":   "ativo",
+                    }
+                    d["status"] = tipo_map.get(d["status"], d["status"])
+                    resultado.append(d)
+
+            # ordenar: status primeiro, depois data
+            resultado.sort(key=lambda x: (
+                {"cronico": 0, "ativo": 1, "suspeito": 2, "resolvido": 3}.get(
+                    x.get("status", ""), 9),
+                -(int(str(x.get("data_diagnostico") or "0")[:4] or 0))
+            ))
+            return resultado
     except Exception as ex:
         print(f"[MODEL] listar_diagnosticos: {ex}")
         return []

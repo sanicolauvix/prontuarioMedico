@@ -4720,9 +4720,13 @@ def criar_tela_hub(page: ft.Page, voltar_fn=None, modo_medico: bool = False,
                     "SELECT COUNT(*) FROM historico_medico"
                 ).fetchone()[0]
                 try:
-                    n_diag = conn_res.execute(
+                    n_diag_formal = conn_res.execute(
                         "SELECT COUNT(*) FROM diagnosticos WHERE ativo=1"
                     ).fetchone()[0]
+                    n_diag_hist = conn_res.execute(
+                        "SELECT COUNT(*) FROM historico_medico WHERE tipo IN ('diagnostico','condicao_cronica','alergia_risco')"
+                    ).fetchone()[0]
+                    n_diag = n_diag_formal + n_diag_hist
                 except Exception:
                     n_diag = 0
                 try:
