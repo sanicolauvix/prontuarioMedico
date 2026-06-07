@@ -407,33 +407,29 @@ def criar_tela_diagnosticos(page: ft.Page, voltar_fn=None,
         titulo  = diag.get("titulo", "")
         origem  = diag.get("origem", "diagnosticos")
 
-        # --- médico: busca padrão Koios ---
-        _medico_sel = [None]  # {"id": ..., "nome": ...}
-        # pre-selecionar se já tem médico
+        # --- médico: busca compacta ---
+        _medico_sel = [None]
         if diag.get("medico_id"):
             _m = next((m for m in medicos if m["id"] == diag["medico_id"]), None)
             if _m:
                 _medico_sel[0] = _m
 
         txt_medico_sel = ft.Text(
-            _medico_sel[0]["nome"] if _medico_sel[0] else "Nenhum selecionado",
+            _medico_sel[0]["nome"] if _medico_sel[0] else "Nenhum",
             size=11, color=AZUL if _medico_sel[0] else MUT,
         )
-
         f_busca_med = ft.TextField(
-            label="Buscar médico",
+            hint_text="Buscar médico...",
             prefix_icon="search_rounded",
             bgcolor=CARD, border_color=BD2, focused_border_color=AZUL,
-            label_style=ft.TextStyle(color=SEC, size=11),
-            text_style=ft.TextStyle(color=TXT),
-            border_radius=8,
-            value="",
-            autofocus=False,
+            hint_style=ft.TextStyle(color=MUT, size=11),
+            text_style=ft.TextStyle(color=TXT, size=12),
+            border_radius=8, dense=True, value="", autofocus=False,
         )
-        lista_med_col = ft.Column([], spacing=4)
+        lista_med_col = ft.Column([], spacing=2, scroll=ft.ScrollMode.AUTO)
 
         def _filtrar_medicos(e=None):
-            q = (f_busca_med.value or "").lower()
+            q = (f_busca_med.value or "").lower().strip()
             lista_med_col.controls.clear()
             if not q:
                 try: page.update()
@@ -442,22 +438,17 @@ def criar_tela_diagnosticos(page: ft.Page, voltar_fn=None,
             for m in medicos:
                 if q not in m["nome"].lower():
                     continue
-                _m = dict(m)
-                sel = _medico_sel[0] and _medico_sel[0]["id"] == m["id"]
+                _m2 = dict(m)
                 item = ft.Container(
                     content=ft.Row([
-                        ft.Icon("check_circle_rounded" if sel else "person_rounded",
-                                size=14, color=AZUL if sel else SEC),
-                        ft.Text(m["nome"], size=12,
-                                color=AZUL if sel else TXT, expand=True),
+                        ft.Icon("person_rounded", size=13, color=SEC),
+                        ft.Text(m["nome"], size=12, color=TXT, expand=True),
                     ], spacing=8),
-                    bgcolor=f"{AZUL}18" if sel else CARD,
-                    border_radius=8,
-                    padding=ft.padding.symmetric(horizontal=12, vertical=8),
-                    border=ft.border.all(1, AZUL if sel else BD),
-                    ink=True,
+                    bgcolor=CARD, border_radius=6,
+                    padding=ft.padding.symmetric(horizontal=10, vertical=7),
+                    border=ft.border.all(1, BD), ink=True,
                 )
-                item.on_click = lambda e, x=_m: _sel_medico(x)
+                item.on_click = lambda e, x=_m2: _sel_medico(x)
                 lista_med_col.controls.append(item)
             try: page.update()
             except Exception: pass
@@ -473,47 +464,76 @@ def criar_tela_diagnosticos(page: ft.Page, voltar_fn=None,
 
         f_busca_med.on_change = _filtrar_medicos
 
-        # --- remédios: busca + seleção ---
-        _remedios_sel = set()
+        # --- remédios: busca + cards editáveis ---
+        # dict rid -> {"dosagem": str, "frequencia": str}
+        _remedios_sel = {}
         f_busca_rem = ft.TextField(
-            label="Buscar remédio",
+            hint_text="Buscar remédio...",
             prefix_icon="search_rounded",
             bgcolor=CARD, border_color=BD2, focused_border_color=AZUL,
-            label_style=ft.TextStyle(color=SEC, size=11),
-            text_style=ft.TextStyle(color=TXT),
-            border_radius=8,
-            value="",
-            autofocus=False,
+            hint_style=ft.TextStyle(color=MUT, size=11),
+            text_style=ft.TextStyle(color=TXT, size=12),
+            border_radius=8, dense=True, value="", autofocus=False,
         )
-        lista_rem_col = ft.Column([], spacing=4)
-        selecionados_col = ft.Column([], spacing=4)
+        lista_rem_col  = ft.Column([], spacing=2, scroll=ft.ScrollMode.AUTO)
+        selecionados_col = ft.Column([], spacing=6)
 
         def _rebuild_selecionados():
             selecionados_col.controls.clear()
-            for rid in list(_remedios_sel):
+            for rid, dados in list(_remedios_sel.items()):
                 rem = next((r for r in remedios if str(r.get("id","")) == rid), None)
                 if not rem:
                     continue
-                chip = ft.Container(
-                    content=ft.Row([
-                        ft.Text(rem.get("nome",""), size=11, color=BG, expand=True),
-                        ft.Icon("close_rounded", size=12, color=BG),
-                    ], spacing=6),
-                    bgcolor=AZUL, border_radius=20,
-                    padding=ft.padding.symmetric(horizontal=10, vertical=5),
-                    ink=True,
+                f_dos = ft.TextField(
+                    value=dados.get("dosagem", rem.get("dosagem","") or ""),
+                    hint_text="Dosagem",
+                    hint_style=ft.TextStyle(color=MUT, size=10),
+                    text_style=ft.TextStyle(color=TXT, size=11),
+                    bgcolor=CARD, border_color=BD2, focused_border_color=AZUL,
+                    border_radius=6, dense=True, expand=True,
                 )
-                def _rem_chip(e, r=rid):
-                    _remedios_sel.discard(r)
+                f_freq = ft.TextField(
+                    value=dados.get("frequencia", rem.get("frequencia","") or ""),
+                    hint_text="Frequência",
+                    hint_style=ft.TextStyle(color=MUT, size=10),
+                    text_style=ft.TextStyle(color=TXT, size=11),
+                    bgcolor=CARD, border_color=BD2, focused_border_color=AZUL,
+                    border_radius=6, dense=True, expand=True,
+                )
+                def _on_dos(e, r=rid): _remedios_sel[r]["dosagem"] = e.control.value
+                def _on_freq(e, r=rid): _remedios_sel[r]["frequencia"] = e.control.value
+                f_dos.on_change  = _on_dos
+                f_freq.on_change = _on_freq
+
+                btn_rem = ft.Container(
+                    content=ft.Icon("close_rounded", size=14, color=VERM),
+                    padding=ft.padding.all(4), border_radius=6, ink=True,
+                )
+                def _del_rem(e, r=rid):
+                    _remedios_sel.pop(r, None)
                     _rebuild_selecionados()
-                    _filtrar_remedios()
-                chip.on_click = _rem_chip
-                selecionados_col.controls.append(chip)
+                btn_rem.on_click = _del_rem
+
+                card = ft.Container(
+                    content=ft.Column([
+                        ft.Row([
+                            ft.Icon("medication_rounded", size=13, color=AZUL),
+                            ft.Text(rem.get("nome",""), size=12, color=TXT,
+                                    weight=ft.FontWeight.W_600, expand=True),
+                            btn_rem,
+                        ], spacing=6),
+                        ft.Row([f_dos, f_freq], spacing=6),
+                    ], spacing=6),
+                    bgcolor=CARD, border_radius=8,
+                    padding=ft.padding.symmetric(horizontal=10, vertical=8),
+                    border=ft.border.all(1, AZUL),
+                )
+                selecionados_col.controls.append(card)
             try: page.update()
             except Exception: pass
 
         def _filtrar_remedios(e=None):
-            q = (f_busca_rem.value or "").lower()
+            q = (f_busca_rem.value or "").lower().strip()
             lista_rem_col.controls.clear()
             if not q:
                 try: page.update()
@@ -525,28 +545,37 @@ def criar_tela_diagnosticos(page: ft.Page, voltar_fn=None,
                     continue
                 if q not in rem.get("nome","").lower():
                     continue
+                dos  = rem.get("dosagem","") or ""
+                freq = rem.get("frequencia","") or ""
                 item = ft.Container(
                     content=ft.Row([
-                        ft.Icon("add_rounded", size=14, color=VERD),
-                        ft.Text(rem.get("nome",""), size=12,
-                                color=TXT, expand=True),
+                        ft.Icon("add_rounded", size=13, color=VERD),
+                        ft.Column([
+                            ft.Text(rem.get("nome",""), size=12, color=TXT),
+                            ft.Text(f"{dos}  {freq}".strip(), size=10, color=SEC)
+                            if dos or freq else ft.Container(height=0),
+                        ], spacing=0, tight=True, expand=True),
                     ], spacing=8),
-                    bgcolor=CARD, border_radius=8,
-                    padding=ft.padding.symmetric(horizontal=12, vertical=8),
-                    border=ft.border.all(1, BD),
-                    ink=True,
+                    bgcolor=CARD, border_radius=6,
+                    padding=ft.padding.symmetric(horizontal=10, vertical=7),
+                    border=ft.border.all(1, BD), ink=True,
                 )
-                def _add_rem(e, r=rid):
-                    _remedios_sel.add(r)
+                def _add_rem(e, r=rid, rem_d=dict(rem)):
+                    _remedios_sel[r] = {
+                        "dosagem":    rem_d.get("dosagem","") or "",
+                        "frequencia": rem_d.get("frequencia","") or "",
+                    }
                     f_busca_rem.value = ""
+                    lista_rem_col.controls.clear()
                     _rebuild_selecionados()
-                    _filtrar_remedios()
+                    try: page.update()
+                    except Exception: pass
                 item.on_click = _add_rem
                 lista_rem_col.controls.append(item)
             try: page.update()
             except Exception: pass
 
-        _filtrar_remedios()
+        f_busca_rem.on_change = _filtrar_remedios
 
         f_obs = ft.TextField(
             label="Observações do tratamento",
@@ -618,41 +647,30 @@ def criar_tela_diagnosticos(page: ft.Page, voltar_fn=None,
                         weight=ft.FontWeight.W_600),
                 ft.Container(height=4),
                 ft.Row([
-                    ft.Icon("person_rounded", size=14, color=AZUL),
+                    ft.Icon("person_rounded", size=13, color=AZUL),
                     txt_medico_sel,
                 ], spacing=6),
-                ft.Container(height=6),
+                ft.Container(height=4),
                 f_busca_med,
-                ft.Container(
-                    content=lista_med_col,
-                    height=140,
-                    clip_behavior=ft.ClipBehavior.HARD_EDGE,
-                ),
-                ft.Container(height=16),
+                ft.Container(content=lista_med_col, height=120,
+                             clip_behavior=ft.ClipBehavior.HARD_EDGE),
+                ft.Container(height=12),
                 # remedios
                 ft.Text("Remédios Vinculados", size=11, color=SEC,
                         weight=ft.FontWeight.W_600),
                 ft.Container(height=4),
-                ft.Container(
-                    content=selecionados_col,
-                    visible=True,
-                ),
-                ft.Container(height=6),
                 f_busca_rem,
-                ft.Container(
-                    content=lista_rem_col,
-                    height=140,
-                    clip_behavior=ft.ClipBehavior.HARD_EDGE,
-                ) if remedios else ft.Text("Nenhum remédio cadastrado",
-                                           size=11, color=MUT),
-                ft.Container(height=16),
+                ft.Container(content=lista_rem_col, height=100,
+                             clip_behavior=ft.ClipBehavior.HARD_EDGE),
+                ft.Container(height=4),
+                selecionados_col,
+                ft.Container(height=12),
                 # observacoes
                 ft.Text("Observações do Tratamento", size=11, color=SEC,
                         weight=ft.FontWeight.W_600),
                 ft.Container(height=4),
                 f_obs,
-                ft.Container(height=20),
-                # botoes
+                ft.Container(height=16),
                 ft.Row([btn_fechar, btn_salvar],
                        alignment=ft.MainAxisAlignment.END, spacing=10),
             ], spacing=0, scroll=ft.ScrollMode.AUTO),
