@@ -99,22 +99,19 @@ def main(page: ft.Page):
 
     # ── Fluxo Paciente ────────────────────────────────────────────────────────
     def _voltar_escolha():
-        """Volta para tela de escolha — usado como voltar_fn do hub usuario."""
+        """Volta para tela de escolha — web sempre exige novo login ao retornar."""
         _nav(_tela_escolha())
 
     def _ir_usuario():
-        _nav(_splash("Verificando sessão..."))
+        # web: sempre exige autenticação — nunca usa sessão salva
+        _nav(_splash("Aguarde..."))
         def _iniciar():
             from dados.model_prontuario import criar_tabelas
             criar_tabelas()
-            from shared.auth import verificar_sessao_ativa
-            if not verificar_sessao_ativa():
-                from telas_shared.tela_login import criar_tela_login
-                def _on_login():
-                    threading.Thread(target=_abrir_usuario, daemon=True).start()
-                _nav(criar_tela_login(page, on_login_sucesso=_on_login))
-            else:
-                _abrir_usuario()
+            from telas_shared.tela_login import criar_tela_login
+            def _on_login():
+                threading.Thread(target=_abrir_usuario, daemon=True).start()
+            _nav(criar_tela_login(page, on_login_sucesso=_on_login))
         threading.Thread(target=_iniciar, daemon=True).start()
 
     def _abrir_usuario():
