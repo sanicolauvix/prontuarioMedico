@@ -4223,6 +4223,35 @@ def criar_tela_hub(page: ft.Page, voltar_fn=None, modo_medico: bool = False,
                 tab.on_click = lambda e, idx=i: _trocar_aba(idx)
             barra_abas_row.controls.append(tab)
 
+    # ── Click orgao — exposto nos _hub_partes para uso pelo layout_medico ───
+    def _click_orgao(nome_id: str):
+        def _s(label):
+            return next((s for s in _SISTEMAS if s[0] == label), None)
+        _MAP = {
+            "coracao":  "Cardiaco",
+            "coracao2": "Cardiaco",
+            "visceral": "Visceral",
+            "cerebro":  "Psiquiatria",
+            "olhos":    "Visão & Audição",
+            "urinario": None,
+        }
+        if nome_id not in _MAP:
+            return
+        label = _MAP[nome_id]
+        if label is None:
+            snack = ft.SnackBar(
+                content=ft.Text("Em desenvolvimento...", color="#E6EDF3"),
+                bgcolor="#161B22",
+            )
+            page.overlay.append(snack)
+            snack.open = True
+            try: page.update()
+            except Exception: pass
+            return
+        sis = _s(label)
+        if sis:
+            _abrir_sistema(sis[0], sis[1], sis[2], sis[3])
+
     # ── Silhueta anatomica ───────────────────────────────────
     def _criar_widget_silhueta(pw: int = 0):
         try:
@@ -5383,6 +5412,7 @@ def criar_tela_hub(page: ft.Page, voltar_fn=None, modo_medico: bool = False,
         "cards_sistemas":  _cards_sis,
         "claudia_card":    card_claudia,
         "modo_medico":     modo_medico,
+        "on_orgao_click":  _click_orgao,
     }
 
     wrapper = ft.Column(expand=True)

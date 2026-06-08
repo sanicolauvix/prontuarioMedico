@@ -33,24 +33,12 @@ def montar_layout_desktop(page: ft.Page, pw: int, wrapper, nav_fn,
     larg_max  = pw - int(pw / 2)
     larg_sil  = min(larg_prop, max(larg_max - 140, 300))
 
+    # reutiliza o on_orgao_click do hub — ja tem toda a logica de _abrir_sistema
+    _hub_on_orgao = partes.get("on_orgao_click")
+
     def _on_orgao(oid):
-        if not navegar_sub_fn:
-            return
-        mapa = {
-            "coracao":   ("telas.tela_orgao_cardiaco", "criar_tela_orgao_cardiaco"),
-            "coracao2":  ("telas.tela_orgao_cardiaco", "criar_tela_orgao_cardiaco"),
-        }
-        if oid in mapa:
-            modulo, funcao = mapa[oid]
-            import importlib
-            try:
-                mod = importlib.import_module(modulo)
-                fn  = getattr(mod, funcao)
-                def _voltar(): pass   # overlay fecha pelo _fechar_sub do main_web
-                navegar_sub_fn(fn, _voltar)
-            except Exception as ex:
-                import logging
-                logging.warning("[Silhueta] erro ao navegar orgao %s: %s", oid, ex)
+        if _hub_on_orgao:
+            _hub_on_orgao(oid)
 
     silhueta = criar_silhueta(page, on_orgao_click=_on_orgao,
                               largura=larg_sil, mostrar_borda=False)
