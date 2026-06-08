@@ -30,8 +30,11 @@ def _is_android() -> bool:
     exe = getattr(sys, "executable", "") or ""
     if "/data/" in exe:
         return True
-    if os.environ.get("FLET_PLATFORM", "").lower() == "android":
+    plat = os.environ.get("FLET_PLATFORM", "").lower()
+    if plat == "android":
         return True
+    if plat == "web":
+        return False
     try:
         import tkinter  # noqa
         return False
@@ -66,8 +69,12 @@ SCOPES = [
 def _get_redirect_uri(secrets: dict) -> str:
     """Retorna redirect_uri correto para a plataforma.
     Android: Reverse Client ID Scheme -- Google intercepta e abre o app
+    Web:     https://koios.app.br -- Google redireciona o browser do usuario
     Desktop: http://localhost -- capturado pelo InstalledAppFlow
     """
+    plat = os.environ.get("FLET_PLATFORM", "").lower()
+    if plat == "web":
+        return "https://koios.app.br"
     if _is_android():
         client_id = secrets.get("client_id", "")
         base = client_id.replace(".apps.googleusercontent.com", "")
@@ -197,11 +204,12 @@ def extrair_codigo_da_url(url: str) -> str | None:
 
 
 def is_redirect_url(url: str) -> bool:
-    """Verifica se a URL e um redirect OAuth -- localhost ou reverse scheme."""
+    """Verifica se a URL e um redirect OAuth -- localhost, reverse scheme ou koios.app.br."""
     if "code=" not in url:
         return False
     return (url.startswith("http://localhost") or
-            url.startswith("com.googleusercontent.apps."))
+            url.startswith("com.googleusercontent.apps.") or
+            "koios.app.br" in url)
 
 
 def trocar_codigo_por_token(secrets, codigo: str) -> tuple:
