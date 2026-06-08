@@ -74,7 +74,7 @@ def _get_redirect_uri(secrets: dict) -> str:
     """
     plat = os.environ.get("FLET_PLATFORM", "").lower()
     if plat == "web":
-        return "https://koios.app.br"
+        return "http://localhost:8080"
     if _is_android():
         client_id = secrets.get("client_id", "")
         base = client_id.replace(".apps.googleusercontent.com", "")

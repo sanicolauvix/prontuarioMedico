@@ -122,11 +122,11 @@ def criar_tela_login(page: ft.Page, on_login_sucesso) -> ft.Container:
                         weight=ft.FontWeight.W_600),
             ], spacing=8),
             ft.Container(height=10),
-            _passo("1", "O navegador abriu -- faca login com sua conta Google"),
+            _passo("1", "Uma nova aba abriu -- faca login com sua conta Google"),
             ft.Container(height=6),
-            _passo("2", "Apos autorizar, o app voltara automaticamente"),
+            _passo("2", "Apos autorizar, o Google vai para uma pagina de erro -- isso e normal"),
             ft.Container(height=6),
-            _passo("3", "Se nao voltar, copie a URL e clique em Colar URL"),
+            _passo("3", "Copie a URL dessa pagina de erro e cole abaixo"),
             ft.Container(height=12),
             campo_url,
             ft.Container(height=6),
@@ -569,13 +569,39 @@ def criar_tela_login(page: ft.Page, on_login_sucesso) -> ft.Container:
 
     def _executar_login():
         try:
-            if android:
+            import os as _os
+            if _os.environ.get("FLET_PLATFORM", "").lower() == "web":
+                _login_web()
+            elif android:
                 _login_android()
             else:
                 _login_desktop()
         except Exception as ex:
             log.exception("[Login] _executar_login: %s", ex)
             _pub({"tipo": "erro", "txt": str(ex)[:120]})
+
+    def _login_web():
+        """Fluxo web: gera URL, abre nova aba, mostra painel de colar URL imediatamente."""
+        try:
+            _pub({"tipo": "status", "txt": "Preparando autenticacao...", "spin": True})
+            from shared.auth import gerar_url_autorizacao
+            ok, url, secrets = gerar_url_autorizacao()
+            if not ok:
+                _pub({"tipo": "erro", "txt": url})
+                return
+            try:
+                page.launch_url(url)
+            except Exception:
+                import webbrowser
+                webbrowser.open(url)
+            # no web mostra painel de colar URL imediatamente (sem esperar 8s)
+            _pub({"tipo": "instrucoes", "secrets": secrets})
+            # dispara fallback imediato (0.5s) para mostrar o painel
+            import threading as _th
+            _th.Timer(0.5, lambda: _pub({"tipo": "_fallback_instrucoes"})).start()
+        except Exception as ex:
+            log.exception("[Login Web] %s", ex)
+            _pub({"tipo": "erro", "txt": f"Erro: {str(ex)[:100]}"})
 
     def _login_android():
         try:
