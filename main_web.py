@@ -103,16 +103,9 @@ def main(page: ft.Page):
         _nav(_tela_escolha())
 
     def _ir_usuario():
-        # web: sempre exige autenticação — nunca usa sessão salva
-        _nav(_splash("Aguarde..."))
-        def _iniciar():
-            from dados.model_prontuario import criar_tabelas
-            criar_tabelas()
-            from telas_shared.tela_login import criar_tela_login
-            def _on_login():
-                threading.Thread(target=_abrir_usuario, daemon=True).start()
-            _nav(criar_tela_login(page, on_login_sucesso=_on_login))
-        threading.Thread(target=_iniciar, daemon=True).start()
+        # TODO: reativar autenticacao apos corrigir bugs de rerenderizacao
+        _nav(_splash("Carregando..."))
+        threading.Thread(target=_abrir_usuario, daemon=True).start()
 
     def _abrir_usuario():
         from backup.drive_backup import restaurar_backup_completo

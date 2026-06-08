@@ -3521,19 +3521,17 @@ def criar_tela_hub(page: ft.Page, voltar_fn=None, modo_medico: bool = False,
         if s[0] == "Sangue":
             img_src, img_fit = _CARD_IMAGENS["Sangue"]
             card = _card_imagem("Exames de Sangue", s[1], s[2], s[3], img_src, img_fit)
-            card.on_click = lambda e: _navegar(
+            card.on_click = lambda e: _ir(
                 __import__("telas.tela_sangue", fromlist=["criar_tela_sangue"])
-                .criar_tela_sangue,
-                voltar_fn=_voltar_hub,
+                .criar_tela_sangue
             )
             return card
         if s[0] == "Ortopedia":
             img_src, img_fit = _CARD_IMAGENS["Ortopedia"]
             card = _card_imagem("Exames (outros)", s[1], s[2], s[3], img_src, img_fit)
-            card.on_click = lambda e: _navegar(
+            card.on_click = lambda e: _ir(
                 __import__("telas.tela_imagens", fromlist=["criar_tela_imagens"])
-                .criar_tela_imagens,
-                voltar_fn=_voltar_hub,
+                .criar_tela_imagens
             )
             return card
         if s[0] in _CARD_IMAGENS:
@@ -4042,10 +4040,9 @@ def criar_tela_hub(page: ft.Page, voltar_fn=None, modo_medico: bool = False,
         tooltip="Checkup de Saúde",
         height=96,
     )
-    card_checkup_hub.on_click = lambda e: _navegar(
+    card_checkup_hub.on_click = lambda e: _ir(
         __import__("telas.tela_checkup", fromlist=["criar_tela_checkup"])
-        .criar_tela_checkup,
-        voltar_fn=_voltar_hub,
+        .criar_tela_checkup
     )
 
     # sistemas que NAO estao na silhueta + resumo + checkup em rows de 4
