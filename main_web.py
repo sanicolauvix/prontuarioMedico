@@ -418,7 +418,8 @@ def main(page: ft.Page):
         partes = getattr(_hub_wrapper[0], "_hub_partes", {})
         eh_medico = partes.get("modo_medico", False)
         montar_layout_desktop(page, pw, _hub_wrapper[0], _nav,
-                              modo_medico=eh_medico)
+                              modo_medico=eh_medico,
+                              navegar_sub_fn=_navegar_sub)
 
     def _on_resized(e=None):
         pw = int(page.width or 0)

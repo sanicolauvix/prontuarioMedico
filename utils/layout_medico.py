@@ -12,7 +12,8 @@ ROXO  = "#BC8CFF"; AMAR  = "#D29922"
 
 
 def montar_layout_desktop(page: ft.Page, pw: int, wrapper, nav_fn,
-                          modo_medico: bool = True) -> None:
+                          modo_medico: bool = True,
+                          navegar_sub_fn=None) -> None:
     """
     Monta o layout desktop do hub medico:
     - Coluna esquerda: grade 2x2 (paciente | monitor vital / resumo | monitor vital)
@@ -33,7 +34,23 @@ def montar_layout_desktop(page: ft.Page, pw: int, wrapper, nav_fn,
     larg_sil  = min(larg_prop, max(larg_max - 140, 300))
 
     def _on_orgao(oid):
-        pass
+        if not navegar_sub_fn:
+            return
+        mapa = {
+            "coracao":   ("telas.tela_orgao_cardiaco", "criar_tela_orgao_cardiaco"),
+            "coracao2":  ("telas.tela_orgao_cardiaco", "criar_tela_orgao_cardiaco"),
+        }
+        if oid in mapa:
+            modulo, funcao = mapa[oid]
+            import importlib
+            try:
+                mod = importlib.import_module(modulo)
+                fn  = getattr(mod, funcao)
+                def _voltar(): pass   # overlay fecha pelo _fechar_sub do main_web
+                navegar_sub_fn(fn, _voltar)
+            except Exception as ex:
+                import logging
+                logging.warning("[Silhueta] erro ao navegar orgao %s: %s", oid, ex)
 
     silhueta = criar_silhueta(page, on_orgao_click=_on_orgao,
                               largura=larg_sil, mostrar_borda=False)
