@@ -66,15 +66,14 @@ SCOPES = [
     "openid",
 ]
 
+_OAUTH_CALLBACK_URI = "https://koios.app.br/oauth/callback"
+
+
 def _get_redirect_uri(secrets: dict) -> str:
-    """Retorna redirect_uri correto para a plataforma.
-    Android: Reverse Client ID Scheme -- Google intercepta e abre o app
-    Web:     https://koios.app.br -- Google redireciona o browser do usuario
-    Desktop: http://localhost -- capturado pelo InstalledAppFlow
-    """
+    """Retorna redirect_uri correto para a plataforma."""
     plat = os.environ.get("FLET_PLATFORM", "").lower()
     if plat == "web":
-        return "http://localhost:8080"
+        return _OAUTH_CALLBACK_URI
     if _is_android():
         client_id = secrets.get("client_id", "")
         base = client_id.replace(".apps.googleusercontent.com", "")
@@ -158,10 +157,11 @@ def encerrar_sessao() -> None:
         logging.warning(f"[AUTH] encerrar_sessao: {ex}")
 
 
-def gerar_url_autorizacao() -> tuple:
+def gerar_url_autorizacao(state: str = "") -> tuple:
     """
     Gera URL OAuth2 manualmente sem usar oauthlib.
     Retorna (True, url, secrets_dict) ou (False, erro, None)
+    state: token de sessao para correlacionar o callback (usado no fluxo web)
     """
     try:
         if not os.path.exists(_SECRETS_PATH):
@@ -182,6 +182,8 @@ def gerar_url_autorizacao() -> tuple:
             "access_type":   "offline",
             "prompt":        "consent",
         }
+        if state:
+            params["state"] = state
 
         url = "https://accounts.google.com/o/oauth2/v2/auth?" + urlencode(params)
         logging.info(f"[AUTH] URL gerada OK | redirect_uri: {redirect_uri}")

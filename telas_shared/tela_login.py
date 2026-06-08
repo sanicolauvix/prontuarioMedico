@@ -581,24 +581,36 @@ def criar_tela_login(page: ft.Page, on_login_sucesso) -> ft.Container:
             _pub({"tipo": "erro", "txt": str(ex)[:120]})
 
     def _login_web():
-        """Fluxo web: gera URL, abre nova aba, mostra painel de colar URL imediatamente."""
+        """Fluxo web: usa servidor de callback na porta 8557.
+        Google redireciona para /oauth/callback, o servidor troca o codigo
+        por token e notifica esta sessao via callback registrado.
+        """
         try:
+            import uuid as _uuid
             _pub({"tipo": "status", "txt": "Preparando autenticacao...", "spin": True})
             from shared.auth import gerar_url_autorizacao
-            ok, url, secrets = gerar_url_autorizacao()
+            sid = _uuid.uuid4().hex[:16]
+            ok, url, secrets = gerar_url_autorizacao(state=sid)
             if not ok:
                 _pub({"tipo": "erro", "txt": url})
                 return
+
+            def _on_callback(sucesso: bool, erro: str):
+                if sucesso:
+                    _pub({"tipo": "sucesso"})
+                else:
+                    _pub({"tipo": "erro", "txt": erro or "Falha na autenticacao"})
+
+            from utils.oauth_callback_server import registrar_sessao
+            registrar_sessao(sid, secrets, _on_callback)
+
+            _pub({"tipo": "status", "txt": "Aguardando autenticacao Google...", "spin": True})
             try:
                 page.launch_url(url)
             except Exception:
                 import webbrowser
                 webbrowser.open(url)
-            # no web mostra painel de colar URL imediatamente (sem esperar 8s)
-            _pub({"tipo": "instrucoes", "secrets": secrets})
-            # dispara fallback imediato (0.5s) para mostrar o painel
-            import threading as _th
-            _th.Timer(0.5, lambda: _pub({"tipo": "_fallback_instrucoes"})).start()
+
         except Exception as ex:
             log.exception("[Login Web] %s", ex)
             _pub({"tipo": "erro", "txt": f"Erro: {str(ex)[:100]}"})
