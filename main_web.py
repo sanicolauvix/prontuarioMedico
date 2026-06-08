@@ -430,19 +430,6 @@ def main(page: ft.Page):
 
     page.on_resized = _on_resized
 
-    # ── Detectar retorno OAuth (?oauth=ok na URL) ─────────────────────────────
-    def _on_route_change(e):
-        rota = str(getattr(e, "route", "") or "")
-        if "oauth=ok" in rota:
-            # Google redirecionou de volta — usuario autenticou com sucesso
-            # o token ja foi salvo pelo oauth_callback_server
-            # basta abrir o hub diretamente
-            threading.Thread(target=_abrir_usuario, daemon=True).start()
-        elif "oauth=erro" in rota:
-            _nav(_tela_escolha())
-
-    page.on_route_change = _on_route_change
-
     # ── Iniciar ───────────────────────────────────────────────────────────────
     def _init():
         from dados.model_prontuario import criar_tabelas

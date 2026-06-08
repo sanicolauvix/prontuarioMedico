@@ -89,8 +89,31 @@ class _Handler(http.server.BaseHTTPRequestHandler):
 
         threading.Thread(target=_trocar, daemon=True).start()
 
-        # Redireciona o browser imediatamente — nao espera o token
-        self._redirecionar(f"{_APP_URL}/?oauth=ok&sid={urllib.parse.quote(sid)}")
+        # Retorna pagina HTML que fecha a aba — a aba original detecta via polling
+        self._pagina_fechar_aba()
+
+    def _pagina_fechar_aba(self):
+        html = (
+            "<!DOCTYPE html><html><head>"
+            "<meta charset='utf-8'>"
+            "<title>Login realizado</title>"
+            "<style>body{background:#0D1117;color:#E6EDF3;font-family:sans-serif;"
+            "display:flex;align-items:center;justify-content:center;height:100vh;margin:0}"
+            ".box{text-align:center}</style></head><body>"
+            "<div class='box'>"
+            "<div style='font-size:48px'>&#10003;</div>"
+            "<h2 style='color:#3FB950'>Login realizado!</h2>"
+            "<p style='color:#8B949E'>Pode fechar esta aba e voltar ao Prontuario.</p>"
+            "</div>"
+            "<script>setTimeout(function(){window.close()},1500);</script>"
+            "</body></html>"
+        )
+        body = html.encode("utf-8")
+        self.send_response(200)
+        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
 
     def _redirecionar(self, url: str):
         self.send_response(302)
